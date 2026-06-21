@@ -69,7 +69,6 @@ class FFI {
         #end
     }
 
-    #if !macro
     /**
      * Registers a native Haxe class to the Haxiom engine, making it available
      * both globally under its short name and at its fully qualified namespace path.
@@ -185,6 +184,5 @@ class FFI {
         }
         #end
     }
-    #end
 
 }

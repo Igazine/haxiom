@@ -738,10 +738,20 @@ class Optimizer {
                 // Exception: a class with a static public main() is an entry point — always keep.
                 // Note: unlike EVar, the isLast guard does NOT apply — type declarations are never
                 // used as block return values.
-                case EClass(name, _, methods, _, _, _, _):
+                case EClass(name, _, methods, _, interfaces, _, meta):
                     var useCount = usages.exists(name) ? usages.get(name) : 0;
                     var hasMain = methods.filter(m -> m.name == "main" && m.isPublic && m.isStatic).length > 0;
-                    if (useCount == 0 && !hasMain) {
+                    var keep = false;
+                    if (interfaces != null && interfaces.length > 0) keep = true;
+                    if (meta != null) {
+                        for (m in meta) {
+                            if (m.name == ":keep" || m.name == "keep") {
+                                keep = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (useCount == 0 && !hasMain && !keep) {
                         // Eliminated — class never instantiated, extended, or referenced
                     } else {
                         result.push(expr);

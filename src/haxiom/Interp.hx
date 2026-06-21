@@ -2923,6 +2923,11 @@ class Interp {
                             case TPath(itfPath, itfConcreteParams):
                                 var itfName = itfPath.join(".");
                                 var itfVal = scope.get(itfName);
+                                if (itfVal != null && (Reflect.hasField(itfVal, "__isInterface") || !Std.isOfType(itfVal, HaxiomInterface))) {
+                                    if (Reflect.hasField(itfVal, "__isInterface") || Std.isOfType(itfVal, Class) || Std.isOfType(itfVal, Enum)) {
+                                        continue;
+                                    }
+                                }
                                 if (itfVal == null || !Std.isOfType(itfVal, HaxiomInterface)) {
                                     throw 'Interface $itfName not found at ${pos.line}:${pos.col}';
                                 }

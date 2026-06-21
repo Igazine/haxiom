@@ -1,0 +1,4 @@
+--class-path .
+--library haxiom
+--main host.Host
+--neko bin/Host.n
