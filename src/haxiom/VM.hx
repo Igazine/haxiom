@@ -1031,7 +1031,7 @@ class VM {
                                 case 2: (a, b) -> func([a, b]);
                                 case 3: (a, b, c) -> func([a, b, c]);
                                 case 4: (a, b, c, d) -> func([a, b, c, d]);
-                                default: (callArgs:Array<Dynamic>) -> func(callArgs);
+                                default: Reflect.makeVarArgs(func);
                             };
                         }
                         #end

@@ -27,6 +27,7 @@ class TestOpenFL extends Application {
 	static final SCRIPTS:Array<ScriptDef> = [
 		{
 			id: "Basic.hx",
+			name: "Basic FeathersUI Example",
 			path: "./scripts/Basic.hx",
 			context: [
 				{fqName: "feathers.controls.Button", cls: Button},
@@ -37,16 +38,29 @@ class TestOpenFL extends Application {
 		},
 		{
 			id: "Bytecode.hxbc",
+			name: "Pre-compiled Bytecode Example",
 			path: "./scripts/Bytecode.hxbc",
 			isBytecode: true,
 		},
 		{
+			id: "BitmapLoader.hx",
+			name: "OpenFL - DisplayingABitmap",
+			path: "./scripts/BitmapLoader.hx",
+		},
+		{
+			id: "Shapes.hx",
+			name: "OpenFL - DrawingShapes",
+			path: "./scripts/Shapes.hx",
+		},
+		{
 			id: "Sandboxing.hx",
+			name: "Sandboxing Example",
 			path: "./scripts/Sandboxing.hx",
 		},
 		{
 			id: "Million.hx",
 			path: "./scripts/Million.hx",
+			name: "Performance - Million Instructions"
 		}
 	];
 
@@ -86,7 +100,7 @@ class TestOpenFL extends Application {
 		dropdown.dataProvider = new ArrayCollection(SCRIPTS);
 		dropdown.layoutData = new VerticalLayoutData(100);
 		dropdown.itemToText = function(item:Dynamic) {
-			return item.id;
+			return item.name;
 		};
 		dropdown.addEventListener(Event.CHANGE, (event) -> {
 			selectedScript = dropdown.selectedItem;
@@ -141,6 +155,16 @@ class TestOpenFL extends Application {
 		FFI.registerClass(haxiom, "feathers.controls.Label", Label);
 		FFI.registerClass(haxiom, "feathers.controls.LayoutGroup", LayoutGroup);
 		FFI.registerClass(haxiom, "feathers.events.TriggerEvent", TriggerEvent);
+		FFI.registerClass(haxiom, "openfl.display.BitmapData", openfl.display.BitmapData);
+		FFI.registerClass(haxiom, "openfl.display.Bitmap", openfl.display.Bitmap);
+		FFI.registerClass(haxiom, "openfl.Assets", openfl.utils.Assets);
+		FFI.registerClass(haxiom, "openfl.display.Sprite", openfl.display.Sprite);
+		FFI.registerClass(haxiom, "openfl.display.Graphics", openfl.display.Graphics);
+		FFI.registerValue(haxiom, "openfl.display.CapsStyle", {
+			NONE: openfl.display.CapsStyle.NONE,
+			ROUND: openfl.display.CapsStyle.ROUND,
+			SQUARE: openfl.display.CapsStyle.SQUARE
+		});
 	}
 
 	function registerGlobals(haxiom:Haxiom) {
@@ -203,6 +227,7 @@ class TestOpenFL extends Application {
 typedef ScriptDef = {
 	id:String,
 	path:String,
+	name:String,
 	?isBytecode:Bool,
 	?context:Array<ScriptContext>,
 }
