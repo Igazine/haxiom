@@ -9,7 +9,7 @@ import haxiom.Interp;
  * Provides APIs for compiling, interpreting, and executing scripts in either
  * AST interpretation mode or compiled Bytecode VM mode.
  */
-class Haxiom implements common.IScriptEngine {
+class Haxiom {
     /**
      * The underlying interpreter instance carrying the execution scope, globals, and callbacks.
      */
