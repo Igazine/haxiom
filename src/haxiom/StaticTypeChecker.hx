@@ -1,0 +1,781 @@
+package haxiom;
+
+import haxiom.AST;
+import haxiom.Interp;
+import haxiom.CompileException;
+
+/**
+ * Performs an optional compile-time static type checking pass over the Haxiom AST.
+ * 
+ * Call `StaticTypeChecker.check(ast, interp)` immediately after compilation to detect
+ * type mismatches such as:
+ *   - Pushing wrong element types into `Array<T>`
+ *   - Adding wrong element types to `List<T>`
+ *   - Wrong key/value types for `Map<K,V>`
+ *   - Struct field types mismatched against typedefs
+ *   - Enum constructor argument type mismatches
+ *   - Class constructor argument type mismatches
+ */
+class StaticTypeChecker {
+
+    /**
+     * Run the static type checking pass over the given AST.
+     * Throws a CompileException on the first detected type error.
+     */
+    public static function check(expr:Expr, interp:Interp):Void {
+        var checker = new StaticTypeChecker(interp);
+        checker.collectDeclarations(expr);
+        checker.checkExpr(expr, new LocalEnv(null));
+    }
+
+    // -------------------------------------------------------------------------
+
+    var interp:Interp;
+
+    // Top-level declared classes, enums, typedefs in scope
+    var classes:Map<String, ClassInfo> = new Map();
+    var enums:Map<String, EnumInfo> = new Map();
+    var typedefs:Map<String, TypedefInfo> = new Map();
+
+    function new(interp:Interp) {
+        this.interp = interp;
+    }
+
+    // -------------------------------------------------------------------------
+    // Pass 1: collect top-level type declarations
+    // -------------------------------------------------------------------------
+
+    function collectDeclarations(expr:Expr):Void {
+        if (expr == null) return;
+        switch (expr.def) {
+            case EBlock(exprs):
+                for (e in exprs) collectDeclarations(e);
+
+            case EClass(name, fields, methods, _, _, params, _):
+                var info = new ClassInfo(name, params != null ? params : []);
+                for (m in methods) {
+                    if (m.name == "new") {
+                        info.ctorArgs = m.args;
+                    } else {
+                        info.methods.set(m.name, m);
+                    }
+                }
+                for (f in fields) {
+                    info.fields.set(f.name, f.type);
+                }
+                classes.set(name, info);
+
+            case EEnum(name, constructors, params):
+                var info = new EnumInfo(name, params != null ? params : []);
+                for (c in constructors) {
+                    info.constructors.set(c.name, c.args != null ? c.args : []);
+                }
+                enums.set(name, info);
+
+            case ETypedef(name, type, params):
+                typedefs.set(name, new TypedefInfo(name, type, params != null ? params : []));
+
+            default:
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Pass 2: type inference & checking
+    // -------------------------------------------------------------------------
+
+    function checkExpr(expr:Expr, env:LocalEnv):Void {
+        if (expr == null) return;
+        switch (expr.def) {
+            case EBlock(exprs):
+                var childEnv = new LocalEnv(env);
+                for (e in exprs) checkExpr(e, childEnv);
+
+            case EVar(name, declaredType, initExpr, _, _):
+                if (initExpr != null) {
+                    var inferredType = inferType(initExpr, env);
+                    if (declaredType != null) {
+                        checkCompatibility(inferredType, declaredType, env, initExpr.pos, name);
+                    }
+                    // Recurse into init expr to catch nested type errors
+                    // (e.g. enum/class ctor calls with wrong argument types)
+                    checkExprWithContext(initExpr, env, declaredType);
+                    // Bind variable with the declared type (or inferred if no annotation)
+                    env.set(name, declaredType != null ? declaredType : inferredType);
+                } else {
+                    if (declaredType != null) env.set(name, declaredType);
+                }
+
+            case EAssign(target, rhs):
+                var rhsType = inferType(rhs, env);
+                var targetType = inferType(target, env);
+                if (targetType != null) {
+                    checkCompatibility(rhsType, targetType, env, rhs.pos, null);
+                }
+
+            case ECall(e, args):
+                // Check method calls like arr.push(...), list.add(...), map.set(...)
+                checkCall(e, args, env, expr.pos);
+
+            case ENew(type, args):
+                checkNewExpr(type, args, env, expr.pos);
+
+            case EIf(cond, e1, e2):
+                checkExpr(cond, env);
+                checkExpr(e1, env);
+                if (e2 != null) checkExpr(e2, env);
+
+            case EWhile(cond, body) | EDoWhile(cond, body):
+                checkExpr(cond, env);
+                checkExpr(body, env);
+
+            case EFor(v, it, body):
+                var childEnv = new LocalEnv(env);
+                // Infer element type from iterator
+                var elemType = inferIteratorElemType(it, env);
+                childEnv.set(v, elemType);
+                checkExpr(body, childEnv);
+
+            case EReturn(e):
+                if (e != null) checkExpr(e, env);
+
+            case EThrow(e):
+                checkExpr(e, env);
+
+            case ETry(tryExpr, catches):
+                checkExpr(tryExpr, env);
+                for (c in catches) {
+                    var catchEnv = new LocalEnv(env);
+                    switch (c.pattern.def) {
+                        case EIdent(varName):
+                            if (c.type != null) catchEnv.set(varName, c.type);
+                        default:
+                    }
+                    checkExpr(c.body, catchEnv);
+                }
+
+            case EFunction(_, args, _, body):
+                var childEnv = new LocalEnv(env);
+                for (a in args) {
+                    if (a.type != null) childEnv.set(a.name, a.type);
+                }
+                checkExpr(body, childEnv);
+
+            case EClass(_, _, methods, _, _, _, _):
+                for (m in methods) {
+                    var childEnv = new LocalEnv(env);
+                    for (a in m.args) {
+                        if (a.type != null) childEnv.set(a.name, a.type);
+                    }
+                    checkExpr(m.body, childEnv);
+                }
+
+            default:
+                // For other expression forms just recurse into sub-expressions
+                visitSubExprs(expr, env);
+        }
+    }
+
+    /**
+     * Like checkExpr, but with an outer type context (e.g. the declared type of a var).
+     * Used to propagate generic type params into enum/class constructor calls.
+     */
+    function checkExprWithContext(expr:Expr, env:LocalEnv, contextType:TypeDecl):Void {
+        if (expr == null) return;
+        switch (expr.def) {
+            case ECall(calleeExpr, args):
+                // Try to handle context-typed enum/class ctor calls
+                switch (calleeExpr.def) {
+                    case EField(objExpr, ctorName):
+                        switch (objExpr.def) {
+                            case EIdent(identName):
+                                // Enum ctor: check with type params from contextType
+                                if (enums.exists(identName)) {
+                                    var typeParams:Array<TypeDecl> = [];
+                                    if (contextType != null) {
+                                        switch (contextType) {
+                                            case TPath(path, params) if (path.join(".") == identName):
+                                                typeParams = params;
+                                            default:
+                                        }
+                                    }
+                                    checkEnumCtorCall(identName, ctorName, typeParams, args, env, expr.pos);
+                                    for (a in args) checkExpr(a, env);
+                                    return;
+                                }
+                            default:
+                        }
+                    default:
+                }
+                // Fall through to generic call check
+                checkCall(calleeExpr, args, env, expr.pos);
+
+            case ENew(type, args):
+                // Pass type params from context if not already specified
+                var resolvedType = type;
+                if (contextType != null) {
+                    switch (type) {
+                        case TPath(path, params) if (params.length == 0):
+                            switch (contextType) {
+                                case TPath(ctxPath, ctxParams) if (ctxPath.join(".") == path.join(".")):
+                                    resolvedType = TPath(path, ctxParams);
+                                default:
+                            }
+                        default:
+                    }
+                }
+                checkNewExpr(resolvedType, args, env, expr.pos);
+
+            default:
+                // No context needed; fall through to normal check
+                checkExpr(expr, env);
+        }
+    }
+
+    function visitSubExprs(expr:Expr, env:LocalEnv):Void {
+        switch (expr.def) {
+            case EBinop(_, e1, e2):
+                checkExpr(e1, env);
+                checkExpr(e2, env);
+            case EUnop(_, e):
+                checkExpr(e, env);
+            case EField(e, _) | ESafeField(e, _):
+                checkExpr(e, env);
+            case EArrayDecl(values):
+                for (v in values) checkExpr(v, env);
+            case EObjectDecl(fields):
+                for (f in fields) checkExpr(f.expr, env);
+            case ESwitch(e, cases, defExpr):
+                checkExpr(e, env);
+                for (c in cases) {
+                    checkExpr(c.expr, env);
+                }
+                if (defExpr != null) checkExpr(defExpr, env);
+            default:
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Method call checking
+    // -------------------------------------------------------------------------
+
+    function checkCall(calleeExpr:Expr, args:Array<Expr>, env:LocalEnv, pos:Pos):Void {
+        switch (calleeExpr.def) {
+            case EField(objExpr, methodName):
+                var objType = inferType(objExpr, env);
+
+                // Detect enum constructor calls: MyEnum.CtorName(args)
+                switch (objExpr.def) {
+                    case EIdent(identName):
+                        if (enums.exists(identName)) {
+                            // Infer type params from context (variable declaration type if available)
+                            checkEnumCtorCall(identName, methodName, [], args, env, pos);
+                            for (a in args) checkExpr(a, env);
+                            return;
+                        }
+                    default:
+                }
+
+                if (objType == null) {
+                    // Still recurse args
+                    for (a in args) checkExpr(a, env);
+                    return;
+                }
+                switch (objType) {
+                    case TPath(path, typeParams):
+                        var typeName = path.join(".");
+                        switch (typeName) {
+                            case "Array":
+                                // Array<T>: push(T), unshift(T), insert(Int, T), etc.
+                                var elemType = typeParams.length > 0 ? typeParams[0] : null;
+                                if (elemType != null && args.length > 0) {
+                                    switch (methodName) {
+                                        case "push" | "unshift":
+                                            var argType = inferType(args[0], env);
+                                            checkCompatibility(argType, elemType, env, args[0].pos, 'Array.${methodName}');
+                                        case "insert" if (args.length >= 2):
+                                            var argType = inferType(args[1], env);
+                                            checkCompatibility(argType, elemType, env, args[1].pos, 'Array.insert');
+                                        default:
+                                    }
+                                }
+
+                            case "List" | "haxe.ds.List":
+                                // List<T>: add(T), push(T)
+                                var elemType = typeParams.length > 0 ? typeParams[0] : null;
+                                if (elemType != null && args.length > 0) {
+                                    switch (methodName) {
+                                        case "add" | "push":
+                                            var argType = inferType(args[0], env);
+                                            checkCompatibility(argType, elemType, env, args[0].pos, 'List.${methodName}');
+                                        default:
+                                    }
+                                }
+
+                            case "Map" | "haxe.ds.Map" | "haxe.ds.StringMap" | "haxe.ds.IntMap":
+                                // Map<K,V>: set(K, V)
+                                var keyType = typeParams.length > 0 ? typeParams[0] : null;
+                                var valType = typeParams.length > 1 ? typeParams[1] : null;
+                                if (methodName == "set" && args.length >= 2) {
+                                    if (keyType != null) {
+                                        var argType = inferType(args[0], env);
+                                        checkCompatibility(argType, keyType, env, args[0].pos, 'Map.set (key)');
+                                    }
+                                    if (valType != null) {
+                                        var argType = inferType(args[1], env);
+                                        checkCompatibility(argType, valType, env, args[1].pos, 'Map.set (value)');
+                                    }
+                                }
+
+                            default:
+                                // Check user-defined class method calls
+                                if (classes.exists(typeName)) {
+                                    var cls = classes.get(typeName);
+                                    if (cls.methods.exists(methodName)) {
+                                        var method = cls.methods.get(methodName);
+                                        // Build generic bindings from caller type params vs class params
+                                        var bindings = buildGenericBindings(cls.params, typeParams);
+                                        checkMethodArgs(method.args, args, env, bindings, methodName, pos);
+                                    }
+                                }
+                                // Check enum constructor calls via typed var: var x:MyEnum = MyEnum.Ctor(...)
+                                if (enums.exists(typeName)) {
+                                    checkEnumCtorCall(typeName, methodName, typeParams, args, env, pos);
+                                }
+                        }
+                    default:
+                }
+                // Recurse into args
+                for (a in args) checkExpr(a, env);
+
+            default:
+                // Recurse into callee and args
+                checkExpr(calleeExpr, env);
+                for (a in args) checkExpr(a, env);
+        }
+    }
+
+    function checkMethodArgs(params:Array<FunctionArg>, args:Array<Expr>, env:LocalEnv, bindings:Map<String, TypeDecl>, methodName:String, pos:Pos):Void {
+        for (i in 0...params.length) {
+            if (i >= args.length) break;
+            var expectedType = params[i].type;
+            if (expectedType == null) continue;
+            expectedType = applyBindings(expectedType, bindings);
+            var argType = inferType(args[i], env);
+            checkCompatibility(argType, expectedType, env, args[i].pos, '${methodName} argument ${i + 1}');
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // ENew checking
+    // -------------------------------------------------------------------------
+
+    function checkNewExpr(type:TypeDecl, args:Array<Expr>, env:LocalEnv, pos:Pos):Void {
+        switch (type) {
+            case TPath(path, typeParams):
+                var typeName = path.join(".");
+                if (classes.exists(typeName)) {
+                    var cls = classes.get(typeName);
+                    if (cls.ctorArgs != null && cls.ctorArgs.length > 0) {
+                        var bindings = buildGenericBindings(cls.params, typeParams);
+                        for (i in 0...cls.ctorArgs.length) {
+                            if (i >= args.length) break;
+                            var expectedType = cls.ctorArgs[i].type;
+                            if (expectedType == null) continue;
+                            expectedType = applyBindings(expectedType, bindings);
+                            // Skip Null<T> wrapper
+                            expectedType = unwrapNull(expectedType);
+                            if (expectedType == null) continue;
+                            var argType = inferType(args[i], env);
+                            checkCompatibility(argType, expectedType, env, args[i].pos, 'new ${typeName} argument ${i + 1}');
+                        }
+                    }
+                }
+            default:
+        }
+        for (a in args) checkExpr(a, env);
+    }
+
+    // -------------------------------------------------------------------------
+    // Type inference
+    // -------------------------------------------------------------------------
+
+    function inferType(expr:Expr, env:LocalEnv):TypeDecl {
+        if (expr == null) return null;
+        switch (expr.def) {
+            case EValue(v):
+                if (v == null) return null;
+                if (Std.isOfType(v, Bool)) return TPath(["Bool"], []);
+                if (Std.isOfType(v, Int)) return TPath(["Int"], []);
+                if (Std.isOfType(v, Float)) return TPath(["Float"], []);
+                if (Std.isOfType(v, String)) return TPath(["String"], []);
+                return null;
+
+            case EIdent(name):
+                return env.get(name);
+
+            case EVar(name, type, initExpr, _, _):
+                if (type != null) return type;
+                if (initExpr != null) return inferType(initExpr, env);
+                return null;
+
+            case EArrayDecl(values):
+                if (values.length > 0) {
+                    var elemType = inferType(values[0], env);
+                    return TPath(["Array"], elemType != null ? [elemType] : []);
+                }
+                return TPath(["Array"], []);
+
+            case ENew(type, _):
+                return type;
+
+            case ECall(e, args):
+                // Try to infer type of method calls
+                return inferCallType(e, args, env);
+
+            case EField(objExpr, field):
+                // For field access, try to resolve from struct type
+                var objType = inferType(objExpr, env);
+                return inferFieldType(objType, field, env);
+
+            case EObjectDecl(fields):
+                var anonFields = [for (f in fields) {
+                    name: f.name,
+                    type: inferType(f.expr, env),
+                    opt: false
+                }];
+                return TAnonymous(anonFields);
+
+            case EBlock(exprs):
+                if (exprs.length > 0) return inferType(exprs[exprs.length - 1], env);
+                return null;
+
+            case EIf(_, e1, e2):
+                var t1 = inferType(e1, env);
+                if (t1 != null) return t1;
+                if (e2 != null) return inferType(e2, env);
+                return null;
+
+            case ECast(_, type):
+                return type;
+
+            default:
+                return null;
+        }
+    }
+
+    function inferCallType(calleeExpr:Expr, args:Array<Expr>, env:LocalEnv):TypeDecl {
+        switch (calleeExpr.def) {
+            case EField(objExpr, methodName):
+                var objType = inferType(objExpr, env);
+                if (objType == null) return null;
+                switch (objType) {
+                    case TPath(path, typeParams):
+                        var typeName = path.join(".");
+                        switch (typeName) {
+                            case "Array":
+                                switch (methodName) {
+                                    case "pop" | "shift": return typeParams.length > 0 ? typeParams[0] : null;
+                                    case "filter" | "map" | "copy": return objType;
+                                    case "join": return TPath(["String"], []);
+                                    case "length": return TPath(["Int"], []);
+                                    default: return null;
+                                }
+                            case "Map" | "haxe.ds.Map":
+                                switch (methodName) {
+                                    case "get": return typeParams.length > 1 ? typeParams[1] : null;
+                                    case "keys": return TPath(["Iterator"], typeParams.length > 0 ? [typeParams[0]] : []);
+                                    default: return null;
+                                }
+                            default:
+                                if (classes.exists(typeName)) {
+                                    var cls = classes.get(typeName);
+                                    if (cls.methods.exists(methodName)) {
+                                        var bindings = buildGenericBindings(cls.params, typeParams);
+                                        var retType = cls.methods.get(methodName).retType;
+                                        if (retType != null) return applyBindings(retType, bindings);
+                                    }
+                                }
+                                return null;
+                        }
+                    default:
+                        return null;
+                }
+            default:
+                return null;
+        }
+    }
+
+    function inferFieldType(objType:TypeDecl, field:String, env:LocalEnv):TypeDecl {
+        if (objType == null) return null;
+        switch (objType) {
+            case TAnonymous(fields):
+                for (f in fields) {
+                    if (f.name == field) return f.type;
+                }
+                return null;
+            case TPath(path, typeParams):
+                var typeName = path.join(".");
+                // Resolve typedef
+                if (typedefs.exists(typeName)) {
+                    var tdef = typedefs.get(typeName);
+                    var resolved = resolveTypedef(tdef, typeParams);
+                    return inferFieldType(resolved, field, env);
+                }
+                // Resolve class field
+                if (classes.exists(typeName)) {
+                    var cls = classes.get(typeName);
+                    if (cls.fields.exists(field)) {
+                        var bindings = buildGenericBindings(cls.params, typeParams);
+                        return applyBindings(cls.fields.get(field), bindings);
+                    }
+                }
+                return null;
+            default:
+                return null;
+        }
+    }
+
+    function inferIteratorElemType(it:Expr, env:LocalEnv):TypeDecl {
+        var t = inferType(it, env);
+        if (t == null) return null;
+        switch (t) {
+            case TPath(path, params):
+                switch (path.join(".")) {
+                    case "Array" | "List" | "haxe.ds.List": 
+                        return params.length > 0 ? params[0] : null;
+                    case "Iterator" | "Iterable":
+                        return params.length > 0 ? params[0] : null;
+                    default: return null;
+                }
+            default: return null;
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Type compatibility
+    // -------------------------------------------------------------------------
+
+    function checkCompatibility(src:TypeDecl, dst:TypeDecl, env:LocalEnv, pos:Pos, context:String):Void {
+        if (src == null || dst == null) return;
+        if (!isCompatible(src, dst, env)) {
+            var ctx = context != null ? ' in ${context}' : '';
+            throw new CompileException(
+                'Type mismatch${ctx}: expected ${typeStr(dst)} but got ${typeStr(src)}',
+                pos != null ? pos.line : 1,
+                pos != null ? pos.col : 1,
+                pos != null ? pos.file : "script"
+            );
+        }
+    }
+
+    function isCompatible(src:TypeDecl, dst:TypeDecl, env:LocalEnv):Bool {
+        if (src == null || dst == null) return true;
+
+        switch [src, dst] {
+            case [_, TPath(["Dynamic"], _)] | [TPath(["Dynamic"], _), _]:
+                return true;
+
+            case [_, TPath([dstName], [])]
+                if (!["Bool","Int","Float","String","Void","Dynamic","Array","Map","List",
+                       "Null","Iterator","Iterable"].contains(dstName)
+                    && !classes.exists(dstName) && !enums.exists(dstName)
+                    && !typedefs.exists(dstName)):
+                // Unbound generic type variable (T, E, V, K, etc.) — accept any value
+                return true;
+
+
+            case [TPath(srcPath, srcParams), TPath(dstPath, dstParams)]:
+                var sn = srcPath.join(".");
+                var dn = dstPath.join(".");
+                // Allow numeric widening Int → Float
+                if (dn == "Float" && sn == "Int") return true;
+                if (dn == "Dynamic") return true;
+                if (sn != dn) return false;
+                // Check type params
+                for (i in 0...dstParams.length) {
+                    if (i >= srcParams.length) return true; // lenient on unparameterized
+                    if (!isCompatible(srcParams[i], dstParams[i], env)) return false;
+                }
+                return true;
+
+            case [TAnonymous(srcFields), TPath(dstPath, dstParams)]:
+                // Check if src anon struct satisfies a typedef or declared type
+                var typeName = dstPath.join(".");
+                if (typedefs.exists(typeName)) {
+                    var tdef = typedefs.get(typeName);
+                    var resolved = resolveTypedef(tdef, dstParams);
+                    return isCompatible(src, resolved, env);
+                }
+                return false;
+
+            case [TPath(srcPath, srcParams), TAnonymous(dstFields)]:
+                return false;
+
+            case [TAnonymous(srcFields), TAnonymous(dstFields)]:
+                // Structural check: src must have all fields required by dst
+                var srcMap = new Map<String, TypeDecl>();
+                for (f in srcFields) srcMap.set(f.name, f.type);
+                for (f in dstFields) {
+                    if (!srcMap.exists(f.name)) {
+                        if (f.opt == true) continue;
+                        return false;
+                    }
+                    if (!isCompatible(srcMap.get(f.name), f.type, env)) return false;
+                }
+                return true;
+
+            default:
+                return true;
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Enum constructor call detection
+    // This checks: var x:MyEnum<T> = MyEnum.Fail("hello");
+    // which parses as EVar with initExpr = ECall(EField(EIdent("MyEnum"), "Fail"), [...])
+    // We handle this in the EVar case when the declared type has an enum behind it.
+    // -------------------------------------------------------------------------
+
+    function checkEnumCtorCall(enumName:String, ctorName:String, typeParams:Array<TypeDecl>, args:Array<Expr>, env:LocalEnv, pos:Pos):Void {
+        if (!enums.exists(enumName)) return;
+        var ei = enums.get(enumName);
+        if (!ei.constructors.exists(ctorName)) return;
+        var ctorArgs = ei.constructors.get(ctorName);
+        var bindings = buildGenericBindings(ei.params, typeParams);
+        for (i in 0...ctorArgs.length) {
+            if (i >= args.length) break;
+            var expectedType = ctorArgs[i].type;
+            if (expectedType == null) continue;
+            expectedType = applyBindings(expectedType, bindings);
+            var argType = inferType(args[i], env);
+            checkCompatibility(argType, expectedType, env, args[i].pos, '${enumName}.${ctorName} argument ${i + 1}');
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Helpers
+    // -------------------------------------------------------------------------
+
+    function resolveTypedef(tdef:TypedefInfo, typeParams:Array<TypeDecl>):TypeDecl {
+        var bindings = buildGenericBindings(tdef.params, typeParams);
+        return applyBindings(tdef.type, bindings);
+    }
+
+    function buildGenericBindings(paramNames:Array<String>, typeArgs:Array<TypeDecl>):Map<String, TypeDecl> {
+        var m = new Map<String, TypeDecl>();
+        if (paramNames == null || typeArgs == null) return m;
+        for (i in 0...paramNames.length) {
+            if (i < typeArgs.length) m.set(paramNames[i], typeArgs[i]);
+        }
+        return m;
+    }
+
+    function applyBindings(type:TypeDecl, bindings:Map<String, TypeDecl>):TypeDecl {
+        if (type == null || bindings == null) return type;
+        switch (type) {
+            case TPath(path, params):
+                if (path.length == 1 && bindings.exists(path[0])) {
+                    return bindings.get(path[0]);
+                }
+                var resolvedParams = [for (p in params) applyBindings(p, bindings)];
+                return TPath(path, resolvedParams);
+            case TFun(args, ret):
+                return TFun([for (a in args) applyBindings(a, bindings)], applyBindings(ret, bindings));
+            case TAnonymous(fields):
+                return TAnonymous([for (f in fields) { name: f.name, type: applyBindings(f.type, bindings), opt: f.opt }]);
+        }
+    }
+
+    function unwrapNull(type:TypeDecl):TypeDecl {
+        if (type == null) return null;
+        switch (type) {
+            case TPath(path, params):
+                if (path.join(".") == "Null" && params.length > 0) return params[0];
+            default:
+        }
+        return type;
+    }
+
+    function typeStr(t:TypeDecl):String {
+        if (t == null) return "Dynamic";
+        switch (t) {
+            case TPath(path, params):
+                var base = path.join(".");
+                if (params.length > 0) return base + "<" + params.map(typeStr).join(", ") + ">";
+                return base;
+            case TFun(args, ret):
+                return "(" + args.map(typeStr).join(", ") + ") -> " + typeStr(ret);
+            case TAnonymous(fields):
+                return "{" + fields.map(f -> f.name + ":" + typeStr(f.type)).join(", ") + "}";
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Local type environment (variable -> declared TypeDecl)
+// -----------------------------------------------------------------------------
+
+class LocalEnv {
+    public var parent:LocalEnv;
+    var vars:Map<String, TypeDecl> = new Map();
+
+    public function new(?parent:LocalEnv) {
+        this.parent = parent;
+    }
+
+    public function set(name:String, type:TypeDecl):Void {
+        vars.set(name, type);
+    }
+
+    public function get(name:String):TypeDecl {
+        if (vars.exists(name)) return vars.get(name);
+        if (parent != null) return parent.get(name);
+        return null;
+    }
+
+    public function exists(name:String):Bool {
+        if (vars.exists(name)) return true;
+        if (parent != null) return parent.exists(name);
+        return false;
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Lightweight compile-time class/enum/typedef metadata
+// -----------------------------------------------------------------------------
+
+class ClassInfo {
+    public var name:String;
+    public var params:Array<String>;
+    public var ctorArgs:Array<FunctionArg>;
+    public var methods:Map<String, {name:String, args:Array<FunctionArg>, retType:Null<TypeDecl>, body:Expr, isStatic:Bool, isPublic:Bool}> = new Map();
+    public var fields:Map<String, TypeDecl> = new Map();
+
+    public function new(name:String, params:Array<String>) {
+        this.name = name;
+        this.params = params;
+    }
+}
+
+class EnumInfo {
+    public var name:String;
+    public var params:Array<String>;
+    public var constructors:Map<String, Array<FunctionArg>> = new Map();
+
+    public function new(name:String, params:Array<String>) {
+        this.name = name;
+        this.params = params;
+    }
+}
+
+class TypedefInfo {
+    public var name:String;
+    public var type:TypeDecl;
+    public var params:Array<String>;
+
+    public function new(name:String, type:TypeDecl, params:Array<String>) {
+        this.name = name;
+        this.type = type;
+        this.params = params;
+    }
+}

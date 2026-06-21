@@ -1,0 +1,21 @@
+{
+  "name": "haxiom",
+  "url": "https://github.com/Igazine/haxiom",
+  "license": "MIT",
+  "tags": [
+    "scripting",
+    "bytecode",
+    "vm",
+    "interpreter",
+    "haxe"
+  ],
+  "description": "Haxiom scripting engine: bytecode VM and AST interpretation for Haxe.",
+  "version": "0.0.1",
+  "classPath": "src",
+  "main": "haxiom.LibRun",
+  "releasenote": "Standalone Haxiom release.",
+  "contributors": [
+    "Igazine"
+  ],
+  "dependencies": {}
+}

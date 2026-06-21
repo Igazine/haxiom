@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<project>
+	<meta title="TestOpenFL" package="net.digigun.haxiom.TestOpenFL" version="1.0.0" company="Digigun.net"/>
+	<app main="TestOpenFL" file="TestOpenFL"/>
+
+	<window allow-high-dpi="true"/>
+	<window fps="60"/>
+	<window fps="0" if="html5"/>
+	<window width="1100" height="550" unless="html5" />
+    <window background="#222222" />
+	
+	<source path="."/>
+
+    <assets path="scripts" include="*" />
+	
+	<haxelib name="openfl"/>
+	<haxelib name="actuate"/>
+	<haxelib name="feathersui"/>
+    <haxelib name="haxiom"/>
+    <haxeflag name="-dce" value="no" />
+    <haxeflag name="--macro" value="keep('openfl.events.EventDispatcher', null, true)" />
+    <haxeflag name="--macro" value="keep('openfl.display.DisplayObjectContainer', null, true)" />
+    <haxeflag name="--macro" value="keep('feathers.controls.Button', null, true)" />
+    <haxeflag name="--macro" value="keep('feathers.controls.LayoutGroup', null, true)" />
+
+</project>

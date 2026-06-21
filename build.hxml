@@ -1,0 +1,5 @@
+# Placeholder hxml file for language server
+--library haxiom
+--class-path test
+--main haxiom.TestHaxiom
+--interp

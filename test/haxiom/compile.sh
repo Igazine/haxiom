@@ -1,0 +1,1 @@
+haxe -cp test -L haxiom -main haxiom.CompileExample --interp
