@@ -14,7 +14,6 @@ class FFIMacro {
      */
     public static function initialize():Void {
         #if macro
-        Compiler.addGlobalMetadata("", "@:build(haxiom.macro.FFIMacro.build())");
         
         var coreClasses = [
             "Date", "DateTools", "StringBuf", "Xml", "haxe.Timer", "haxe.Json",
@@ -92,6 +91,22 @@ class FFIMacro {
                             isExposed = true;
                             if (exposedClasses.indexOf(fqName) == -1) {
                                 exposedClasses.push(fqName);
+                            }
+                            if (!cls.meta.has(":keep")) {
+                                cls.meta.add(":keep", [], cls.pos);
+                            }
+                            if (cls.constructor != null) {
+                                cls.constructor.get().meta.add(":keep", [], cls.pos);
+                            }
+                            for (field in cls.fields.get()) {
+                                if (!field.meta.has(":keep")) {
+                                    field.meta.add(":keep", [], field.pos);
+                                }
+                            }
+                            for (field in cls.statics.get()) {
+                                if (!field.meta.has(":keep")) {
+                                    field.meta.add(":keep", [], field.pos);
+                                }
                             }
                             if (cls.params.length > 0) {
                                 var found = false;
