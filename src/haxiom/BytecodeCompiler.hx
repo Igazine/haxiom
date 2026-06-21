@@ -35,11 +35,15 @@ class BytecodeCompiler {
     var capturedVars:Map<String, Bool> = new Map();
     var debugSymbols:Array<DebugSymbol> = [];
     var activeLocals:Array<{name:String, slot:Int, startIp:Int}> = [];
+    public var functionName:Null<String> = null;
+    var args:Null<Array<FunctionArg>> = null;
 
-    public function new(?args:Array<FunctionArg>, ?isTopLevel:Bool = true, ?isAsync:Bool = false, ?debugMode:Bool = false) {
+    public function new(?args:Array<FunctionArg>, ?isTopLevel:Bool = true, ?isAsync:Bool = false, ?debugMode:Bool = false, ?functionName:String) {
+        this.args = args;
         this.isTopLevel = isTopLevel;
         this.isAsync = isAsync;
         this.debugMode = debugMode;
+        this.functionName = functionName;
         if (args != null && !isTopLevel) {
             for (arg in args) {
                 declareLocal(arg.name, arg.type);
@@ -47,8 +51,8 @@ class BytecodeCompiler {
         }
     }
 
-    public static function compile(expr:Expr, ?args:Array<FunctionArg>, ?isTopLevel:Bool = true, ?isAsync:Bool = false, ?debugMode:Bool = false):BytecodeChunk {
-        var compiler = new BytecodeCompiler(args, isTopLevel, isAsync, debugMode);
+    public static function compile(expr:Expr, ?args:Array<FunctionArg>, ?isTopLevel:Bool = true, ?isAsync:Bool = false, ?debugMode:Bool = false, ?functionName:String):BytecodeChunk {
+        var compiler = new BytecodeCompiler(args, isTopLevel, isAsync, debugMode, functionName);
         if (!isTopLevel) {
             compiler.findCapturedVars(expr, new Map<String, Bool>(), compiler.capturedVars);
         }
@@ -562,7 +566,7 @@ class BytecodeCompiler {
                 }
 
             case EFunction(name, args, retType, body):
-                var bodyChunk = BytecodeCompiler.compile(body, args, false, false, debugMode);
+                var bodyChunk = BytecodeCompiler.compile(body, args, false, false, debugMode, name);
                 // Clean the body Chunk's positions so it knows its location
                 var proto = {
                     name: name,
@@ -735,13 +739,81 @@ class BytecodeCompiler {
                 emitInt(-888, e.pos); // placeholder for loop start / check
 
             case EReturn(exprVal):
-                if (exprVal != null) {
-                    compileExpr(exprVal);
-                } else {
-                    emit(OP_LOAD_CONST, e.pos);
-                    emitInt(addConst(null), e.pos);
+                var isTailCall = false;
+                var callArgs:Array<Expr> = null;
+                if (exprVal != null && this.functionName != null) {
+                    switch (exprVal.def) {
+                        case ECall(callExpr, args):
+                            switch (callExpr.def) {
+                                case EIdent(name):
+                                    if (name == this.functionName) {
+                                        isTailCall = true;
+                                        callArgs = args;
+                                    }
+                                case EField(obj, field):
+                                    if (field == this.functionName) {
+                                        switch (obj.def) {
+                                            case EIdent("this"):
+                                                isTailCall = true;
+                                                callArgs = args;
+                                            default:
+                                        }
+                                    }
+                                default:
+                            }
+                        default:
+                    }
                 }
-                emit(OP_RETURN, e.pos);
+
+                if (isTailCall) {
+                    var numArgs = this.args != null ? this.args.length : 0;
+                    // Evaluate each call argument and push onto the stack using compileExpr
+                    for (arg in callArgs) {
+                        compileExpr(arg);
+                    }
+
+                    // Pop values in reverse order and store in parameter registers
+                    var m = callArgs.length;
+                    var i = m - 1;
+                    while (i >= 0) {
+                        if (i < numArgs) {
+                            emit(OP_SET_LOCAL, e.pos);
+                            emitInt(i, e.pos);
+                            emit(OP_POP, e.pos);
+                        } else {
+                            // Extra argument passed to recursive call - discard it
+                            emit(OP_POP, e.pos);
+                        }
+                        i--;
+                    }
+
+                    // If the recursive call passed fewer arguments than the function expects,
+                    // we must set the remaining parameter slots to null to prevent retaining old values.
+                    for (j in callArgs.length...numArgs) {
+                        emit(OP_LOAD_CONST, e.pos);
+                        emitInt(addConst(null), e.pos);
+                        emit(OP_SET_LOCAL, e.pos);
+                        emitInt(j, e.pos);
+                        emit(OP_POP, e.pos);
+                    }
+
+                    // Clean up lexical scopes by emitting OP_POP_SCOPE exactly currentScopeDepth times
+                    for (k in 0...currentScopeDepth) {
+                        emit(OP_POP_SCOPE, e.pos);
+                    }
+
+                    // Emit OP_JUMP to absolute position 0
+                    emit(OP_JUMP, e.pos);
+                    emitInt(0, e.pos);
+                } else {
+                    if (exprVal != null) {
+                        compileExpr(exprVal);
+                    } else {
+                        emit(OP_LOAD_CONST, e.pos);
+                        emitInt(addConst(null), e.pos);
+                    }
+                    emit(OP_RETURN, e.pos);
+                }
 
             case EThrow(exprVal):
                 compileExpr(exprVal);
@@ -894,7 +966,7 @@ class BytecodeCompiler {
                             }
                         }
                         var mDyn:Dynamic = m;
-                        mDyn.bytecodeChunk = BytecodeCompiler.compile(m.body, m.args, false, isMethodAsync, debugMode);
+                        mDyn.bytecodeChunk = BytecodeCompiler.compile(m.body, m.args, false, isMethodAsync, debugMode, m.name);
                         if (!debugMode) {
                             m.body = null;
                         }
@@ -924,7 +996,7 @@ class BytecodeCompiler {
                             }
                         }
                         var mDyn:Dynamic = m;
-                        mDyn.bytecodeChunk = BytecodeCompiler.compile(m.body, m.args, false, isMethodAsync, debugMode);
+                        mDyn.bytecodeChunk = BytecodeCompiler.compile(m.body, m.args, false, isMethodAsync, debugMode, m.name);
                         if (!debugMode) {
                             m.body = null;
                         }
@@ -961,7 +1033,7 @@ class BytecodeCompiler {
                 if (isTargetAsync) {
                     switch (exprVal.def) {
                         case EFunction(name, args, retType, body):
-                            var bodyChunk = BytecodeCompiler.compile(body, args, false, true);
+                            var bodyChunk = BytecodeCompiler.compile(body, args, false, true, debugMode, name);
                             var proto = {
                                 name: name,
                                 args: args,

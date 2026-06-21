@@ -91,11 +91,28 @@ typedef DebugSymbol = {
 
 @:keep
 class InlineCacheEntry {
-    public var lastObject:Dynamic = null;
     public var lastClass:Dynamic = null;
+    public var lastObject:Dynamic = null;
     public var cachedValue:Dynamic = null;
-    public var cachedMethodDef:Dynamic = null;
+    public var isNormalField:Bool = false;
     public var isMethod:Bool = false;
+    public var isProperty:Bool = false;
+    public var isNativeProperty:Bool = false;
+    public var fieldName:String = null;
+    
+    // For methods:
+    public var cachedMethodDef:Dynamic = null;
+    
+    // For getters / setters:
+    public var getterMethod:Dynamic = null;
+    public var setterMethod:Dynamic = null;
+
+    // Megamorphic fallback:
+    public var isMegamorphic:Bool = false;
+
+    // Linked list next pointer:
+    public var next:InlineCacheEntry = null;
+
     public function new() {}
 }
 
@@ -616,41 +633,111 @@ class VM {
                             var cache = frame.chunk.inlineCaches.get(cacheKey);
                             var resolved:Dynamic = null;
                             var cacheHit = false;
-                            
-                            if (cache != null && cache.isMethod) {
-                                if (obj == cache.lastObject) {
-                                    resolved = cache.cachedValue;
-                                    cacheHit = true;
-                                } else if (Std.isOfType(obj, HaxiomInstance)) {
-                                    var instObj:HaxiomInstance = cast obj;
-                                    if (instObj.cls == cache.lastClass) {
-                                        resolved = interp.bindMethod(instObj, cache.cachedMethodDef);
-                                        cache.lastObject = instObj;
-                                        cache.cachedValue = resolved;
-                                        cacheHit = true;
-                                    }
+
+                            var classKey:Dynamic = null;
+                            if (Std.isOfType(obj, HaxiomInstance)) {
+                                classKey = (cast obj : HaxiomInstance).cls;
+                            } else {
+                                classKey = Type.getClass(obj);
+                                if (classKey == null && Type.typeof(obj) == TObject) {
+                                    classKey = "__anonymous__";
                                 }
                             }
-                            
+
+                            if (cache != null && !cache.isMegamorphic && classKey != null) {
+                                var curr = cache;
+                                while (curr != null) {
+                                    if (curr.lastClass == classKey) {
+                                        if (curr.isNormalField) {
+                                            if (Std.isOfType(obj, HaxiomInstance)) {
+                                                resolved = (cast obj : HaxiomInstance).fields.get(fieldName);
+                                            } else {
+                                                resolved = Reflect.field(obj, fieldName);
+                                            }
+                                            cacheHit = true;
+                                        } else if (curr.isMethod) {
+                                            if (Std.isOfType(obj, HaxiomInstance)) {
+                                                resolved = interp.bindMethod(cast obj, curr.cachedMethodDef);
+                                            } else {
+                                                resolved = Reflect.field(obj, fieldName);
+                                            }
+                                            cacheHit = true;
+                                        } else if (curr.isProperty) {
+                                            if (curr.isNativeProperty) {
+                                                resolved = Reflect.getProperty(obj, fieldName);
+                                            } else {
+                                                if (curr.getterMethod != null) {
+                                                    resolved = Reflect.callMethod(null, interp.bindMethod(obj, curr.getterMethod), []);
+                                                } else {
+                                                    resolved = null;
+                                                }
+                                            }
+                                            cacheHit = true;
+                                        }
+                                        break;
+                                    }
+                                    curr = curr.next;
+                                }
+                            }
+
                             if (cacheHit) {
                                 stack.push(resolved);
                             } else {
                                 var val = interp.evalField(obj, fieldName, frame.scope, currentPos());
                                 stack.push(val);
-                                
-                                if (val != null && Reflect.isFunction(val)) {
-                                    var newCache = new InlineCacheEntry();
-                                    newCache.lastObject = obj;
-                                    newCache.cachedValue = val;
-                                    newCache.isMethod = true;
+
+                                if (classKey != null) {
+                                    var newEntry = new InlineCacheEntry();
+                                    newEntry.lastClass = classKey;
+                                    newEntry.fieldName = fieldName;
+
                                     if (Std.isOfType(obj, HaxiomInstance)) {
                                         var instObj:HaxiomInstance = cast obj;
-                                        newCache.lastClass = instObj.cls;
-                                        newCache.cachedMethodDef = interp.findMethod(instObj.cls, fieldName);
+                                        var fDef = interp.findFieldDef(instObj.cls, fieldName);
+                                        if (fDef != null) {
+                                            if (fDef.property != null) {
+                                                newEntry.isProperty = true;
+                                                var getAccessor = fDef.property.get;
+                                                if (getAccessor == "get") {
+                                                    newEntry.getterMethod = interp.findMethod(instObj.cls, "get_" + fieldName);
+                                                }
+                                            } else if (fDef.isMethod) {
+                                                newEntry.isMethod = true;
+                                                newEntry.cachedMethodDef = interp.findMethod(instObj.cls, fieldName);
+                                            } else {
+                                                newEntry.isNormalField = true;
+                                            }
+                                        } else {
+                                            newEntry.isNormalField = true;
+                                        }
                                     } else {
-                                        newCache.lastClass = Type.getClass(obj);
+                                        if (Reflect.isFunction(val)) {
+                                            newEntry.isMethod = true;
+                                        } else {
+                                            if (Reflect.hasField(obj, fieldName)) {
+                                                newEntry.isNormalField = true;
+                                            } else {
+                                                newEntry.isProperty = true;
+                                                newEntry.isNativeProperty = true;
+                                            }
+                                        }
                                     }
-                                    frame.chunk.inlineCaches.set(cacheKey, newCache);
+
+                                    if (cache == null) {
+                                        frame.chunk.inlineCaches.set(cacheKey, newEntry);
+                                    } else if (!cache.isMegamorphic) {
+                                        var size = 1;
+                                        var curr = cache;
+                                        while (curr.next != null) {
+                                            size++;
+                                            curr = curr.next;
+                                        }
+                                        if (size < 4) {
+                                            curr.next = newEntry;
+                                        } else {
+                                            cache.isMegamorphic = true;
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -666,7 +753,101 @@ class VM {
                             superInst.inst.fields.set(fieldName, val);
                             stack.push(val);
                         } else {
-                            stack.push(interp.assignField(obj, fieldName, val, frame.scope));
+                            var cacheKey = frame.ip - 2;
+                            var cache = frame.chunk.inlineCaches.get(cacheKey);
+                            var cacheHit = false;
+
+                            var classKey:Dynamic = null;
+                            if (Std.isOfType(obj, HaxiomInstance)) {
+                                classKey = (cast obj : HaxiomInstance).cls;
+                            } else {
+                                classKey = Type.getClass(obj);
+                                if (classKey == null && Type.typeof(obj) == TObject) {
+                                    classKey = "__anonymous__";
+                                }
+                            }
+
+                            if (cache != null && !cache.isMegamorphic && classKey != null) {
+                                var curr = cache;
+                                while (curr != null) {
+                                    if (curr.lastClass == classKey) {
+                                        if (curr.isNormalField) {
+                                            if (Std.isOfType(obj, HaxiomInstance)) {
+                                                if (!(cast obj : HaxiomInstance).fields.exists(fieldName)) interp.trackMemory(1);
+                                                (cast obj : HaxiomInstance).fields.set(fieldName, val);
+                                            } else {
+                                                Reflect.setField(obj, fieldName, val);
+                                            }
+                                            cacheHit = true;
+                                        } else if (curr.isProperty) {
+                                            if (curr.isNativeProperty) {
+                                                Reflect.setProperty(obj, fieldName, val);
+                                            } else {
+                                                if (curr.setterMethod != null) {
+                                                    Reflect.callMethod(null, interp.bindMethod(obj, curr.setterMethod), [val]);
+                                                }
+                                            }
+                                            cacheHit = true;
+                                        }
+                                        break;
+                                    }
+                                    curr = curr.next;
+                                }
+                            }
+
+                            if (cacheHit) {
+                                stack.push(val);
+                            } else {
+                                var result = interp.assignField(obj, fieldName, val, frame.scope);
+                                stack.push(result);
+
+                                if (classKey != null) {
+                                    var newEntry = new InlineCacheEntry();
+                                    newEntry.lastClass = classKey;
+                                    newEntry.fieldName = fieldName;
+
+                                    if (Std.isOfType(obj, HaxiomInstance)) {
+                                        var instObj:HaxiomInstance = cast obj;
+                                        var fDef = interp.findFieldDef(instObj.cls, fieldName);
+                                        if (fDef != null) {
+                                            if (fDef.property != null) {
+                                                newEntry.isProperty = true;
+                                                var setAccessor = fDef.property.set;
+                                                if (setAccessor == "set") {
+                                                    newEntry.setterMethod = interp.findMethod(instObj.cls, "set_" + fieldName);
+                                                }
+                                            } else {
+                                                newEntry.isNormalField = true;
+                                            }
+                                        } else {
+                                            newEntry.isNormalField = true;
+                                        }
+                                    } else {
+                                        if (Reflect.hasField(obj, fieldName)) {
+                                            newEntry.isNormalField = true;
+                                        } else {
+                                            newEntry.isProperty = true;
+                                            newEntry.isNativeProperty = true;
+                                        }
+                                    }
+
+                                    if (cache == null) {
+                                        frame.chunk.inlineCaches.set(cacheKey, newEntry);
+                                    } else if (!cache.isMegamorphic) {
+                                        var size = 1;
+                                        var curr = cache;
+                                        while (curr.next != null) {
+                                            size++;
+                                            curr = curr.next;
+                                        }
+                                        if (size < 4) {
+                                            curr.next = newEntry;
+                                        } else {
+                                            cache.isMegamorphic = true;
+                                        }
+                                    }
+                                }
+                            }
                         }
 
                     case OP_SAFE_GET_FIELD:
@@ -736,6 +917,9 @@ class VM {
                         for (i in 0...size) {
                             arr.unshift(stack.pop());
                         }
+                        var cp = currentPos();
+                        var vmCallStack = [for (f in callFrames) { method: f.methodName != null ? f.methodName : "anonymous", pos: cp }];
+                        interp.trackNewAllocation(arr, cp, vmCallStack);
                         stack.push(arr);
 
                     case OP_NEW_OBJECT:
@@ -751,6 +935,9 @@ class VM {
                         for (f in fields) {
                             obj.set(f.name, f.val);
                         }
+                        var cp = currentPos();
+                        var vmCallStack = [for (f in callFrames) { method: f.methodName != null ? f.methodName : "anonymous", pos: cp }];
+                        interp.trackNewAllocation(obj, cp, vmCallStack);
                         stack.push(obj);
 
                     case OP_THROW:
@@ -1261,6 +1448,9 @@ class VM {
                                 map.set(kv.key, kv.value);
                             }
                         }
+                        var cp = currentPos();
+                        var vmCallStack = [for (f in callFrames) { method: f.methodName != null ? f.methodName : "anonymous", pos: cp }];
+                        interp.trackNewAllocation(map, cp, vmCallStack);
                         stack.push(map);
 
                     case OP_RANGE:
@@ -1467,7 +1657,7 @@ class HaxiomSuperInstance {
                     if (interp.useVM) {
                         var cDyn:Dynamic = constr;
                         if (cDyn.bytecodeChunk == null) {
-                            cDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(constr.body, constr.args, false);
+                            cDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(constr.body, constr.args, false, false, interp.debugMode, "new");
                         }
                         VM.runChunk(interp, cDyn.bytecodeChunk, cScope, inst, parentCls.name + ".new", args);
                     } else {

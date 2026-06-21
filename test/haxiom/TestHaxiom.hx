@@ -8,7 +8,24 @@ class TestHaxiom {
 		trace("------------------------------------");
 
 		var haxiom = new haxiom.Haxiom();
+		runPart1(haxiom);
+		runPart2(haxiom);
+		runPart3(haxiom);
+		runPart4(haxiom);
 
+		// Run Async/Await VM Verification Suite
+		TestAsyncVM.runTests(() -> {
+			TestCompilationFeatures.runTests();
+			TestHXBCSecurityDebug.runTests();
+			TestStaticTypeChecker.runTests();
+			TestDCE.runTests();
+			TestInlineCache.main();
+			TestSafeguardsTCO.runTests();
+			trace("ALL TESTS COMPLETED SUCCESSFULLY!");
+		});
+	}
+
+	static function runPart1(haxiom:haxiom.Haxiom) {
 		// 1. Basic variables, discarded types, ternary, arithmetic, and unops
 		var script1 = '
             var a:Int = 10;
@@ -374,7 +391,9 @@ class TestHaxiom {
 		} catch (e:Dynamic) {
 			trace("SUCCESS: Caught expected static final field reassignment error: " + e);
 		}
+	}
 
+	static function runPart2(haxiom:haxiom.Haxiom) {
 		// 20. Unified Base Interfaces
 
 		// 21. Interfaces & Implements Contract Conformance
@@ -799,19 +818,8 @@ class TestHaxiom {
 		haxiom.interpret(script34);
 
 		// 35. Haxe API Parity & Stability Polishing
-		var interpInstance = haxiom;
 		var expectError = function(script:String, expectedSnippet:String, label:String) {
-			try {
-				interpInstance.interpret(script);
-				throw 'FAIL: ${label} did not throw an exception';
-			} catch (e:Dynamic) {
-				var errStr = Std.string(e);
-				if (errStr.indexOf(expectedSnippet) == -1) {
-					throw 'FAIL: ${label} expected exception containing "${expectedSnippet}" but got: ${errStr}';
-				}
-				var firstLine = errStr.split("\n")[0];
-				trace('SUCCESS: Caught expected validation error for ${label}: ${firstLine}');
-			}
+			TestHaxiom.expectError(haxiom, script, expectedSnippet, label);
 		};
 
 		// Assert Math validation (direct and closure)
@@ -919,7 +927,12 @@ class TestHaxiom {
             trace("Macro auto-exposed class call: " + exposed.multiply(10));
         ';
 		haxiom.interpret(script40);
+	}
 
+	static function runPart3(haxiom:haxiom.Haxiom) {
+		var expectError = function(script:String, expectedSnippet:String, label:String) {
+			TestHaxiom.expectError(haxiom, script, expectedSnippet, label);
+		};
 		// 41. Abstracts Redirection and Execution
 		var color = new WrappedInt(10); // force compiler to keep abstract and its methods
 		var script41 = '
@@ -1860,7 +1873,9 @@ class TestHaxiom {
 		}
 		if (!invalidReturnTypeThrown)
 			throw "FAIL: Mismatched function return type did not throw";
+	}
 
+	static function runPart4(haxiom:haxiom.Haxiom) {
 		// 61. AST Caching Verification
 		var testCacheHaxiom = new haxiom.Haxiom();
 		testCacheHaxiom.enableAstCache = true;
@@ -2789,15 +2804,20 @@ class TestHaxiom {
 			throw "Expected verification error for out-of-bounds jump, but none occurred";
 
 		trace("SUCCESS: Bytecode Verification & Safety Checks verified.");
+	}
 
-		// Run Async/Await VM Verification Suite
-		TestAsyncVM.runTests(() -> {
-			TestCompilationFeatures.runTests();
-			TestHXBCSecurityDebug.runTests();
-			TestStaticTypeChecker.runTests();
-			TestDCE.runTests();
-			trace("ALL TESTS COMPLETED SUCCESSFULLY!");
-		});
+	static function expectError(haxiom:haxiom.Haxiom, script:String, expectedSnippet:String, label:String) {
+		try {
+			haxiom.interpret(script);
+			throw 'FAIL: ${label} did not throw an exception';
+		} catch (e:Dynamic) {
+			var errStr = Std.string(e);
+			if (errStr.indexOf(expectedSnippet) == -1) {
+				throw 'FAIL: ${label} expected exception containing "${expectedSnippet}" but got: ${errStr}';
+			}
+			var firstLine = errStr.split("\n")[0];
+			trace('SUCCESS: Caught expected validation error for ${label}: ${firstLine}');
+		}
 	}
 }
 

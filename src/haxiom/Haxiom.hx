@@ -92,6 +92,14 @@ class Haxiom {
     inline function set_maxInstructions(v) return interp.maxInstructions = v;
 
     /**
+     * The maximum memory allocation units allowed per execution.
+     * Set to `0` to disable the safeguard / allow unlimited memory.
+     */
+    public var maxMemory(get, set):Int;
+    inline function get_maxMemory() return interp.maxMemory;
+    inline function set_maxMemory(v) return interp.maxMemory = v;
+
+    /**
      * Override parameter to force main execution routing to a specific class name.
      */
     public var mainClassOverride:String = null;

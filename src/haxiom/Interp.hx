@@ -595,9 +595,275 @@ class Interp {
     public var debugMode:Bool = true;
     public var maxInstructions:Int = 0;
     public var instructionsCount:Int = 0;
+    public var maxMemory:Int = 0;
+    public var memoryUsage:Int = 0;
+
+    public function trackMemory(amount:Int, ?pos:Pos, ?callStackForEx:Array<{method:String, pos:Pos}>):Void {
+        if (maxMemory <= 0) return;
+        memoryUsage += amount;
+        if (memoryUsage > maxMemory) {
+            var actualPos = pos != null ? pos : (lastEvalPos != null ? lastEvalPos : { line: 1, col: 1, file: "script" });
+            var fileInfo = actualPos.file != null ? actualPos.file : "script";
+            var lineVal = actualPos.line;
+            var colVal = actualPos.col;
+            var locationStr = 'Runtime Error: Memory limit exceeded ($maxMemory units) at ' + fileInfo + ':' + lineVal + ':' + colVal;
+            var stack = callStackForEx != null ? callStackForEx : callStack.copy();
+            throw new haxiom.ScriptException("Memory limit exceeded", stack, locationStr, lineVal, colVal, fileInfo);
+        }
+    }
+
+    public function trackNewAllocation(val:Dynamic, ?pos:Pos, ?callStackForEx:Array<{method:String, pos:Pos}>):Void {
+        if (maxMemory <= 0 || val == null) return;
+        if (Std.isOfType(val, Array)) {
+            var arr:Array<Dynamic> = cast val;
+            trackMemory(arr.length > 0 ? arr.length : 1, pos, callStackForEx);
+        } else if (Std.isOfType(val, haxe.Constraints.IMap)) {
+            var map:haxe.Constraints.IMap<Dynamic, Dynamic> = cast val;
+            var count = 0;
+            for (k in map.keys()) count++;
+            trackMemory(count > 0 ? count : 1, pos, callStackForEx);
+        } else if (Std.isOfType(val, HaxiomInstance)) {
+            var inst:HaxiomInstance = cast val;
+            var numFields = 0;
+            for (k in inst.fields.keys()) numFields++;
+            trackMemory(numFields > 0 ? numFields : 1, pos, callStackForEx);
+        } else if (Type.typeof(val) == TObject) {
+            var numFields = Reflect.fields(val).length;
+            trackMemory(numFields > 0 ? numFields : 1, pos, callStackForEx);
+        } else {
+            var cls = Type.getClass(val);
+            if (cls != null) {
+                var clsName = safeGetClassName(cls);
+                if (clsName == "haxe.ds.List" || clsName == "List") {
+                    var list:List<Dynamic> = cast val;
+                    trackMemory(list.length > 0 ? list.length : 1, pos, callStackForEx);
+                } else if (clsName == "haxe.ds.Vector" || clsName == "eval.Vector") {
+                    var vec:haxe.ds.Vector<Dynamic> = cast val;
+                    trackMemory(vec.length > 0 ? vec.length : 1, pos, callStackForEx);
+                }
+            }
+        }
+    }
+
+    public function evalNew(typeDecl:TypeDecl, argsExprs:Array<Expr>, scope:Scope, pos:Pos):Dynamic {
+        var args:Array<Dynamic> = [for (a in argsExprs) eval(a, scope)];
+        switch (typeDecl) {
+            case TPath(path, params):
+                var fqName = path.join(".");
+                var callee:Dynamic = resolveTypePath(path, scope);
+                
+                // 1. Check Generic Mapping Lookup
+                if (params.length > 0) {
+                    var paramNames = [];
+                    for (p in params) {
+                        switch (p) {
+                            case TPath(pPath, _):
+                                var resolvedParam = resolveTypePath(pPath, scope);
+                                if (resolvedParam != null) {
+                                    if (Std.isOfType(resolvedParam, Class)) {
+                                        var className = safeGetClassName(resolvedParam);
+                                        if (className != null) {
+                                            paramNames.push(className);
+                                        } else {
+                                            paramNames.push(pPath.join("."));
+                                        }
+                                    } else if (Std.isOfType(resolvedParam, HaxiomClass)) {
+                                        paramNames.push((cast resolvedParam : HaxiomClass).name);
+                                    } else {
+                                        paramNames.push(pPath.join("."));
+                                    }
+                                } else {
+                                    paramNames.push(pPath.join("."));
+                                }
+                            default:
+                                paramNames.push("Dynamic");
+                        }
+                    }
+                    var genericSig = fqName + "<" + paramNames.join(",") + ">";
+                    var mappedGenClass = haxiom.FFI.exposedGenerics.get(genericSig);
+                    if (mappedGenClass != null) {
+                        var cls = resolveNativeClass(mappedGenClass);
+                        if (cls != null) callee = cls;
+                    }
+                }
+                
+                // 2. Check Multi-type Map Factory
+                if (fqName == "Map" || fqName == "haxe.ds.Map") {
+                    if (params.length > 0) {
+                        switch (params[0]) {
+                            case TPath(pPath, _):
+                                var keyName = pPath[pPath.length - 1];
+                                if (keyName == "String") {
+                                    return new haxe.ds.StringMap<Dynamic>();
+                                } else if (keyName == "Int") {
+                                    return new haxe.ds.IntMap<Dynamic>();
+                                } else if (keyName == "Dynamic") {
+                                    return new haxiom.DynamicMap();
+                                } else {
+                                    return new haxe.ds.ObjectMap<Dynamic, Dynamic>();
+                                }
+                            default:
+                        }
+                    }
+                    return new haxiom.DynamicMap();
+                }
+                
+                if (fqName == "Vector" || fqName == "haxe.ds.Vector") {
+                    return new haxe.ds.Vector(args[0]);
+                }
+                
+                // 3. Check Exposed Abstracts constructor redirection
+                var absInfo = haxiom.FFI.exposedAbstracts.get(fqName);
+                if (absInfo != null) {
+                    var implCls = resolveAbstractImpl(fqName, absInfo.implClass);
+                    if (implCls != null) {
+                        var newMethod = Reflect.field(implCls, "_new");
+                        if (newMethod != null) {
+                            return Reflect.callMethod(null, newMethod, args);
+                        }
+                    }
+                }
+                
+                // 4. Instantiate Class (Haxiom or Native)
+                if (callee == null) {
+                    throw 'Class not found: $fqName';
+                }
+                
+                if (Std.isOfType(callee, HaxiomClass)) {
+                    var cls:HaxiomClass = cast callee;
+                    var inst = new HaxiomInstance(cls);
+                    populateGenericBindings(inst, cls, params, null, null, scope);
+                    
+                    var curr = cls;
+                    while (curr != null) {
+                        for (f in curr.fields) {
+                            if (!f.isStatic) {
+                                inst.fields.set(f.name, f.expr != null ? eval(f.expr, scope) : null);
+                            }
+                        }
+                        curr = curr.parent;
+                    }
+                    
+                    var constr = findMethod(cls, "new");
+                    if (constr != null) {
+                        checkMemberAccess(cls, constr.isPublic);
+                        var cScope = Scope.create(scope);
+                        cScope.declare("this", inst);
+                        for (i in 0...constr.args.length) {
+                            var arg = constr.args[i];
+                            var val = i < args.length ? args[i] : null;
+                            checkType(val, arg.type, cScope);
+                            cScope.declare(arg.name, val, arg.type);
+                        }
+                        var oldThis = currentThis;
+                        currentThis = inst;
+                        var oldConstrInst = currentConstructorInstance;
+                        currentConstructorInstance = inst;
+                        pushFrame(cls.name + ".new", constr.body != null ? constr.body.pos : { line: 1, col: 1 });
+                        try {
+                            if (useVM || (constr.body == null && (constr : Dynamic).bytecodeChunk != null)) {
+                                var cDyn:Dynamic = constr;
+                                if (cDyn.bytecodeChunk == null && constr.body != null) {
+                                    cDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(constr.body, constr.args, false, false, debugMode, "new");
+                                }
+                                haxiom.VM.runChunk(this, cDyn.bytecodeChunk, cScope, inst, cls.name + ".new", args);
+                            } else {
+                                eval(constr.body, cScope);
+                            }
+                            popFrame();
+                            Scope.recycle(cScope);
+                        } catch (e:ControlFlow) {
+                            popFrame();
+                            Scope.recycle(cScope);
+                            switch (e) {
+                                case Return(_):
+                                default: throw e;
+                            }
+                        } catch (err:Dynamic) {
+                            popFrame();
+                            Scope.recycle(cScope);
+                            throw err;
+                        }
+                        currentConstructorInstance = oldConstrInst;
+                        currentThis = oldThis;
+                    }
+                    return inst;
+                }
+                
+                if (Std.isOfType(callee, HaxiomAbstract)) {
+                    var abs:HaxiomAbstract = cast callee;
+                    var inst = new HaxiomAbstractInstance(abs, null);
+                    var constr = abs.methods.get("new");
+                    if (constr != null) {
+                        var cScope = Scope.create(scope);
+                        cScope.declare("this", inst);
+                        for (i in 0...constr.args.length) {
+                            var arg = constr.args[i];
+                            var val = i < args.length ? args[i] : null;
+                            checkType(val, arg.type, cScope);
+                            cScope.declare(arg.name, val, arg.type);
+                        }
+                        var oldThis = currentThis;
+                        currentThis = inst;
+                        var oldAbstract = inAbstractMethod;
+                        inAbstractMethod = true;
+                        pushFrame(abs.name + ".new", constr.body != null ? constr.body.pos : { line: 1, col: 1 });
+                        try {
+                            if (useVM || (constr.body == null && (constr : Dynamic).bytecodeChunk != null)) {
+                                var cDyn:Dynamic = constr;
+                                if (cDyn.bytecodeChunk == null && constr.body != null) {
+                                    cDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(constr.body, constr.args, false, false, debugMode, "new");
+                                }
+                                haxiom.VM.runChunk(this, cDyn.bytecodeChunk, cScope, inst, abs.name + ".new", args);
+                            } else {
+                                eval(constr.body, cScope);
+                            }
+                            popFrame();
+                            Scope.recycle(cScope);
+                        } catch (e:ControlFlow) {
+                            popFrame();
+                            Scope.recycle(cScope);
+                            switch (e) {
+                                case Return(_):
+                                default: throw e;
+                            }
+                        } catch (err:Dynamic) {
+                            popFrame();
+                            Scope.recycle(cScope);
+                            throw err;
+                        }
+                        inAbstractMethod = oldAbstract;
+                        currentThis = oldThis;
+                    }
+                    return inst;
+                }
+                
+                var calleeClassName = safeGetClassName(callee);
+                if (calleeClassName != null) {
+                    switch (calleeClassName) {
+                        case "haxe.ds.StringMap":
+                            return new haxe.ds.StringMap<Dynamic>();
+                        case "haxe.ds.IntMap":
+                            return new haxe.ds.IntMap<Dynamic>();
+                        case "haxe.ds.ObjectMap":
+                            return new haxe.ds.ObjectMap<Dynamic, Dynamic>();
+                        default:
+                            #if haxiom_debug
+                            trace('Type.createInstance: ' + calleeClassName + ' with args: ' + args);
+                            #end
+                            return Type.createInstance(cast callee, args);
+                    }
+                }
+                
+                throw 'Cannot instantiate type: $fqName';
+            default:
+                throw "Constructor call expects a type path";
+        }
+    }
 
     public function execute(expr:Expr):Dynamic {
         instructionsCount = 0;
+        memoryUsage = 0;
         currentPackage = [];
         callStack = [];
         activeUsings = [];
@@ -659,6 +925,7 @@ class Interp {
 
     public function executeChunk(chunk:haxiom.VM.BytecodeChunk):Dynamic {
         instructionsCount = 0;
+        memoryUsage = 0;
         currentPackage = [];
         callStack = [];
         activeUsings = [];
@@ -871,16 +1138,22 @@ class Interp {
                 case "concat":
                     return (other:Dynamic) -> {
                         if (!Std.isOfType(other, Array)) throw "Array.concat expected an Array for argument but got " + getTypeName(other);
-                        return arr.concat(other);
+                        var newArr = arr.concat(other);
+                        trackNewAllocation(newArr);
+                        return newArr;
                     };
                 case "push":
-                    return (x:Dynamic) -> arr.push(x);
+                    return (x:Dynamic) -> {
+                        trackMemory(1);
+                        return arr.push(x);
+                    };
                 case "pop":
                     return () -> arr.pop();
                 case "shift":
                     return () -> arr.shift();
                 case "unshift":
                     return (x:Dynamic) -> {
+                        trackMemory(1);
                         arr.unshift(x);
                         return null;
                     };
@@ -899,6 +1172,7 @@ class Interp {
                 case "insert":
                     return (idx:Dynamic, x:Dynamic) -> {
                         checkInt(idx, "Array.insert", "index");
+                        trackMemory(1);
                         arr.insert(idx, x);
                         return null;
                     };
@@ -916,7 +1190,11 @@ class Interp {
                 case "resize":
                     return (len:Dynamic) -> {
                         checkInt(len, "Array.resize", "length");
-                        arr.resize(len);
+                        var newLen:Int = len;
+                        if (newLen > arr.length) {
+                            trackMemory(newLen - arr.length);
+                        }
+                        arr.resize(newLen);
                         return null;
                     };
                 case "contains":
@@ -930,19 +1208,29 @@ class Interp {
                     return (start:Dynamic, ?end:Dynamic) -> {
                         checkInt(start, "Array.slice", "start index");
                         if (end != null) checkInt(end, "Array.slice", "end index");
-                        return arr.slice(start, end);
+                        var res = arr.slice(start, end);
+                        trackNewAllocation(res);
+                        return res;
                     };
                 case "copy":
-                    return () -> arr.copy();
+                    return () -> {
+                        var res = arr.copy();
+                        trackNewAllocation(res);
+                        return res;
+                    };
                 case "filter":
                     return (f:Dynamic) -> {
                         checkFunction(f, "Array.filter", "callback");
-                        return arr.filter((x) -> Reflect.callMethod(null, f, [x]));
+                        var res = arr.filter((x) -> Reflect.callMethod(null, f, [x]));
+                        trackNewAllocation(res);
+                        return res;
                     };
                 case "map":
                     return (f:Dynamic) -> {
                         checkFunction(f, "Array.map", "callback");
-                        return arr.map((x) -> Reflect.callMethod(null, f, [x]));
+                        var res = arr.map((x) -> Reflect.callMethod(null, f, [x]));
+                        trackNewAllocation(res);
+                        return res;
                     };
                 case "toString":
                     return () -> arr.toString();
@@ -958,11 +1246,13 @@ class Interp {
             switch (field) {
                 case "add":
                     return (item:Dynamic) -> {
+                        trackMemory(1);
                         list.add(item);
                         return null;
                     };
                 case "push":
                     return (item:Dynamic) -> {
+                        trackMemory(1);
                         list.push(item);
                         return null;
                     };
@@ -993,12 +1283,16 @@ class Interp {
                 case "filter":
                     return (f:Dynamic) -> {
                         checkFunction(f, "List.filter", "callback");
-                        return list.filter((x) -> Reflect.callMethod(null, f, [x]));
+                        var res = list.filter((x) -> Reflect.callMethod(null, f, [x]));
+                        trackNewAllocation(res);
+                        return res;
                     };
                 case "map":
                     return (f:Dynamic) -> {
                         checkFunction(f, "List.map", "callback");
-                        return list.map((x) -> Reflect.callMethod(null, f, [x]));
+                        var res = list.map((x) -> Reflect.callMethod(null, f, [x]));
+                        trackNewAllocation(res);
+                        return res;
                     };
                 default:
             }
@@ -1235,6 +1529,9 @@ class Interp {
                     return (key:Dynamic) -> map.get(key);
                 case "set":
                     return (key:Dynamic, val:Dynamic) -> {
+                        if (!map.exists(key)) {
+                            trackMemory(1);
+                        }
                         map.set(key, val);
                         return null;
                     };
@@ -1470,6 +1767,9 @@ class Interp {
                     checkType(val, fDef.type, scope, inst.genericBindings);
                 }
             }
+            if (!inst.fields.exists(field)) {
+                trackMemory(1);
+            }
             inst.fields.set(field, val);
         } else {
             if (Std.isOfType(obj, HaxiomClass)) {
@@ -1525,6 +1825,9 @@ class Interp {
                         }
                     }
                     if (!assigned) {
+                        if (Type.typeof(obj) == TObject && !Reflect.hasField(obj, field)) {
+                            trackMemory(1);
+                        }
                         Reflect.setProperty(obj, field, val);
                     }
                 }
@@ -1873,7 +2176,7 @@ class Interp {
                                         if (useVM || (constr.body == null && (constr : Dynamic).bytecodeChunk != null)) {
                                             var cDyn:Dynamic = constr;
                                             if (cDyn.bytecodeChunk == null && constr.body != null) {
-                                                cDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(constr.body, constr.args, false, false, debugMode);
+                                                cDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(constr.body, constr.args, false, false, debugMode, "new");
                                             }
                                             haxiom.VM.runChunk(this, cDyn.bytecodeChunk, cScope, currentThis, parentCls.name + ".new", args);
                                         } else {
@@ -2470,8 +2773,8 @@ class Interp {
                             if (useVM || (constr.body == null && (constr : Dynamic).bytecodeChunk != null)) {
                                 var cDyn:Dynamic = constr;
                                 if (cDyn.bytecodeChunk == null && constr.body != null) {
-                                    cDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(constr.body, constr.args, false, false, debugMode);
-                                }
+                                     cDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(constr.body, constr.args, false, false, debugMode, "new");
+                                 }
                                 haxiom.VM.runChunk(this, cDyn.bytecodeChunk, cScope, inst, cls.name + ".new", args);
                             } else {
                                 eval(constr.body, cScope);
@@ -2517,233 +2820,28 @@ class Interp {
                 throw "Callee is not a callable function or constructor";
 
             case ENew(typeDecl, argsExprs):
-                var args:Array<Dynamic> = [for (a in argsExprs) eval(a, scope)];
-                switch (typeDecl) {
-                    case TPath(path, params):
-                        var fqName = path.join(".");
-                        var callee:Dynamic = resolveTypePath(path, scope);
-                        
-                        // 1. Check Generic Mapping Lookup
-                        if (params.length > 0) {
-                            var paramNames = [];
-                            for (p in params) {
-                                switch (p) {
-                                    case TPath(pPath, _):
-                                        var resolvedParam = resolveTypePath(pPath, scope);
-                                        if (resolvedParam != null) {
-                                            if (Std.isOfType(resolvedParam, Class)) {
-                                                var className = safeGetClassName(resolvedParam);
-                                                if (className != null) {
-                                                    paramNames.push(className);
-                                                } else {
-                                                    paramNames.push(pPath.join("."));
-                                                }
-                                            } else if (Std.isOfType(resolvedParam, HaxiomClass)) {
-                                                paramNames.push((cast resolvedParam : HaxiomClass).name);
-                                            } else {
-                                                paramNames.push(pPath.join("."));
-                                            }
-                                        } else {
-                                            paramNames.push(pPath.join("."));
-                                        }
-                                    default:
-                                        paramNames.push("Dynamic");
-                                }
-                            }
-                            var genericSig = fqName + "<" + paramNames.join(",") + ">";
-                            var mappedGenClass = haxiom.FFI.exposedGenerics.get(genericSig);
-                            if (mappedGenClass != null) {
-                                var cls = resolveNativeClass(mappedGenClass);
-                                if (cls != null) callee = cls;
-                            }
-                        }
-                        
-                        // 2. Check Multi-type Map Factory
-                        if (fqName == "Map" || fqName == "haxe.ds.Map") {
-                            if (params.length > 0) {
-                                switch (params[0]) {
-                                    case TPath(pPath, _):
-                                        var keyName = pPath[pPath.length - 1];
-                                        if (keyName == "String") {
-                                            return new haxe.ds.StringMap<Dynamic>();
-                                        } else if (keyName == "Int") {
-                                            return new haxe.ds.IntMap<Dynamic>();
-                                        } else if (keyName == "Dynamic") {
-                                            return new haxiom.DynamicMap();
-                                        } else {
-                                            return new haxe.ds.ObjectMap<Dynamic, Dynamic>();
-                                        }
-                                    default:
-                                }
-                            }
-                            return new haxiom.DynamicMap();
-                        }
-                        
-                        if (fqName == "Vector" || fqName == "haxe.ds.Vector") {
-                            return new haxe.ds.Vector(args[0]);
-                        }
-                        
-                        // 3. Check Exposed Abstracts constructor redirection
-                        var absInfo = haxiom.FFI.exposedAbstracts.get(fqName);
-                        if (absInfo != null) {
-                            var implCls = resolveAbstractImpl(fqName, absInfo.implClass);
-                            if (implCls != null) {
-                                var newMethod = Reflect.field(implCls, "_new");
-                                if (newMethod != null) {
-                                    return Reflect.callMethod(null, newMethod, args);
-                                }
-                            }
-                        }
-                        
-                        // 4. Instantiate Class (Haxiom or Native)
-                        if (callee == null) {
-                            throw 'Class not found: $fqName';
-                        }
-                        
-                        if (Std.isOfType(callee, HaxiomClass)) {
-                            var cls:HaxiomClass = cast callee;
-                            var inst = new HaxiomInstance(cls);
-                            populateGenericBindings(inst, cls, params, null, null, scope);
-                            
-                            var curr = cls;
-                            while (curr != null) {
-                                for (f in curr.fields) {
-                                    if (!f.isStatic) {
-                                        inst.fields.set(f.name, f.expr != null ? eval(f.expr, scope) : null);
-                                    }
-                                }
-                                curr = curr.parent;
-                            }
-                            
-                            var constr = findMethod(cls, "new");
-                            if (constr != null) {
-                                checkMemberAccess(cls, constr.isPublic);
-                                var cScope = Scope.create(scope);
-                                cScope.declare("this", inst);
-                                for (i in 0...constr.args.length) {
-                                    var arg = constr.args[i];
-                                    var val = i < args.length ? args[i] : null;
-                                    checkType(val, arg.type, cScope);
-                                    cScope.declare(arg.name, val, arg.type);
-                                }
-                                var oldThis = currentThis;
-                                currentThis = inst;
-                                var oldConstrInst = currentConstructorInstance;
-                                currentConstructorInstance = inst;
-                                pushFrame(cls.name + ".new", constr.body != null ? constr.body.pos : { line: 1, col: 1 });
-                                try {
-                                    if (useVM || (constr.body == null && (constr : Dynamic).bytecodeChunk != null)) {
-                                        var cDyn:Dynamic = constr;
-                                        if (cDyn.bytecodeChunk == null && constr.body != null) {
-                                            cDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(constr.body, constr.args, false, false, debugMode);
-                                        }
-                                        haxiom.VM.runChunk(this, cDyn.bytecodeChunk, cScope, inst, cls.name + ".new", args);
-                                    } else {
-                                        eval(constr.body, cScope);
-                                    }
-                                    popFrame();
-                                    Scope.recycle(cScope);
-                                } catch (e:ControlFlow) {
-                                    popFrame();
-                                    Scope.recycle(cScope);
-                                    switch (e) {
-                                        case Return(_):
-                                        default: throw e;
-                                    }
-                                } catch (err:Dynamic) {
-                                    popFrame();
-                                    Scope.recycle(cScope);
-                                    throw err;
-                                }
-                                currentConstructorInstance = oldConstrInst;
-                                currentThis = oldThis;
-                            }
-                            return inst;
-                        }
-                        
-                        if (Std.isOfType(callee, HaxiomAbstract)) {
-                            var abs:HaxiomAbstract = cast callee;
-                            var inst = new HaxiomAbstractInstance(abs, null);
-                            var constr = abs.methods.get("new");
-                            if (constr != null) {
-                                var cScope = Scope.create(scope);
-                                cScope.declare("this", inst);
-                                for (i in 0...constr.args.length) {
-                                    var arg = constr.args[i];
-                                    var val = i < args.length ? args[i] : null;
-                                    checkType(val, arg.type, cScope);
-                                    cScope.declare(arg.name, val, arg.type);
-                                }
-                                var oldThis = currentThis;
-                                currentThis = inst;
-                                var oldAbstract = inAbstractMethod;
-                                inAbstractMethod = true;
-                                pushFrame(abs.name + ".new", constr.body != null ? constr.body.pos : { line: 1, col: 1 });
-                                try {
-                                    if (useVM || (constr.body == null && (constr : Dynamic).bytecodeChunk != null)) {
-                                        var cDyn:Dynamic = constr;
-                                        if (cDyn.bytecodeChunk == null && constr.body != null) {
-                                            cDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(constr.body, constr.args, false, false, debugMode);
-                                        }
-                                        haxiom.VM.runChunk(this, cDyn.bytecodeChunk, cScope, inst, abs.name + ".new", args);
-                                    } else {
-                                        eval(constr.body, cScope);
-                                    }
-                                    popFrame();
-                                    Scope.recycle(cScope);
-                                } catch (e:ControlFlow) {
-                                    popFrame();
-                                    Scope.recycle(cScope);
-                                    switch (e) {
-                                        case Return(_):
-                                        default: throw e;
-                                    }
-                                } catch (err:Dynamic) {
-                                    popFrame();
-                                    Scope.recycle(cScope);
-                                    throw err;
-                                }
-                                inAbstractMethod = oldAbstract;
-                                currentThis = oldThis;
-                            }
-                            return inst;
-                        }
-                        
-                        var calleeClassName = safeGetClassName(callee);
-                        if (calleeClassName != null) {
-                            switch (calleeClassName) {
-                                case "haxe.ds.StringMap":
-                                    return new haxe.ds.StringMap<Dynamic>();
-                                case "haxe.ds.IntMap":
-                                    return new haxe.ds.IntMap<Dynamic>();
-                                case "haxe.ds.ObjectMap":
-                                    return new haxe.ds.ObjectMap<Dynamic, Dynamic>();
-                                default:
-                                    #if haxiom_debug
-                                    trace('Type.createInstance: ' + calleeClassName + ' with args: ' + args);
-                                    #end
-                                    return Type.createInstance(cast callee, args);
-                            }
-                        }
-                        
-                        throw 'Cannot instantiate type: $fqName';
-                    default:
-                        throw "Constructor call expects a type path";
-                }
+                var inst = evalNew(typeDecl, argsExprs, scope, pos);
+                trackNewAllocation(inst, pos);
+                return inst;
 
             case EArrayDecl(values):
-                return [for (v in values) eval(v, scope)];
+                var arr = [for (v in values) eval(v, scope)];
+                trackNewAllocation(arr, pos);
+                return arr;
 
             case EObjectDecl(fields):
                 var obj = {};
                 for (f in fields) {
                     Reflect.setField(obj, f.name, eval(f.expr, scope));
                 }
+                trackNewAllocation(obj, pos);
                 return obj;
 
             case EMapDecl(values):
                 if (values.length == 0) {
-                    return new haxiom.DynamicMap();
+                    var m = new haxiom.DynamicMap();
+                    trackNewAllocation(m, pos);
+                    return m;
                 }
                 var evaluated = [];
                 var allString = true;
@@ -2766,6 +2864,7 @@ class Interp {
                 for (kv in evaluated) {
                     map.set(kv.key, kv.value);
                 }
+                trackNewAllocation(map, pos);
                 return map;
 
             case EClass(name, fields, methods, parentType, interfaceTypes, params, meta):
@@ -3998,7 +4097,7 @@ class Interp {
                     var mDyn:Dynamic = method;
                     if (useVM || (method.body == null && mDyn.bytecodeChunk != null)) {
                         if (mDyn.bytecodeChunk == null && method.body != null) {
-                            mDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(method.body, method.args, false, isMethodAsync, debugMode);
+                            mDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(method.body, method.args, false, isMethodAsync, debugMode, method.name);
                         }
                         res = haxiom.VM.runChunk(this, mDyn.bytecodeChunk, fScope, obj, className + "." + method.name, mappedArgs);
                     } else {
@@ -4114,7 +4213,7 @@ class Interp {
                 var mDyn:Dynamic = method;
                 if (useVM || (method.body == null && mDyn.bytecodeChunk != null)) {
                     if (mDyn.bytecodeChunk == null && method.body != null) {
-                        mDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(method.body, method.args, false, false, debugMode);
+                        mDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(method.body, method.args, false, false, debugMode, method.name);
                     }
                     res = haxiom.VM.runChunk(this, mDyn.bytecodeChunk, fScope, null, className + "." + method.name, fullArgs);
                 } else {
@@ -4485,7 +4584,14 @@ class Interp {
             var cls = Type.getClass(obj);
             var clsName = cls != null ? safeGetClassName(cls) : null;
             if (clsName == "haxe.ds.Vector" || clsName == "eval.Vector") {
-                return (cast obj : haxe.ds.Vector<Dynamic>).get(cast key);
+                var vec:haxe.ds.Vector<Dynamic> = cast obj;
+                return vec[cast key];
+            }
+            if (Type.typeof(obj) == TUnknown) {
+                try {
+                    var vec:haxe.ds.Vector<Dynamic> = cast obj;
+                    return vec[cast key];
+                } catch (e:Dynamic) {}
             }
         }
         throw "Target object does not support subscript access";
@@ -4493,19 +4599,40 @@ class Interp {
 
     function setSubscript(obj:Dynamic, key:Dynamic, val:Dynamic):Void {
         if (Std.isOfType(obj, Array)) {
-            (cast obj : Array<Dynamic>)[cast key] = val;
+            var arr:Array<Dynamic> = cast obj;
+            var idx:Int = cast key;
+            if (idx >= arr.length) {
+                trackMemory(idx - arr.length + 1);
+            }
+            arr[idx] = val;
         } else if (Std.isOfType(obj, haxe.Constraints.IMap)) {
-            (cast obj : haxe.Constraints.IMap<Dynamic, Dynamic>).set(key, val);
+            var map:haxe.Constraints.IMap<Dynamic, Dynamic> = cast obj;
+            if (!map.exists(key)) {
+                trackMemory(1);
+            }
+            map.set(key, val);
         } else if (Std.isOfType(obj, HaxiomInstance)) {
-            (cast obj : HaxiomInstance).fields.set(key, val);
+            var inst:HaxiomInstance = cast obj;
+            if (!inst.fields.exists(key)) {
+                trackMemory(1);
+            }
+            inst.fields.set(key, val);
         } else {
             var cls = Type.getClass(obj);
             var clsName = cls != null ? safeGetClassName(cls) : null;
             if (clsName == "haxe.ds.Vector" || clsName == "eval.Vector") {
-                (cast obj : haxe.ds.Vector<Dynamic>).set(cast key, val);
-            } else {
-                throw "Target object does not support subscript assignment";
+                var vec:haxe.ds.Vector<Dynamic> = cast obj;
+                vec[cast key] = val;
+                return;
             }
+            if (Type.typeof(obj) == TUnknown) {
+                try {
+                    var vec:haxe.ds.Vector<Dynamic> = cast obj;
+                    vec[cast key] = val;
+                    return;
+                } catch (e:Dynamic) {}
+            }
+            throw "Target object does not support subscript assignment";
         }
     }
 
@@ -4903,6 +5030,18 @@ class Interp {
                         throw "Security Error: Reflect.setField is not allowed for class " + name;
                     }
                 }
+                if (o != null) {
+                    if (Std.isOfType(o, HaxiomInstance)) {
+                        var inst:HaxiomInstance = cast o;
+                        if (!inst.fields.exists(field)) {
+                            trackMemory(1);
+                        }
+                    } else if (Type.typeof(o) == TObject) {
+                        if (!Reflect.hasField(o, field)) {
+                            trackMemory(1);
+                        }
+                    }
+                }
                 Reflect.setField(o, field, value);
             },
             getProperty: function(o:Dynamic, field:String) {
@@ -4919,6 +5058,18 @@ class Interp {
                     var name = getClassNameOf(o);
                     if (name != null && !isImportWhitelisted(name)) {
                         throw "Security Error: Reflect.setProperty is not allowed for class " + name;
+                    }
+                }
+                if (o != null) {
+                    if (Std.isOfType(o, HaxiomInstance)) {
+                        var inst:HaxiomInstance = cast o;
+                        if (!inst.fields.exists(field)) {
+                            trackMemory(1);
+                        }
+                    } else if (Type.typeof(o) == TObject) {
+                        if (!Reflect.hasField(o, field)) {
+                            trackMemory(1);
+                        }
                     }
                 }
                 Reflect.setProperty(o, field, value);
