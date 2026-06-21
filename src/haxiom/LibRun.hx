@@ -26,11 +26,15 @@ class LibRun {
 		args = cleanArgs;
 
 		if (args.length < 1) {
-			Sys.println('Usage: haxelib run digigun.scripting.hx <command> <input> [--static]');
+			Sys.println('Usage: haxelib run haxiom <command> <input> [--static]');
 			Sys.exit(1);
 		}
 		var workingDir = args.pop();
 		var command = args.shift();
+		if (command == null) {
+			Sys.println('Usage: haxelib run haxiom <command> <input> [--static]');
+			Sys.exit(1);
+		}
 		switch command.toLowerCase() {
 			case 'bc':
 				try {
@@ -40,7 +44,7 @@ class LibRun {
 					Sys.exit(1);
 				}
 			default:
-				Sys.println('Unknown command\nUsage: haxelib run digigun.scripting.hx <command> <input> [--static]');
+				Sys.println('Unknown command\nUsage: haxelib run haxiom <command> <input> [--static]');
 				Sys.exit(1);
 		}
 	}
@@ -77,7 +81,7 @@ class LibRun {
 
 	public static function bytecodeCompile(workingDir:String, input:String, ?key:String, ?staticTypes:Bool = false) {
 		if (input == null) {
-			throw 'Usage: haxelib run digigun.scripting.hx bc <input> <key> [--static]';
+			throw 'Usage: haxelib run haxiom bc <input> <key> [--static]';
 		}
 
 		// Normalize workingDir to ensure trailing slash
