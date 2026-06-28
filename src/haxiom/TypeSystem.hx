@@ -69,7 +69,11 @@ class TypeSystem {
     }
 
     public static function checkType(interp:Interp, val:Dynamic, type:TypeDecl, scope:Scope, ?genericBindings:Map<String, TypeDecl>):Void {
-        if (type == null) return;
+        castOrCheckType(interp, val, type, scope, genericBindings);
+    }
+
+    public static function castOrCheckType(interp:Interp, val:Dynamic, type:TypeDecl, scope:Scope, ?genericBindings:Map<String, TypeDecl>):Dynamic {
+        if (type == null) return val;
         var resolvedType = interp.resolveGenericType(type, genericBindings, scope);
         resolvedType = interp.resolveType(resolvedType, scope);
         
@@ -77,55 +81,130 @@ class TypeSystem {
             case TPath(path, params):
                 var typeName = path.join(".");
                 switch (typeName) {
-                    case "Dynamic": return;
+                    case "Dynamic": return val;
                     case "Void":
                         if (val != null) throw "Type mismatch: expected Void";
+                        return val;
                     case "Int":
+                        if (Std.isOfType(val, HaxiomAbstractInstance)) {
+                            var inst:HaxiomAbstractInstance = cast val;
+                            if (canAbstractCastTo(inst.abstractType, "Int", interp, scope)) {
+                                var casted = callToMethod(inst, "Int", interp, scope);
+                                if (casted != null) return castOrCheckType(interp, casted, resolvedType, scope, genericBindings);
+                                return castOrCheckType(interp, inst.underlyingValue, resolvedType, scope, genericBindings);
+                            }
+                        }
                         if (!isInt(val)) {
                             var valClass = Type.getClass(val);
                             var valClassName = valClass != null ? Type.getClassName(valClass) : null;
                             throw 'Type mismatch: expected Int but got ${val == null ? "null" : valClassName != null ? valClassName : Std.string(val)}';
                         }
+                        return val;
                     case "Float":
+                        if (Std.isOfType(val, HaxiomAbstractInstance)) {
+                            var inst:HaxiomAbstractInstance = cast val;
+                            if (canAbstractCastTo(inst.abstractType, "Float", interp, scope)) {
+                                var casted = callToMethod(inst, "Float", interp, scope);
+                                if (casted != null) return castOrCheckType(interp, casted, resolvedType, scope, genericBindings);
+                                return castOrCheckType(interp, inst.underlyingValue, resolvedType, scope, genericBindings);
+                            }
+                        }
                         if (!isFloat(val)) throw 'Type mismatch: expected Float but got ${val == null ? "null" : Std.string(val)}';
+                        return val;
                     case "String":
+                        if (Std.isOfType(val, HaxiomAbstractInstance)) {
+                            var inst:HaxiomAbstractInstance = cast val;
+                            if (canAbstractCastTo(inst.abstractType, "String", interp, scope)) {
+                                var casted = callToMethod(inst, "String", interp, scope);
+                                if (casted != null) return castOrCheckType(interp, casted, resolvedType, scope, genericBindings);
+                                return castOrCheckType(interp, inst.underlyingValue, resolvedType, scope, genericBindings);
+                            }
+                        }
                         if (!isString(val)) throw 'Type mismatch: expected String but got ${val == null ? "null" : Std.string(val)}';
+                        return val;
                     case "Bool":
+                        if (Std.isOfType(val, HaxiomAbstractInstance)) {
+                            var inst:HaxiomAbstractInstance = cast val;
+                            if (canAbstractCastTo(inst.abstractType, "Bool", interp, scope)) {
+                                var casted = callToMethod(inst, "Bool", interp, scope);
+                                if (casted != null) return castOrCheckType(interp, casted, resolvedType, scope, genericBindings);
+                                return castOrCheckType(interp, inst.underlyingValue, resolvedType, scope, genericBindings);
+                            }
+                        }
                         if (!isBool(val)) throw 'Type mismatch: expected Bool but got ${val == null ? "null" : Std.string(val)}';
+                        return val;
                     case "Array":
-                        if (val == null) return;
+                        if (val == null) return null;
                         if (!Std.isOfType(val, Array)) throw 'Type mismatch: expected Array but got ${val == null ? "null" : Std.string(val)}';
                         if (params != null && params.length > 0) {
                             var arr:Array<Dynamic> = cast val;
-                            for (item in arr) {
-                                checkType(interp, item, params[0], scope, genericBindings);
+                            for (i in 0...arr.length) {
+                                arr[i] = castOrCheckType(interp, arr[i], params[0], scope, genericBindings);
                             }
                         }
+                        return val;
                     case "List" | "haxe.ds.List":
-                        if (val == null) return;
+                        if (val == null) return null;
                         if (!Std.isOfType(val, haxe.ds.List)) throw 'Type mismatch: expected List but got ${val == null ? "null" : Std.string(val)}';
                         if (params != null && params.length > 0) {
                             var list:haxe.ds.List<Dynamic> = cast val;
+                            var temp = [];
+                            var changed = false;
                             for (item in list) {
-                                checkType(interp, item, params[0], scope, genericBindings);
+                                var coerced = castOrCheckType(interp, item, params[0], scope, genericBindings);
+                                if (coerced != item) changed = true;
+                                temp.push(coerced);
+                            }
+                            if (changed) {
+                                list.clear();
+                                for (item in temp) list.add(item);
                             }
                         }
+                        return val;
                     case "Map" | "haxe.ds.Map":
-                        if (val == null) return;
+                        if (val == null) return null;
                         if (!Std.isOfType(val, haxe.Constraints.IMap)) throw 'Type mismatch: expected Map but got ${val == null ? "null" : Std.string(val)}';
                         if (params != null && params.length > 1) {
                             var map:haxe.Constraints.IMap<Dynamic, Dynamic> = cast val;
                             for (key in map.keys()) {
-                                checkType(interp, key, params[0], scope, genericBindings);
-                                checkType(interp, map.get(key), params[1], scope, genericBindings);
+                                var coercedKey = castOrCheckType(interp, key, params[0], scope, genericBindings);
+                                var coercedVal = castOrCheckType(interp, map.get(key), params[1], scope, genericBindings);
+                                if (coercedKey != key) {
+                                    map.remove(key);
+                                    map.set(coercedKey, coercedVal);
+                                } else {
+                                    map.set(key, coercedVal);
+                                }
                             }
                         }
+                        return val;
                     default:
-                        // 1. Check if typeName is a Haxiom-defined class
                         if (scope.exists(typeName)) {
                             var cls = scope.get(typeName);
+                            if (Std.isOfType(cls, HaxiomAbstract)) {
+                                var abs:HaxiomAbstract = cast cls;
+                                if (val == null) return null;
+                                
+                                if (Std.isOfType(val, HaxiomAbstractInstance)) {
+                                    var inst:HaxiomAbstractInstance = cast val;
+                                    if (inst.abstractType == abs) return val;
+                                }
+                                
+                                var fromMethod = findFromMethod(abs, val, interp, scope);
+                                if (fromMethod != null) {
+                                    var bound = interp.bindMethod(abs, fromMethod);
+                                    return Reflect.callMethod(null, bound, [val]);
+                                }
+                                
+                                if (canAbstractCastFrom(abs, val, interp, scope)) {
+                                    return new HaxiomAbstractInstance(abs, val);
+                                }
+                                
+                                throw 'Type mismatch: expected abstract $typeName but got ${val == null ? "null" : Std.string(val)}';
+                            }
+                            
                             if (Std.isOfType(cls, HaxiomClass)) {
-                                if (val == null) return;
+                                if (val == null) return null;
                                 if (!Std.isOfType(val, HaxiomInstance)) throw 'Type mismatch: expected $typeName but got ${val == null ? "null" : Std.string(val)}';
                                 var inst:HaxiomInstance = cast val;
                                 var curr = inst.cls;
@@ -147,10 +226,11 @@ class TypeSystem {
                                         }
                                     }
                                 }
-                                return;
+                                return val;
                             }
+                            
                             if (Std.isOfType(cls, HaxiomInterface)) {
-                                if (val == null) return;
+                                if (val == null) return null;
                                 if (!Std.isOfType(val, HaxiomInstance)) throw 'Type mismatch: expected $typeName but got ${val == null ? "null" : Std.string(val)}';
                                 var inst:HaxiomInstance = cast val;
                                 var itf:HaxiomInterface = cast cls;
@@ -183,38 +263,32 @@ class TypeSystem {
                                         }
                                     }
                                 }
-                                return;
+                                return val;
                             }
+                            
                             if (Std.isOfType(cls, HaxiomEnum)) {
-                                if (val == null) return;
+                                if (val == null) return null;
                                 if (!Std.isOfType(val, HaxiomEnumInstance)) throw 'Type mismatch: expected $typeName';
                                 var inst:HaxiomEnumInstance = cast val;
                                 var enumCls:HaxiomEnum = cast cls;
-                                if (inst.enumType == enumCls) return;
+                                if (inst.enumType == enumCls) return val;
                                 throw 'Type mismatch: expected enum $typeName but got ${inst.enumType.name}';
-                            }
-                            if (Std.isOfType(cls, HaxiomAbstract)) {
-                                if (val == null) return;
-                                if (!Std.isOfType(val, HaxiomAbstractInstance)) throw 'Type mismatch: expected $typeName but got ${val == null ? "null" : Std.string(val)}';
-                                var inst:HaxiomAbstractInstance = cast val;
-                                var abs:HaxiomAbstract = cast cls;
-                                if (inst.abstractType == abs) return;
-                                throw 'Type mismatch: expected abstract $typeName but got ${inst.abstractType.name}';
                             }
                         }
                         
-                        // 2. Check FFI registered abstract / native type checks
                         var resolvedTypePathVal = interp.resolveTypePath(path, scope);
                         var fqAbstractName:String = null;
-                        if (haxiom.FFI.exposedAbstracts.exists(typeName)) {
-                            fqAbstractName = typeName;
-                        } else if (resolvedTypePathVal != null) {
-                            var resolvedClassName = interp.safeGetClassName(resolvedTypePathVal);
-                            if (resolvedClassName != null) {
-                                for (k in haxiom.FFI.exposedAbstracts.keys()) {
-                                    if (haxiom.FFI.exposedAbstracts.get(k).implClass == resolvedClassName) {
-                                        fqAbstractName = k;
-                                        break;
+                        if (fqAbstractName == null) {
+                            if (haxiom.FFI.exposedAbstracts.exists(typeName)) {
+                                fqAbstractName = typeName;
+                            } else if (resolvedTypePathVal != null) {
+                                var resolvedClassName = interp.safeGetClassName(resolvedTypePathVal);
+                                if (resolvedClassName != null) {
+                                    for (k in haxiom.FFI.exposedAbstracts.keys()) {
+                                        if (haxiom.FFI.exposedAbstracts.get(k).implClass == resolvedClassName) {
+                                            fqAbstractName = k;
+                                            break;
+                                        }
                                     }
                                 }
                             }
@@ -223,8 +297,7 @@ class TypeSystem {
                         if (fqAbstractName != null) {
                             var absInfo = haxiom.FFI.exposedAbstracts.get(fqAbstractName);
                             var underlyingTypeDecl = TPath(absInfo.underlying.split("."), []);
-                            checkType(interp, val, underlyingTypeDecl, scope, genericBindings);
-                            return;
+                            return castOrCheckType(interp, val, underlyingTypeDecl, scope, genericBindings);
                         }
 
                         var nativeClass:Dynamic = null;
@@ -240,22 +313,18 @@ class TypeSystem {
                             nativeClass = interp.resolveNativeClass(typeName);
                         }
                         if (nativeClass != null) {
-                            #if haxiom_debug
-                            trace('checkType: typeName=' + typeName + ' nativeClass=' + nativeClass + ' val=' + Std.string(val) + ' isOfType=' + Std.isOfType(val, nativeClass));
-                            #end
-                            if (val == null) return;
-                            
+                            if (val == null) return null;
                             #if cpp
                             var valClass = Type.getClass(val);
                             if (valClass != null) {
                                 var valClassName = Type.getClassName(valClass);
                                 var targetClassName = Type.getClassName(nativeClass);
                                 if (valClassName == targetClassName || Std.isOfType(val, nativeClass)) {
-                                    return;
+                                    return val;
                                 }
                                 var currClass:Class<Dynamic> = valClass;
                                 while (currClass != null) {
-                                    if (Type.getClassName(currClass) == targetClassName) return;
+                                    if (Type.getClassName(currClass) == targetClassName) return val;
                                     currClass = Type.getSuperClass(currClass);
                                 }
                             }
@@ -266,13 +335,13 @@ class TypeSystem {
                                 var valClassName = valClass != null ? Type.getClassName(valClass) : null;
                                 throw 'Type mismatch: expected $typeName but got ${val == null ? "null" : valClassName != null ? valClassName : Std.string(val)}';
                             }
-                            return;
+                            return val;
                         }
                         
                         var valClass = Type.getClass(val);
                         if (valClass != null) {
                             var valClassName = Type.getClassName(valClass);
-                            if (valClassName == typeName) return;
+                            if (valClassName == typeName) return val;
                         }
 
                         throw 'Type mismatch: expected $typeName';
@@ -301,8 +370,9 @@ class TypeSystem {
                         default:
                     }
                 }
+                return val;
             case TAnonymous(fields):
-                if (val == null) return;
+                if (val == null) return null;
                 if (Reflect.isFunction(val) || Std.isOfType(val, Int) || Std.isOfType(val, Float) || Std.isOfType(val, Bool) || Std.isOfType(val, String)) {
                     throw 'Type mismatch: expected anonymous structure but got ' + interp.getTypeName(val);
                 }
@@ -313,11 +383,97 @@ class TypeSystem {
                         throw 'Type mismatch: object is missing field "${field.name}"';
                     }
                     try {
-                        checkType(interp, res.val, field.type, scope, genericBindings);
+                        var coercedVal = castOrCheckType(interp, res.val, field.type, scope, genericBindings);
+                        if (coercedVal != res.val) {
+                            Reflect.setField(val, field.name, coercedVal);
+                        }
                     } catch (e:Dynamic) {
                         throw 'Type mismatch in field "${field.name}": ' + Std.string(e);
                     }
                 }
+                return val;
         }
+    }
+
+    static function hasMeta(meta:Array<{name:String, params:Array<Dynamic>}>, name:String):Bool {
+        if (meta == null) return false;
+        for (m in meta) {
+            if (m.name == name || m.name == ":" + name) return true;
+        }
+        return false;
+    }
+
+    static function findFromMethod(abs:HaxiomAbstract, val:Dynamic, interp:Interp, scope:Scope):Null<Dynamic> {
+        for (m in abs.methods) {
+            if (m.isStatic && (hasMeta(m.meta, "from") || hasMeta(m.meta, ":from"))) {
+                if (m.args.length == 1) {
+                    try {
+                        checkType(interp, val, m.args[0].type, scope);
+                        return m;
+                    } catch (_:Dynamic) {}
+                }
+            }
+        }
+        return null;
+    }
+
+    static function findToMethod(abs:HaxiomAbstract, targetTypeName:String, interp:Interp, scope:Scope):Null<Dynamic> {
+        for (m in abs.methods) {
+            if (!m.isStatic && (hasMeta(m.meta, "to") || hasMeta(m.meta, ":to"))) {
+                if (m.retType != null) {
+                    var retTypeName = interp.typeToString(m.retType);
+                    if (retTypeName == targetTypeName) {
+                        return m;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    static function callToMethod(inst:HaxiomAbstractInstance, targetTypeName:String, interp:Interp, scope:Scope):Dynamic {
+        var toMethod = findToMethod(inst.abstractType, targetTypeName, interp, scope);
+        if (toMethod != null) {
+            var bound = interp.bindMethod(inst, toMethod);
+            return Reflect.callMethod(null, bound, []);
+        }
+        return null;
+    }
+
+    public static function canAbstractCastFrom(abs:HaxiomAbstract, val:Dynamic, interp:Interp, scope:Scope):Bool {
+        try {
+            checkType(interp, val, abs.underlyingType, scope);
+            return true;
+        } catch (_:Dynamic) {}
+
+        for (fTypeStr in abs.fromTypes) {
+            try {
+                var fType = parseTypeString(fTypeStr);
+                checkType(interp, val, fType, scope);
+                return true;
+            } catch (_:Dynamic) {}
+        }
+        return false;
+    }
+
+    public static function canAbstractCastTo(abs:HaxiomAbstract, targetTypeName:String, interp:Interp, scope:Scope):Bool {
+        var underlyingTypeName = interp.typeToString(abs.underlyingType);
+        if (underlyingTypeName == targetTypeName) return true;
+
+        var toMethod = findToMethod(abs, targetTypeName, interp, scope);
+        if (toMethod != null) return true;
+        
+        for (tTypeStr in abs.toTypes) {
+            if (tTypeStr == targetTypeName) return true;
+        }
+        
+        return false;
+    }
+
+    static function parseTypeString(str:String):TypeDecl {
+        var lexer = new haxiom.Lexer(str, "type_string");
+        var tokens = lexer.tokenize();
+        var parser = new haxiom.Parser(tokens, "type_string");
+        return parser.parseType();
     }
 }

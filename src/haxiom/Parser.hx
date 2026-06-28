@@ -390,6 +390,30 @@ class Parser {
         var underlyingType = parseType();
         expect(TParenClose);
         
+        var fromTypes:Array<TypeDecl> = [];
+        var toTypes:Array<TypeDecl> = [];
+        while (true) {
+            var pToken = peek();
+            switch (pToken.def) {
+                case TIdent("from"):
+                    next();
+                    fromTypes.push(parseType());
+                case TIdent("to"):
+                    next();
+                    toTypes.push(parseType());
+                default:
+                    break;
+            }
+        }
+
+        if (meta == null) meta = [];
+        for (fType in fromTypes) {
+            meta.push({ name: ":haxiom.fromType", params: [ { def: EValue(typeToString(fType)), pos: t.pos } ] });
+        }
+        for (tType in toTypes) {
+            meta.push({ name: ":haxiom.toType", params: [ { def: EValue(typeToString(tType)), pos: t.pos } ] });
+        }
+        
         expect(TBraceOpen);
         skipNewlines();
         
@@ -1039,7 +1063,7 @@ class Parser {
         return null;
     }
 
-    function parseType(allowArrow:Bool = true):TypeDecl {
+    public function parseType(allowArrow:Bool = true):TypeDecl {
         if (match(TBraceOpen)) {
             var fields = [];
             skipNewlines();
@@ -1358,6 +1382,24 @@ class Parser {
                     var pushField = mk(EField(mk(EIdent(compName), pos), "push"), pos);
                     return mk(ECall(pushField, [expr]), pos);
                 }
+        }
+    }
+
+    function typeToString(type:TypeDecl):String {
+        return switch (type) {
+            case TPath(path, params):
+                var base = path.join(".");
+                if (params != null && params.length > 0) {
+                    base + "<" + params.map(typeToString).join(", ") + ">";
+                } else {
+                    base;
+                }
+            case TFun(args, ret):
+                var argsStr = args.map(typeToString).join(", ");
+                "(" + argsStr + ") -> " + typeToString(ret);
+            case TAnonymous(fields):
+                var fieldsStr = fields.map(f -> (f.opt == true ? "?" : "") + f.name + ":" + typeToString(f.type)).join(", ");
+                "{" + fieldsStr + "}";
         }
     }
 }

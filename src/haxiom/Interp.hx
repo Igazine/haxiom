@@ -83,8 +83,8 @@ class Scope {
             throw 'Cannot reassign final variable $name';
         }
         if (types.exists(name)) {
-            interp.checkType(val, types.get(name), this);
-            variables.set(name, val);
+            var newVal = interp.castOrCheckType(val, types.get(name), this);
+            variables.set(name, newVal);
         } else if (variables.exists(name)) {
             variables.set(name, val);
         } else if (parent != null && parent.exists(name)) {
@@ -177,6 +177,8 @@ class HaxiomAbstract {
     public var methods:Map<String, {name:String, args:Array<FunctionArg>, retType:Null<TypeDecl>, body:Expr, isStatic:Bool, isPublic:Bool, ?bytecodeChunk:haxiom.VM.BytecodeChunk, ?meta:Array<{name:String, params:Array<Dynamic>}>}> = new Map();
     public var staticFields:Map<String, Dynamic> = new Map();
     public var meta:Array<{name:String, params:Array<Dynamic>}> = [];
+    public var fromTypes:Array<String> = [];
+    public var toTypes:Array<String> = [];
 
     public function new(name:String, underlyingType:TypeDecl) {
         this.name = name;
@@ -755,7 +757,7 @@ class Interp {
                         for (i in 0...constr.args.length) {
                             var arg = constr.args[i];
                             var val = i < args.length ? args[i] : null;
-                            checkType(val, arg.type, cScope);
+                            val = castOrCheckType(val, arg.type, cScope);
                             cScope.declare(arg.name, val, arg.type);
                         }
                         var oldThis = currentThis;
@@ -803,7 +805,7 @@ class Interp {
                         for (i in 0...constr.args.length) {
                             var arg = constr.args[i];
                             var val = i < args.length ? args[i] : null;
-                            checkType(val, arg.type, cScope);
+                            val = castOrCheckType(val, arg.type, cScope);
                             cScope.declare(arg.name, val, arg.type);
                         }
                         var oldThis = currentThis;
@@ -1630,6 +1632,27 @@ class Interp {
             throw 'Static method or field "$field" not found on class ${cls.name}';
         }
 
+        if (Std.isOfType(obj, HaxiomEnum)) {
+            var enm:HaxiomEnum = cast obj;
+            if (enm.constructors.exists(field)) {
+                var argsList = enm.constructors.get(field);
+                if (argsList == null || argsList.length == 0) {
+                    return new HaxiomEnumInstance(enm, field, []);
+                } else {
+                    var numArgs = argsList.length;
+                    return switch (numArgs) {
+                        case 0: () -> new HaxiomEnumInstance(enm, field, []);
+                        case 1: (a) -> new HaxiomEnumInstance(enm, field, [a]);
+                        case 2: (a, b) -> new HaxiomEnumInstance(enm, field, [a, b]);
+                        case 3: (a, b, c) -> new HaxiomEnumInstance(enm, field, [a, b, c]);
+                        case 4: (a, b, c, d) -> new HaxiomEnumInstance(enm, field, [a, b, c, d]);
+                        default: Reflect.makeVarArgs((callArgs:Array<Dynamic>) -> new HaxiomEnumInstance(enm, field, callArgs));
+                    };
+                }
+            }
+            throw 'Constructor "$field" not found on enum ${enm.name}';
+        }
+
         // Custom FFI member resolution overrides
         for (resolver in haxiom.FFI.memberResolvers) {
             var res = resolver(obj, field);
@@ -1767,7 +1790,7 @@ class Interp {
                     }
                 }
                 if (fDef.type != null) {
-                    checkType(val, fDef.type, scope, inst.genericBindings);
+                    val = castOrCheckType(val, fDef.type, scope, inst.genericBindings);
                 }
             }
             if (!inst.fields.exists(field)) {
@@ -1784,7 +1807,7 @@ class Interp {
                         throw 'Cannot reassign static final field $field';
                     }
                     if (fDef.type != null) {
-                        checkType(val, fDef.type, scope);
+                        val = castOrCheckType(val, fDef.type, scope);
                     }
                 }
                 cls.staticFields.set(field, val);
@@ -1908,10 +1931,12 @@ class Interp {
                 throw 'Identifier "$name" not found at ${pos.line}:${pos.col}';
 
             case EVar(name, type, expr, isFinal, meta):
-                var val = expr != null ? eval(expr, scope) : null;
-                checkType(val, type, scope);
-                scope.declare(name, val, type, isFinal);
-                return val;
+                 var val = expr != null ? eval(expr, scope) : null;
+                 if (type != null) {
+                     val = castOrCheckType(val, type, scope);
+                 }
+                 scope.declare(name, val, type, isFinal);
+                 return val;
 
             case EAssign(target, expr):
                 var val = eval(expr, scope);
@@ -1941,7 +1966,7 @@ class Interp {
                                     }
                                 }
                                 if (fDef != null && fDef.type != null) {
-                                    checkType(val, fDef.type, scope, inst.genericBindings);
+                                    val = castOrCheckType(val, fDef.type, scope, inst.genericBindings);
                                 }
                                 inst.fields.set(name, val);
                             } else if (Std.isOfType(currentThis, HaxiomClass)) {
@@ -1956,7 +1981,7 @@ class Interp {
                                         throw 'Cannot reassign static final field $name';
                                     }
                                     if (fDef.type != null) {
-                                        checkType(val, fDef.type, scope);
+                                        val = castOrCheckType(val, fDef.type, scope);
                                     }
                                     cls.staticFields.set(name, val);
                                 } else {
@@ -2168,7 +2193,7 @@ class Interp {
                                     for (i in 0...constr.args.length) {
                                         var arg = constr.args[i];
                                         var val = i < args.length ? args[i] : null;
-                                        checkType(val, arg.type, cScope);
+                                        val = castOrCheckType(val, arg.type, cScope);
                                         cScope.declare(arg.name, val, arg.type);
                                     }
                                     var oldThis = currentThis;
@@ -2764,7 +2789,7 @@ class Interp {
                         for (i in 0...constr.args.length) {
                             var arg = constr.args[i];
                             var val = i < args.length ? args[i] : null;
-                            checkType(val, arg.type, cScope);
+                            val = castOrCheckType(val, arg.type, cScope);
                             cScope.declare(arg.name, val, arg.type);
                         }
                         var oldThis = currentThis;
@@ -3107,6 +3132,15 @@ class Interp {
                 abs.name = fqName;
                 abs.params = params != null ? params : [];
                 abs.meta = evaluateMetadata(meta, scope);
+                if (abs.meta != null) {
+                    for (m in abs.meta) {
+                        if (m.name == ":haxiom.fromType" && m.params != null && m.params.length > 0) {
+                            abs.fromTypes.push(m.params[0]);
+                        } else if (m.name == ":haxiom.toType" && m.params != null && m.params.length > 0) {
+                            abs.toTypes.push(m.params[0]);
+                        }
+                    }
+                }
                 for (f in fields) {
                     abs.fields.set(f.name, {
                         name: f.name,
@@ -3400,7 +3434,12 @@ class Interp {
                                 var typeMatched = true;
                                 if (c.type != null) {
                                     try {
-                                        checkType(errVal, c.type, scope);
+                                        errVal = castOrCheckType(errVal, c.type, scope);
+                                        switch (c.pattern.def) {
+                                            case EIdent(name):
+                                                caseScope.set(name, errVal);
+                                            default:
+                                        }
                                     } catch (_:Dynamic) {
                                         typeMatched = false;
                                     }
@@ -3434,7 +3473,7 @@ class Interp {
                 var val = eval(expr, scope);
                 if (type != null) {
                     try {
-                        checkType(val, type, scope);
+                        val = castOrCheckType(val, type, scope);
                     } catch (err:Dynamic) {
                         throw 'Class cast error: expected ${typeToString(type)} but got ${val}';
                     }
@@ -3473,13 +3512,14 @@ class Interp {
                         if (arg.isRest) {
                             val = callArgs.slice(i);
                             if (arg.type != null) {
-                                for (v in (cast val : Array<Dynamic>)) {
-                                    checkType(v, arg.type, fScope);
+                                var arr:Array<Dynamic> = cast val;
+                                for (j in 0...arr.length) {
+                                    arr[j] = castOrCheckType(arr[j], arg.type, fScope);
                                 }
                             }
                         } else {
                             val = i < callArgs.length ? callArgs[i] : null;
-                            checkType(val, arg.type, fScope);
+                            val = castOrCheckType(val, arg.type, fScope);
                         }
                         fScope.declare(arg.name, val, arg.type);
                     }
@@ -3490,7 +3530,7 @@ class Interp {
                         if (retType != null && typeToString(retType) == "Void") {
                             res = null;
                         } else {
-                            checkType(res, retType, fScope);
+                            res = castOrCheckType(res, retType, fScope);
                         }
                         popFrame();
                         Scope.recycle(fScope);
@@ -3504,7 +3544,7 @@ class Interp {
                                     return null;
                                 }
                                 try {
-                                    checkType(val, retType, fScope);
+                                    val = castOrCheckType(val, retType, fScope);
                                 } catch (e:Dynamic) {
                                     Scope.recycle(fScope);
                                     throw e;
@@ -3870,6 +3910,22 @@ class Interp {
         throw 'Cannot access private member of class ${targetCls.name}';
     }
 
+    function extractPath(expr:Expr):Null<Array<String>> {
+        switch (expr.def) {
+            case EIdent(name):
+                return [name];
+            case EField(objExpr, field):
+                var sub = extractPath(objExpr);
+                if (sub != null) {
+                    sub.push(field);
+                    return sub;
+                }
+                return null;
+            default:
+                return null;
+        }
+    }
+
     function matchPattern(val:Dynamic, pattern:Expr, scope:Scope, outBindings:Scope):Bool {
         switch (pattern.def) {
             case EBinop("|", left, right):
@@ -3912,6 +3968,18 @@ class Interp {
                 return true;
                 
             case EIdent(name):
+                // Check if name is a known enum constructor for val
+                if (Std.isOfType(val, HaxiomEnumInstance)) {
+                    var valInst:HaxiomEnumInstance = cast val;
+                    if (valInst.constructorName == name) {
+                        return true;
+                    }
+                } else if (Reflect.isEnumValue(val)) {
+                    if (Type.enumConstructor(val) == name) {
+                        return true;
+                    }
+                }
+
                 if (scope.exists(name)) {
                     var inScopeVal = scope.get(name);
                     if (Std.isOfType(inScopeVal, HaxiomEnumInstance)) {
@@ -3934,14 +4002,15 @@ class Interp {
             case ECall(calleeExpr, args):
                 var constructorName = "";
                 var expectedEnum:Dynamic = null;
-                switch (calleeExpr.def) {
-                    case EIdent(name): constructorName = name;
-                    case EField(objExpr, field): 
-                        constructorName = field;
+                var path = extractPath(calleeExpr);
+                if (path != null && path.length > 0) {
+                    constructorName = path[path.length - 1];
+                    if (path.length > 1) {
+                        var typePath = path.slice(0, path.length - 1);
                         try {
-                            expectedEnum = eval(objExpr, scope);
+                            expectedEnum = resolveTypePath(typePath, scope);
                         } catch (e:Dynamic) {}
-                    default:
+                    }
                 }
                 
                 if (constructorName != "") {
@@ -4005,6 +4074,38 @@ class Interp {
                 return true;
                 
             default:
+                var path = extractPath(pattern);
+                if (path != null && path.length > 1) {
+                    var ctor = path[path.length - 1];
+                    var typePath = path.slice(0, path.length - 1);
+                    var enumVal = null;
+                    try {
+                        enumVal = resolveTypePath(typePath, scope);
+                    } catch (_:Dynamic) {}
+                    if (enumVal != null) {
+                        if (Std.isOfType(enumVal, HaxiomEnum)) {
+                            var guestEnum:HaxiomEnum = cast enumVal;
+                            if (Std.isOfType(val, HaxiomEnumInstance)) {
+                                var valInst:HaxiomEnumInstance = cast val;
+                                if (valInst.enumType == guestEnum && valInst.constructorName == ctor && valInst.args.length == 0) {
+                                    return true;
+                                }
+                            }
+                            return false;
+                        } else if (Reflect.isObject(enumVal)) {
+                            try {
+                                if (Reflect.isEnumValue(val)) {
+                                    var valEnum = Type.getEnum(val);
+                                    if (valEnum == enumVal && Type.enumConstructor(val) == ctor && Type.enumParameters(val).length == 0) {
+                                        return true;
+                                    }
+                                }
+                            } catch (_:Dynamic) {}
+                            return false;
+                        }
+                    }
+                }
+                
                 var patVal = eval(pattern, scope);
                 if (Std.isOfType(val, HaxiomEnumInstance) && Std.isOfType(patVal, HaxiomEnumInstance)) {
                     var valInst:HaxiomEnumInstance = cast val;
@@ -4060,13 +4161,14 @@ class Interp {
                 if (arg.isRest) {
                     val = callArgs.slice(i);
                     if (arg.type != null) {
-                        for (v in (cast val : Array<Dynamic>)) {
-                            checkType(v, arg.type, fScope, bindings);
+                        var arr:Array<Dynamic> = cast val;
+                        for (j in 0...arr.length) {
+                            arr[j] = castOrCheckType(arr[j], arg.type, fScope, bindings);
                         }
                     }
                 } else {
                     val = i < callArgs.length ? callArgs[i] : null;
-                    checkType(val, arg.type, fScope, bindings);
+                    val = castOrCheckType(val, arg.type, fScope, bindings);
                 }
                 fScope.declare(arg.name, val, arg.type);
                 mappedArgs.push(val);
@@ -4115,7 +4217,7 @@ class Interp {
                     res = null;
                 } else {
                     if (!isMethodAsync) {
-                        checkType(res, method.retType, fScope, bindings);
+                        res = castOrCheckType(res, method.retType, fScope, bindings);
                     }
                 }
                 inAbstractMethod = oldAbstract;
@@ -4131,18 +4233,19 @@ class Interp {
                 popFrame();
                 switch (flow) {
                     case Return(val):
+                        var finalVal = val;
                         if (method.retType != null && typeToString(method.retType) == "Void") {
                             if (!isMethodAsync) Scope.recycle(fScope);
                             return null;
                         }
                         try {
-                            if (!isMethodAsync) checkType(val, method.retType, fScope, bindings);
+                            if (!isMethodAsync) finalVal = castOrCheckType(finalVal, method.retType, fScope, bindings);
                         } catch (e:Dynamic) {
                             if (!isMethodAsync) Scope.recycle(fScope);
                             throw e;
                         }
                         if (!isMethodAsync) Scope.recycle(fScope);
-                        return val;
+                        return finalVal;
                     default:
                         if (!isMethodAsync) Scope.recycle(fScope);
                         throw flow;
@@ -4202,13 +4305,14 @@ class Interp {
                 if (arg.isRest) {
                     val = fullArgs.slice(i);
                     if (arg.type != null) {
-                        for (v in (cast val : Array<Dynamic>)) {
-                            checkType(v, arg.type, fScope, bindings);
-                        }
+                         var arr:Array<Dynamic> = cast val;
+                         for (j in 0...arr.length) {
+                             arr[j] = castOrCheckType(arr[j], arg.type, fScope, bindings);
+                         }
                     }
                 } else {
                     val = i < fullArgs.length ? fullArgs[i] : null;
-                    checkType(val, arg.type, fScope, bindings);
+                    val = castOrCheckType(val, arg.type, fScope, bindings);
                 }
                 fScope.declare(arg.name, val, arg.type);
             }
@@ -4236,18 +4340,19 @@ class Interp {
                 popFrame();
                 switch (flow) {
                     case Return(val):
+                        var finalVal = val;
                         if (method.retType != null && typeToString(method.retType) == "Void") {
                             Scope.recycle(fScope);
                             return null;
                         }
                         try {
-                            checkType(val, method.retType, fScope, bindings);
+                            finalVal = castOrCheckType(finalVal, method.retType, fScope, bindings);
                         } catch (e:Dynamic) {
                             Scope.recycle(fScope);
                             throw e;
                         }
                         Scope.recycle(fScope);
-                        return val;
+                        return finalVal;
                     default:
                         Scope.recycle(fScope);
                         throw flow;
@@ -4529,6 +4634,10 @@ class Interp {
 
     public function checkType(val:Dynamic, type:TypeDecl, scope:Scope, ?genericBindings:Map<String, TypeDecl>):Void {
         haxiom.TypeSystem.checkType(this, val, type, scope, genericBindings);
+    }
+
+    public function castOrCheckType(val:Dynamic, type:TypeDecl, scope:Scope, ?genericBindings:Map<String, TypeDecl>):Dynamic {
+        return haxiom.TypeSystem.castOrCheckType(this, val, type, scope, genericBindings);
     }
 
     function hasAndGetField(obj:Dynamic, fieldName:String):{exists:Bool, val:Dynamic} {

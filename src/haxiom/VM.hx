@@ -397,7 +397,7 @@ class VM {
                                             throw 'Cannot reassign final field $name outside of constructor';
                                         }
                                         if (fDef != null && fDef.type != null) {
-                                            interp.checkType(val, fDef.type, frame.scope, inst.genericBindings);
+                                            val = interp.castOrCheckType(val, fDef.type, frame.scope, inst.genericBindings);
                                         }
                                         inst.fields.set(name, val);
                                     }
@@ -415,7 +415,7 @@ class VM {
                                                 throw 'Cannot reassign static final field $name';
                                             }
                                             if (fDef.type != null) {
-                                                interp.checkType(val, fDef.type, frame.scope);
+                                                val = interp.castOrCheckType(val, fDef.type, frame.scope);
                                             }
                                             cls.staticFields.set(name, val);
                                         }
@@ -441,7 +441,7 @@ class VM {
                         trace('OP_DECLARE_VAR: ' + name + ' = ' + Std.string(val));
                         #end
                         if (type != null) {
-                            interp.checkType(val, type, frame.scope);
+                            val = interp.castOrCheckType(val, type, frame.scope);
                         }
                         frame.scope.declare(name, val, type, isFinal == 1);
 
@@ -981,13 +981,14 @@ class VM {
                                 if (arg.isRest) {
                                     val = callArgs.slice(i);
                                     if (arg.type != null) {
-                                        for (v in (cast val : Array<Dynamic>)) {
-                                            interp.checkType(v, arg.type, fScope);
+                                        var arr:Array<Dynamic> = cast val;
+                                        for (j in 0...arr.length) {
+                                            arr[j] = interp.castOrCheckType(arr[j], arg.type, fScope);
                                         }
                                     }
                                 } else {
                                     val = i < callArgs.length ? callArgs[i] : null;
-                                    interp.checkType(val, arg.type, fScope);
+                                    val = interp.castOrCheckType(val, arg.type, fScope);
                                 }
                                 fScope.declare(arg.name, val, arg.type);
                                 mappedArgs.push(val);
@@ -999,7 +1000,7 @@ class VM {
                                 if (proto.retType != null && interp.typeToString(proto.retType) == "Void") {
                                     res = null;
                                 } else {
-                                    interp.checkType(res, proto.retType, fScope);
+                                    res = interp.castOrCheckType(res, proto.retType, fScope);
                                 }
                                 interp.popFrame();
                                 Scope.recycle(fScope);
@@ -1012,7 +1013,7 @@ class VM {
                                             Scope.recycle(fScope);
                                             return null;
                                         }
-                                        interp.checkType(val, proto.retType, fScope);
+                                        val = interp.castOrCheckType(val, proto.retType, fScope);
                                         Scope.recycle(fScope);
                                         return val;
                                     default:
@@ -1173,7 +1174,12 @@ class VM {
                                 var typeMatched = true;
                                 if (c.type != null) {
                                     try {
-                                        interp.checkType(errVal, c.type, frame.scope);
+                                        errVal = interp.castOrCheckType(errVal, c.type, frame.scope);
+                                        switch (c.pattern.def) {
+                                            case EIdent(name):
+                                                caseScope.set(name, errVal);
+                                            default:
+                                        }
                                     } catch (_:Dynamic) {
                                         typeMatched = false;
                                     }
@@ -1288,7 +1294,7 @@ class VM {
                         var val = stack.pop();
                         if (type != null) {
                             try {
-                                interp.checkType(val, type, frame.scope);
+                                val = interp.castOrCheckType(val, type, frame.scope);
                             } catch (err:Dynamic) {
                                 throw 'Class cast error: expected ${interp.typeToString(type)} but got ${val}';
                             }
@@ -1478,8 +1484,9 @@ class VM {
                     case OP_CHECK_TYPE:
                         var typeIdx = inst[frame.ip++];
                         var type:TypeDecl = consts[typeIdx];
-                        var val = stack[stack.length - 1];
-                        interp.checkType(val, type, frame.scope);
+                        var val = stack.pop();
+                        var coerced = interp.castOrCheckType(val, type, frame.scope);
+                        stack.push(coerced);
 
                     case OP_AWAIT:
                         var promise = stack.pop();
@@ -1661,7 +1668,7 @@ class HaxiomSuperInstance {
                 for (i in 0...constr.args.length) {
                     var arg = constr.args[i];
                     var val = i < args.length ? args[i] : null;
-                    interp.checkType(val, arg.type, cScope);
+                    val = interp.castOrCheckType(val, arg.type, cScope);
                     cScope.declare(arg.name, val, arg.type);
                 }
                 var oldThis = interp.currentThis;

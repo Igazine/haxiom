@@ -2803,6 +2803,95 @@ class TestHaxiom {
 		if (!invalidJumpCaught)
 			throw "Expected verification error for out-of-bounds jump, but none occurred";
 
+		// 65. Abstract Implicit Casting (from/to) Verification
+		var script65 = "
+			@:from(Int)
+			@:to(Int)
+			abstract MyInt(Int) {
+				public function new(v:Int) {
+					this = v;
+				}
+			}
+
+			// Variable declaration implicit from-cast
+			var x:MyInt = 42;
+			// Variable assignment implicit to-cast
+			var y:Int = x;
+			if (y != 42) throw 'Abstract implicit variable casts failed';
+
+			// Function arguments/returns check
+			function testArgAndRet(v:MyInt):MyInt {
+				return v;
+			}
+			var res:Int = testArgAndRet(100);
+			if (res != 100) throw 'Function arg/return abstract casts failed';
+
+			// Class fields check
+			class Container {
+				public var val:MyInt;
+				public function new() {}
+			}
+			var c = new Container();
+			c.val = 300;
+			var rawVal:Int = c.val;
+			if (rawVal != 300) throw 'Class field abstract casts failed';
+		";
+		haxiom.interpret(script65);
+		trace("SUCCESS: Abstract implicit from/to casting verified.");
+
+		// 66. Namespace-scoped Enums & Short Constructor Patterns Verification
+		var script66_decl = "
+			package test.enums;
+			enum Color {
+				Red;
+				Green;
+				Blue;
+				Custom(rgb:Int);
+			}
+		";
+		haxiom.interpret(script66_decl);
+
+		var script66_test = "
+			import test.enums.Color;
+
+			var c1 = Color.Red;
+			var c2 = Color.Custom(0xFF0000);
+
+			var match1 = '';
+			switch (c1) {
+				case Color.Red: match1 = 'is red';
+				case Color.Green: match1 = 'is green';
+				default: match1 = 'other';
+			}
+			if (match1 != 'is red') throw 'Namespaced constant constructor match failed';
+
+			// Test namespaced parameter constructor match
+			var match2 = '';
+			switch (c2) {
+				case Color.Custom(val): match2 = 'custom ' + val;
+				default: match2 = 'other';
+			}
+			if (match2 != 'custom 16711680') throw 'Namespaced parameter constructor match failed';
+
+			// Test fully qualified path constructor match
+			var match3 = '';
+			switch (c1) {
+				case test.enums.Color.Red: match3 = 'is fq red';
+				default: match3 = 'other';
+			}
+			if (match3 != 'is fq red') throw 'Fully qualified constant constructor match failed';
+
+			// Test short constructor identifier match
+			var match4 = '';
+			switch (c1) {
+				case Red: match4 = 'is local red';
+				default: match4 = 'other';
+			}
+			if (match4 != 'is local red') throw 'Short identifier constructor match failed';
+		";
+		haxiom.interpret(script66_test);
+		trace("SUCCESS: Namespace-scoped enums and short constructors pattern matching verified.");
+
 		trace("SUCCESS: Bytecode Verification & Safety Checks verified.");
 	}
 
