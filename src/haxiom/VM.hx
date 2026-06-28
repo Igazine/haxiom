@@ -162,6 +162,7 @@ class VMCallFrame {
     public var methodName:String;
     public var tryStack:Array<{catchIp:Int, stackSize:Int, scope:Scope}> = [];
     public var locals:Array<Dynamic> = [];
+    public var isInPool:Bool = false;
 
     public function new(chunk:BytecodeChunk, ip:Int, scope:Scope, ?methodName:String = "") {
         this.chunk = chunk;
@@ -184,6 +185,7 @@ class VM {
         var frame:VMCallFrame = null;
         if (enablePooling && framePool.length > 0) {
             frame = framePool.pop();
+            frame.isInPool = false;
             frame.chunk = chunk;
             frame.ip = ip;
             frame.scope = scope;
@@ -209,17 +211,30 @@ class VM {
     public static function recycleFrame(frame:VMCallFrame):Void {
         if (frame == null) return;
         if (!enablePooling) return;
+        if (frame.isInPool) return;
+
+        if (frame.chunk != null) {
+            var slots = frame.chunk.maxSlots;
+            var len = frame.locals.length;
+            var limit = slots < len ? slots : len;
+            for (i in 0...limit) {
+                frame.locals[i] = null;
+            }
+        } else {
+            for (i in 0...frame.locals.length) {
+                frame.locals[i] = null;
+            }
+        }
+
         frame.chunk = null;
         frame.scope = null;
         frame.methodName = null;
-        for (i in 0...frame.locals.length) {
-            frame.locals[i] = null;
-        }
         #if haxe4
         frame.tryStack.resize(0);
         #else
         frame.tryStack = [];
         #end
+        frame.isInPool = true;
         framePool.push(frame);
     }
 

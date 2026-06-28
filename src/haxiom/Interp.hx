@@ -14,6 +14,7 @@ class Scope {
     public var finals:Map<String, Bool> = new Map();
     public var parent:Scope;
     public var isCaptured:Bool = false;
+    public var isInPool:Bool = false;
 
     public static var pool:Array<Scope> = [];
 
@@ -22,6 +23,7 @@ class Scope {
             var s = pool.pop();
             s.parent = parent;
             s.isCaptured = false;
+            s.isInPool = false;
             return s;
         }
         return new Scope(parent);
@@ -29,12 +31,13 @@ class Scope {
 
     public static function recycle(s:Scope):Void {
         if (s == null || s.isCaptured) return;
-        if (pool.indexOf(s) != -1) return;
+        if (s.isInPool) return;
         s.variables.clear();
         s.types.clear();
         s.finals.clear();
         s.parent = null;
         s.isCaptured = false;
+        s.isInPool = true;
         pool.push(s);
     }
 
