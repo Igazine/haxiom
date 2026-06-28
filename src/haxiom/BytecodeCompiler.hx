@@ -61,6 +61,7 @@ class BytecodeCompiler {
             compiler.closeAllActiveLocals();
         }
         var chunk = new BytecodeChunk(compiler.instructions, compiler.constants, compiler.debugMode ? compiler.positions : [], compiler.maxSlots, compiler.isAsync, compiler.debugMode ? compiler.debugSymbols : null);
+        optimizeChunk(chunk);
         if (!debugMode) {
             stripPositionsFromChunk(chunk);
         }
@@ -1248,6 +1249,258 @@ class BytecodeCompiler {
                     stripPositionsFromChunk(proto.bodyChunk);
                 }
             }
+        }
+    }
+
+    public static function optimizeChunk(chunk:BytecodeChunk):Void {
+        if (chunk == null) return;
+        optimizeBytecode(chunk.instructions, chunk.constants, chunk.positions, chunk.debugSymbols);
+        if (chunk.constants != null) {
+            for (c in chunk.constants) {
+                if (c == null) continue;
+                if (Reflect.hasField(c, "bodyChunk")) {
+                    var proto:Dynamic = c;
+                    if (proto.bodyChunk != null) {
+                        optimizeChunk(proto.bodyChunk);
+                    }
+                }
+            }
+        }
+    }
+
+    public static function optimizeBytecode(instructions:Array<Int>, constants:Array<Dynamic>, positions:Array<Pos>, debugSymbols:Null<Array<DebugSymbol>>):Void {
+        var ip = 0;
+        var newInst:Array<Int> = [];
+        var newPos:Array<Pos> = [];
+        var oldToNewIP:Array<Int> = [for (i in 0...instructions.length) -1];
+
+        while (ip < instructions.length) {
+            var op = instructions[ip];
+            var len = getInstructionLength(instructions, ip);
+
+            // Record mapping for the current instruction start
+            oldToNewIP[ip] = newInst.length;
+            for (offset in 1...len) {
+                if (ip + offset < instructions.length) {
+                    oldToNewIP[ip + offset] = newInst.length;
+                }
+            }
+
+            // Check patterns
+            
+            // Pattern 1: Redundant NOP
+            if (op == OP_NOP) {
+                ip += len;
+                continue;
+            }
+
+            // Pattern 2: OP_LOAD_CONST followed by OP_POP (Redundant load and discard)
+            if (op == OP_LOAD_CONST && ip + len < instructions.length) {
+                var nextIp = ip + len;
+                var nextOp = instructions[nextIp];
+                if (nextOp == OP_POP) {
+                    var nextLen = getInstructionLength(instructions, nextIp);
+                    for (offset in 0...(len + nextLen)) {
+                        if (ip + offset < instructions.length) {
+                            oldToNewIP[ip + offset] = newInst.length;
+                        }
+                    }
+                    ip += len + nextLen;
+                    continue;
+                }
+            }
+
+            // Pattern 3: OP_GET_LOCAL X followed by OP_SET_LOCAL X (Redundant get and set back to same local slot)
+            if (op == OP_GET_LOCAL && ip + len < instructions.length) {
+                var localSlot = instructions[ip + 1];
+                var nextIp = ip + len;
+                var nextOp = instructions[nextIp];
+                if (nextOp == OP_SET_LOCAL && instructions[nextIp + 1] == localSlot) {
+                    var nextLen = getInstructionLength(instructions, nextIp);
+                    for (offset in 0...(len + nextLen)) {
+                        if (ip + offset < instructions.length) {
+                            oldToNewIP[ip + offset] = newInst.length;
+                        }
+                    }
+                    ip += len + nextLen;
+                    continue;
+                }
+            }
+
+            // Pattern 4: OP_SET_LOCAL X followed by OP_GET_LOCAL X -> replace with OP_DUP + OP_SET_LOCAL X
+            if (op == OP_SET_LOCAL && ip + len < instructions.length) {
+                var localSlot = instructions[ip + 1];
+                var nextIp = ip + len;
+                var nextOp = instructions[nextIp];
+                if (nextOp == OP_GET_LOCAL && instructions[nextIp + 1] == localSlot) {
+                    var nextLen = getInstructionLength(instructions, nextIp);
+                    var dupPos = (positions != null && ip < positions.length) ? positions[ip] : { line: 1, col: 1 };
+                    newInst.push(OP_DUP);
+                    if (positions != null && positions.length > 0) newPos.push(dupPos);
+
+                    newInst.push(OP_SET_LOCAL);
+                    newInst.push(localSlot);
+                    if (positions != null && positions.length > 0) {
+                        newPos.push(dupPos);
+                        newPos.push(dupPos);
+                    }
+
+                    for (offset in 0...(len + nextLen)) {
+                        if (ip + offset < instructions.length) {
+                            oldToNewIP[ip + offset] = oldToNewIP[ip];
+                        }
+                    }
+                    ip += len + nextLen;
+                    continue;
+                }
+            }
+
+            // Pattern 5: OP_LOAD_CONST of a boolean/null followed by OP_JUMP_IF_FALSE
+            if (op == OP_LOAD_CONST && ip + len < instructions.length) {
+                var constIdx = instructions[ip + 1];
+                var constVal = constants[constIdx];
+                var nextIp = ip + len;
+                var nextOp = instructions[nextIp];
+
+                if (nextOp == OP_JUMP_IF_FALSE) {
+                    var nextLen = getInstructionLength(instructions, nextIp);
+                    var targetIp = instructions[nextIp + 1];
+                    var isTruthy = (constVal != null && constVal != false);
+                    var shouldJump = !isTruthy;
+
+                    if (shouldJump) {
+                        var jumpPos = (positions != null && ip < positions.length) ? positions[ip] : { line: 1, col: 1 };
+                        newInst.push(OP_JUMP);
+                        newInst.push(targetIp);
+                        if (positions != null && positions.length > 0) {
+                            newPos.push(jumpPos);
+                            newPos.push(jumpPos);
+                        }
+                    } else {
+                        // Fall-through, no-op
+                    }
+
+                    for (offset in 0...(len + nextLen)) {
+                        if (ip + offset < instructions.length) {
+                            oldToNewIP[ip + offset] = oldToNewIP[ip];
+                        }
+                    }
+                    ip += len + nextLen;
+                    continue;
+                }
+            }
+
+            // Standard copy
+            for (offset in 0...len) {
+                if (ip + offset < instructions.length) {
+                    newInst.push(instructions[ip + offset]);
+                    if (positions != null && positions.length > ip + offset) {
+                        newPos.push(positions[ip + offset]);
+                    }
+                }
+            }
+            ip += len;
+        }
+
+        // Post-pass 1: Fill any remaining unmapped indices
+        var lastValidNewIP = newInst.length;
+        var i = oldToNewIP.length - 1;
+        while (i >= 0) {
+            if (oldToNewIP[i] == -1) {
+                oldToNewIP[i] = lastValidNewIP;
+            } else {
+                lastValidNewIP = oldToNewIP[i];
+            }
+            i--;
+        }
+
+        // Pass 2: Rewrite jump targets
+        var newIp = 0;
+        while (newIp < newInst.length) {
+            var op = newInst[newIp];
+            var len = getInstructionLength(newInst, newIp);
+
+            switch (op) {
+                case OP_JUMP | OP_JUMP_IF_FALSE | OP_JUMP_IF_FALSE_PEEK | OP_JUMP_IF_TRUE_PEEK | OP_JUMP_IF_NOT_NULL_PEEK:
+                    var oldTarget = newInst[newIp + 1];
+                    var newTarget = (oldTarget == instructions.length) ? newInst.length : oldToNewIP[oldTarget];
+                    newTarget = getJumpDest(newInst, newTarget);
+                    newInst[newIp + 1] = newTarget;
+
+                case OP_PUSH_TRY:
+                    var oldCatch = newInst[newIp + 1];
+                    var newCatch = (oldCatch == instructions.length) ? newInst.length : oldToNewIP[oldCatch];
+                    newInst[newIp + 1] = newCatch;
+
+                default:
+            }
+            newIp += len;
+        }
+
+        // Pass 3: Remap debugSymbols bounds
+        if (debugSymbols != null) {
+            for (sym in debugSymbols) {
+                sym.startIp = sym.startIp < oldToNewIP.length ? oldToNewIP[sym.startIp] : newInst.length;
+                sym.endIp = sym.endIp < oldToNewIP.length ? oldToNewIP[sym.endIp] : newInst.length;
+            }
+        }
+
+        // Replace contents of original array
+        #if haxe4
+        instructions.resize(0);
+        #else
+        while (instructions.length > 0) instructions.pop();
+        #end
+        for (x in newInst) instructions.push(x);
+
+        if (positions != null && positions.length > 0) {
+            #if haxe4
+            positions.resize(0);
+            #else
+            while (positions.length > 0) positions.pop();
+            #end
+            for (p in newPos) positions.push(p);
+        }
+    }
+
+    static function getJumpDest(newInst:Array<Int>, target:Int):Int {
+        var visited = new Map<Int, Bool>();
+        var curr = target;
+        while (curr < newInst.length && newInst[curr] == OP_JUMP) {
+            if (visited.exists(curr)) break;
+            visited.set(curr, true);
+            curr = newInst[curr + 1];
+        }
+        return curr;
+    }
+
+    static function getInstructionLength(inst:Array<Int>, ip:Int):Int {
+        var op = inst[ip];
+        return switch (op) {
+            case OP_NOP | OP_ADD | OP_SUB | OP_MUL | OP_DIV | OP_MOD | OP_EQ | OP_NEQ | OP_LT | OP_LTE | OP_GT | OP_GTE | OP_AND | OP_OR | OP_NOT |
+                 OP_BIT_AND | OP_BIT_OR | OP_BIT_XOR | OP_BIT_NOT | OP_SHL | OP_SHR | OP_USHR | OP_RETURN | OP_THROW | OP_GET_THIS | OP_POP | OP_PUSH_SCOPE | OP_POP_SCOPE |
+                 OP_GET_ITERATOR | OP_ITERATOR_HAS_NEXT | OP_ITERATOR_NEXT | OP_POP_TRY | OP_ARRAY_ACCESS_GET | OP_ARRAY_ACCESS_SET | OP_DUP | OP_RANGE |
+                 OP_AWAIT | OP_PUSH_CASE_SCOPE:
+                1;
+
+            case OP_LOAD_CONST | OP_GET_LOCAL | OP_SET_LOCAL | OP_GET_VAR | OP_SET_VAR | OP_JUMP | OP_JUMP_IF_FALSE | OP_JUMP_IF_FALSE_PEEK |
+                 OP_JUMP_IF_TRUE_PEEK | OP_JUMP_IF_NOT_NULL_PEEK | OP_CALL | OP_GET_FIELD | OP_SET_FIELD | OP_NEW_ARRAY | OP_MAKE_FUNCTION | OP_PUSH_TRY |
+                 OP_MATCH_CATCH | OP_SAFE_GET_FIELD | OP_SAFE_SET_FIELD | OP_CAST | OP_DECLARE_CLASS | OP_DECLARE_INTERFACE |
+                 OP_DECLARE_ENUM | OP_DECLARE_ABSTRACT | OP_DECLARE_TYPEDEF | OP_IMPORT | OP_USING | OP_PACKAGE | OP_NEW_MAP | OP_CHECK_TYPE | OP_UNOP:
+                2;
+
+            case OP_CALL_METHOD | OP_MATCH_CASE | OP_NEW | OP_UNOP_MUTATE:
+                3;
+
+            case OP_DECLARE_VAR:
+                4;
+
+            case OP_NEW_OBJECT:
+                var fieldCount = inst[ip + 1];
+                2 + fieldCount;
+
+            default:
+                throw 'Unknown opcode in optimizer: $op';
         }
     }
 }
