@@ -1,5 +1,6 @@
 # Placeholder hxml file for language server
 --library haxiom
 --class-path test
+--macro haxiom.macro.FFIMacro.exposePackage("haxiom.autofiffi")
 --main haxiom.TestHaxiom
 --interp

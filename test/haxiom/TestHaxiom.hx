@@ -2917,6 +2917,33 @@ class TestHaxiom {
 		trace("SUCCESS: Regular Expressions (EReg) verified in Bytecode VM.");
 		haxiom.useVM = false;
 
+		// 68. FFI Package Auto-Registration Verification
+		haxiom.importWhitelist = ["haxiom.autofiffi.*"];
+		FFI.registerExposedClasses(haxiom);
+
+		var script68 = "
+			import haxiom.autofiffi.TestClass;
+			import haxiom.autofiffi.TestAbstract;
+
+			var inst = new TestClass(42);
+			if (inst.getValue() != 42) throw 'Auto-registered TestClass failed';
+
+			if (TestClass.MY_CONSTANT != 999) throw 'Auto-registered static constant failed';
+
+			var absVal:TestAbstract = 100;
+			var rawVal:Int = absVal;
+			if (rawVal != 100) throw 'Auto-registered TestAbstract casting failed';
+		";
+
+		haxiom.useVM = false;
+		haxiom.interpret(script68);
+		trace("SUCCESS: FFI package auto-registration verified in AST Interpreter.");
+
+		haxiom.useVM = true;
+		haxiom.interpret(script68);
+		trace("SUCCESS: FFI package auto-registration verified in Bytecode VM.");
+		haxiom.useVM = false;
+
 		trace("SUCCESS: Bytecode Verification & Safety Checks verified.");
 	}
 

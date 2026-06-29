@@ -87,7 +87,25 @@ class FFIMacro {
                         moduleName = cls.module;
                         
                         var fqName = cls.pack.concat([cls.name]).join(".");
-                        if (cls.meta.has(":haxiom.expose")) {
+                        var isExposedClass = cls.meta.has(":haxiom.expose");
+                        if (!isExposedClass) {
+                            var clsPackStr = cls.pack.join(".");
+                            for (p in forceExposedPackages) {
+                                if (clsPackStr == p || StringTools.startsWith(clsPackStr, p + ".")) {
+                                    isExposedClass = true;
+                                    break;
+                                }
+                            }
+                            if (!isExposedClass) {
+                                for (c in forceExposedClasses) {
+                                    if (fqName == c) {
+                                        isExposedClass = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        if (isExposedClass) {
                             isExposed = true;
                             if (exposedClasses.indexOf(fqName) == -1) {
                                 exposedClasses.push(fqName);
@@ -137,9 +155,27 @@ class FFIMacro {
                         name = abs.name;
                         moduleName = abs.module;
                         
-                        if (abs.meta.has(":haxiom.expose")) {
+                        var fqName = abs.pack.concat([abs.name]).join(".");
+                        var isExposedAbs = abs.meta.has(":haxiom.expose");
+                        if (!isExposedAbs) {
+                            var absPackStr = abs.pack.join(".");
+                            for (p in forceExposedPackages) {
+                                if (absPackStr == p || StringTools.startsWith(absPackStr, p + ".")) {
+                                    isExposedAbs = true;
+                                    break;
+                                }
+                            }
+                            if (!isExposedAbs) {
+                                for (c in forceExposedClasses) {
+                                    if (fqName == c) {
+                                        isExposedAbs = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        if (isExposedAbs) {
                             isExposed = true;
-                            var fqName = abs.pack.concat([abs.name]).join(".");
                             if (abs.impl != null) {
                                 var implClass = abs.impl.get();
                                 var fqImplName = implClass.pack.concat([implClass.name]).join(".");
@@ -372,6 +408,22 @@ class FFIMacro {
     static var exposedGenerics = new Map<String, String>();
     static var exposedModules = new Map<String, Array<String>>();
     static var genericBases:Array<ClassType> = [];
+    static var forceExposedPackages:Array<String> = [];
+    static var forceExposedClasses:Array<String> = [];
+
+    public static function exposePackage(pack:String):Void {
+        if (forceExposedPackages.indexOf(pack) == -1) {
+            forceExposedPackages.push(pack);
+        }
+        haxe.macro.Compiler.include(pack);
+    }
+
+    public static function exposeClass(className:String):Void {
+        if (forceExposedClasses.indexOf(className) == -1) {
+            forceExposedClasses.push(className);
+        }
+        haxe.macro.Compiler.keep(className);
+    }
 
     public static function build():Array<Field> {
         var localClass = Context.getLocalClass();
