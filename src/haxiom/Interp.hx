@@ -1882,6 +1882,9 @@ class Interp {
                 #end
                 return v;
 
+            case EEReg(pattern, flags):
+                return new EReg(pattern, flags);
+
             case EIdent(name):
                 var pathRes = tryResolveExpressionPath(e, scope);
                 if (pathRes.success) return pathRes.value;
@@ -5036,7 +5039,7 @@ class Interp {
         if (fqName == "Math" || fqName == "Std" || fqName == "Reflect" || fqName == "Type" || fqName == "Lambda") {
             return false;
         }
-        var isGlobalPrimitive = (fqName == "String" || fqName == "Array" || fqName == "Int" || fqName == "Float" || fqName == "Bool" || fqName == "Dynamic" || fqName == "Class" || fqName == "Enum");
+        var isGlobalPrimitive = (fqName == "String" || fqName == "Array" || fqName == "Int" || fqName == "Float" || fqName == "Bool" || fqName == "Dynamic" || fqName == "Class" || fqName == "Enum" || fqName == "EReg");
         if (isGlobalPrimitive) {
             return false;
         }
@@ -5051,8 +5054,11 @@ class Interp {
 
     function isImportWhitelisted(fqName:String):Bool {
         var auto = isAutoWhitelisted(fqName);
-        // haxe.Log.trace("isImportWhitelisted check for " + fqName + ": auto=" + auto, null);
         if (auto) return true;
+        
+        if (fqName == "String" || fqName == "Array" || fqName == "Xml" || fqName == "Math" || fqName == "Std" || fqName == "EReg") {
+            return true;
+        }
         
         var isNative = (Type.resolveClass(fqName) != null) || (Type.resolveEnum(fqName) != null);
         // haxe.Log.trace("isImportWhitelisted check for " + fqName + ": isNative=" + isNative, null);

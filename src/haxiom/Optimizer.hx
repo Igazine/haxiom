@@ -13,6 +13,9 @@ class Optimizer {
             case EIdent(v):
                 EIdent(v);
                 
+            case EEReg(pattern, flags):
+                EEReg(pattern, flags);
+                
             case EVar(name, type, e, isFinal, meta):
                 EVar(name, type, e == null ? null : foldConstants(e), isFinal, meta);
                 
@@ -678,6 +681,7 @@ class Optimizer {
         return switch (expr.def) {
             case EValue(_): true;
             case EIdent(_): true;
+            case EEReg(_, _): true;
             case EField(e, _) | ESafeField(e, _): isPure(e);
             case EBinop(op, e1, e2):
                 // Assignment operators are not pure

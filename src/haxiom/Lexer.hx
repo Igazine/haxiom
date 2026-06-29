@@ -365,7 +365,58 @@ class Lexer {
                     if (peek(1) == "|") add(tokens, TOr, 2);
                     else add(tokens, TBitOr);
                 case "^": add(tokens, TBitXor);
-                case "~": add(tokens, TBitNot);
+                case "~":
+                    if (peek(1) == "/") {
+                        var startLine = line;
+                        var startCol = col;
+                        advance();
+                        advance();
+                        
+                        var patternBuf = new StringBuf();
+                        var closed = false;
+                        while (pos < input.length) {
+                            var c = input.charAt(pos);
+                            if (c == "\\") {
+                                if (pos + 1 >= input.length) {
+                                    throw new CompileException("Lexical Error: Unclosed regular expression escape sequence", line, col, file);
+                                }
+                                patternBuf.add("\\");
+                                patternBuf.add(input.charAt(pos + 1));
+                                advance();
+                                advance();
+                            } else if (c == "/") {
+                                closed = true;
+                                advance();
+                                break;
+                            } else if (c == "\n" || c == "\r") {
+                                throw new CompileException("Lexical Error: Regular expression literal cannot span multiple lines", line, col, file);
+                            } else {
+                                patternBuf.add(c);
+                                advance();
+                            }
+                        }
+                        if (!closed) {
+                            throw new CompileException("Lexical Error: Unclosed regular expression literal", startLine, startCol, file);
+                        }
+                        
+                        var flagsBuf = new StringBuf();
+                        while (pos < input.length) {
+                            var c = input.charAt(pos);
+                            if (c >= "a" && c <= "z") {
+                                flagsBuf.add(c);
+                                advance();
+                            } else {
+                                break;
+                            }
+                        }
+                        
+                        tokens.push({
+                            def: TEReg(patternBuf.toString(), flagsBuf.toString()),
+                            pos: { line: startLine, col: startCol, file: file }
+                        });
+                    } else {
+                        add(tokens, TBitNot);
+                    }
                 
                 default:
                     throw new CompileException("Lexical Error: Unrecognized character '" + char + "'", line, col, file);

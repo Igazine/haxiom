@@ -410,6 +410,9 @@ class StaticTypeChecker {
                 if (Std.isOfType(v, String)) return TPath(["String"], []);
                 return null;
 
+            case EEReg(pattern, flags):
+                return TPath(["EReg"], []);
+
             case EIdent(name):
                 return env.get(name);
 

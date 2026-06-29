@@ -2892,6 +2892,31 @@ class TestHaxiom {
 		haxiom.interpret(script66_test);
 		trace("SUCCESS: Namespace-scoped enums and short constructors pattern matching verified.");
 
+		// 67. Regular Expressions (EReg) Verification
+		var script67 = "
+			var r1 = ~/haxe/i;
+			var r2 = ~/foo\\/bar/;
+			var r3 = ~/test/g;
+
+			if (!r1.match('HAXE is cool')) throw 'Regex matching failed';
+			if (r1.matched(0) != 'HAXE') throw 'Regex matched value extraction failed';
+
+			var typedR:EReg = ~/cool/i;
+			if (!typedR.match('Haxiom is COOL')) throw 'Typed EReg matching failed';
+			
+			var matchFound = ~/\\d+/.match('score is 42');
+			if (!matchFound) throw 'Digits matching failed';
+		";
+		
+		haxiom.useVM = false;
+		haxiom.interpret(script67);
+		trace("SUCCESS: Regular Expressions (EReg) verified in AST Interpreter.");
+
+		haxiom.useVM = true;
+		haxiom.interpret(script67);
+		trace("SUCCESS: Regular Expressions (EReg) verified in Bytecode VM.");
+		haxiom.useVM = false;
+
 		trace("SUCCESS: Bytecode Verification & Safety Checks verified.");
 	}
 

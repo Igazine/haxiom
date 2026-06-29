@@ -893,6 +893,9 @@ class Parser {
             case TString(v):
                 next();
                 return mk(EValue(v), t.pos);
+            case TEReg(pattern, flags):
+                next();
+                return mk(EEReg(pattern, flags), t.pos);
             case TTrue:
                 next();
                 return mk(EValue(true), t.pos);

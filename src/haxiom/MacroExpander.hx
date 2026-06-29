@@ -36,6 +36,9 @@ class MacroExpander {
             case EIdent(v):
                 EIdent(v);
 
+            case EEReg(pattern, flags):
+                EEReg(pattern, flags);
+
             case EVar(name, type, e, isFinal, meta):
                 EVar(name, type, e == null ? null : expand(e, interp), isFinal, meta);
 

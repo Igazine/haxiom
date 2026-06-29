@@ -80,6 +80,7 @@ enum abstract Opcode(Int) from Int to Int {
     var OP_PUSH_CASE_SCOPE = 72;
     var OP_CHECK_TYPE = 73;
     var OP_AWAIT = 74;
+    var OP_EREG = 75;
 }
 
 typedef DebugSymbol = {
@@ -1487,6 +1488,13 @@ class VM {
                         var val = stack.pop();
                         var coerced = interp.castOrCheckType(val, type, frame.scope);
                         stack.push(coerced);
+
+                    case OP_EREG:
+                        var patternIdx = inst[frame.ip++];
+                        var flagsIdx = inst[frame.ip++];
+                        var pattern:String = consts[patternIdx];
+                        var flags:String = consts[flagsIdx];
+                        stack.push(new EReg(pattern, flags));
 
                     case OP_AWAIT:
                         var promise = stack.pop();

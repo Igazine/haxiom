@@ -13,6 +13,7 @@ enum TokenDef {
     TInt(v:Int);
     TFloat(v:Float);
     TString(v:String);
+    TEReg(pattern:String, flags:String);
     
     // Keywords
     TBreak;
@@ -127,6 +128,7 @@ typedef FunctionArg = {name:String, type:Null<TypeDecl>, ?isRest:Bool};
 enum ExprDef {
     EValue(v:Dynamic);
     EIdent(v:String);
+    EEReg(pattern:String, flags:String);
     EVar(name:String, type:Null<TypeDecl>, ?expr:Expr, ?isFinal:Bool, ?meta:Array<{name:String, params:Array<Expr>}>);
     EAssign(target:Expr, expr:Expr);
     EBinop(op:String, e1:Expr, e2:Expr);

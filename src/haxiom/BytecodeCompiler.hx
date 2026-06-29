@@ -133,7 +133,7 @@ class BytecodeCompiler {
     function iterExpr(e:Expr, cb:Expr->Void) {
         if (e == null) return;
         switch (e.def) {
-            case EValue(_), EIdent(_), EBreak, EContinue, EPackage(_), EImport(_, _), EUsing(_), EEnum(_, _, _), ETypedef(_, _, _):
+            case EValue(_), EIdent(_), EBreak, EContinue, EPackage(_), EImport(_, _), EUsing(_), EEnum(_, _, _), ETypedef(_, _, _), EEReg(_, _):
                 // No sub-expressions
             case EVar(_, _, expr, _, _), EUnop(_, expr), EField(expr, _), ESafeField(expr, _), EReturn(expr), EThrow(expr), ECast(expr, _), EMeta(_, expr):
                 if (expr != null) cb(expr);
@@ -290,6 +290,11 @@ class BytecodeCompiler {
             case EValue(v):
                 emit(OP_LOAD_CONST, e.pos);
                 emitInt(addConst(v), e.pos);
+
+            case EEReg(pattern, flags):
+                emit(OP_EREG, e.pos);
+                emitInt(addConst(pattern), e.pos);
+                emitInt(addConst(flags), e.pos);
 
             case EIdent(name):
                 var loc = !isTopLevel ? resolveLocal(name) : null;
@@ -1489,7 +1494,7 @@ class BytecodeCompiler {
                  OP_DECLARE_ENUM | OP_DECLARE_ABSTRACT | OP_DECLARE_TYPEDEF | OP_IMPORT | OP_USING | OP_PACKAGE | OP_NEW_MAP | OP_CHECK_TYPE | OP_UNOP:
                 2;
 
-            case OP_CALL_METHOD | OP_MATCH_CASE | OP_NEW | OP_UNOP_MUTATE:
+            case OP_CALL_METHOD | OP_MATCH_CASE | OP_NEW | OP_UNOP_MUTATE | OP_EREG:
                 3;
 
             case OP_DECLARE_VAR:

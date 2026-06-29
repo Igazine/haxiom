@@ -133,6 +133,11 @@ class BytecodeVerifier {
                 case 74: // OP_AWAIT
                     // 0 operands
                     
+                case 75: // OP_EREG
+                    checkOperands(ip, 2, inst.length);
+                    checkConstIndex(inst[ip++], chunk); // pattern
+                    checkConstIndex(inst[ip++], chunk); // flags
+                    
                 default:
                     // Opcodes with 0 operands
                     // OP_NOP, OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_MOD, OP_EQ, OP_NEQ, OP_LT, OP_LTE, OP_GT, OP_GTE, OP_AND, OP_OR, OP_NOT, OP_BIT_AND, OP_BIT_OR, OP_BIT_XOR, OP_BIT_NOT, OP_SHL, OP_SHR, OP_USHR, OP_RETURN, OP_THROW, OP_GET_THIS, OP_POP, OP_PUSH_SCOPE, OP_POP_SCOPE, OP_GET_ITERATOR, OP_ITERATOR_HAS_NEXT, OP_ITERATOR_NEXT, OP_POP_TRY, OP_ARRAY_ACCESS_GET, OP_ARRAY_ACCESS_SET, OP_DUP, OP_RANGE, OP_AWAIT
