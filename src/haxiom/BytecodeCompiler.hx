@@ -1395,6 +1395,71 @@ class BytecodeCompiler {
                 }
             }
 
+            // Pattern 6: Redundant Fall-through OP_JUMP
+            if (op == OP_JUMP) {
+                var targetIp = instructions[ip + 1];
+                if (targetIp == ip + len) {
+                    for (offset in 0...len) {
+                        if (ip + offset < instructions.length) {
+                            oldToNewIP[ip + offset] = newInst.length;
+                        }
+                    }
+                    ip += len;
+                    continue;
+                }
+            }
+
+            // Pattern 7: Redundant Conditional JUMP to Next IP
+            if (op == OP_JUMP_IF_FALSE) {
+                var targetIp = instructions[ip + 1];
+                if (targetIp == ip + len) {
+                    var popPos = (positions != null && ip < positions.length) ? positions[ip] : { line: 1, col: 1 };
+                    newInst.push(OP_POP);
+                    if (positions != null && positions.length > 0) {
+                        newPos.push(popPos);
+                    }
+                    for (offset in 0...len) {
+                        if (ip + offset < instructions.length) {
+                            oldToNewIP[ip + offset] = oldToNewIP[ip];
+                        }
+                    }
+                    ip += len;
+                    continue;
+                }
+            }
+
+            // Pattern 8: OP_DUP followed by OP_POP
+            if (op == OP_DUP && ip + len < instructions.length) {
+                var nextIp = ip + len;
+                var nextOp = instructions[nextIp];
+                if (nextOp == OP_POP) {
+                    var nextLen = getInstructionLength(instructions, nextIp);
+                    for (offset in 0...(len + nextLen)) {
+                        if (ip + offset < instructions.length) {
+                            oldToNewIP[ip + offset] = newInst.length;
+                        }
+                    }
+                    ip += len + nextLen;
+                    continue;
+                }
+            }
+
+            // Pattern 9: OP_GET_LOCAL followed by OP_POP
+            if (op == OP_GET_LOCAL && ip + len < instructions.length) {
+                var nextIp = ip + len;
+                var nextOp = instructions[nextIp];
+                if (nextOp == OP_POP) {
+                    var nextLen = getInstructionLength(instructions, nextIp);
+                    for (offset in 0...(len + nextLen)) {
+                        if (ip + offset < instructions.length) {
+                            oldToNewIP[ip + offset] = newInst.length;
+                        }
+                    }
+                    ip += len + nextLen;
+                    continue;
+                }
+            }
+
             // Standard copy
             for (offset in 0...len) {
                 if (ip + offset < instructions.length) {
@@ -1430,7 +1495,21 @@ class BytecodeCompiler {
                     var oldTarget = newInst[newIp + 1];
                     var newTarget = (oldTarget == instructions.length) ? newInst.length : oldToNewIP[oldTarget];
                     newTarget = getJumpDest(newInst, newTarget);
-                    newInst[newIp + 1] = newTarget;
+                    
+                    if (newTarget == newIp + len || isOnlyNops(newInst, newIp + len, newTarget)) {
+                        if (op == OP_JUMP) {
+                            newInst[newIp] = OP_NOP;
+                            newInst[newIp + 1] = OP_NOP;
+                        } else if (op == OP_JUMP_IF_FALSE) {
+                            newInst[newIp] = OP_POP;
+                            newInst[newIp + 1] = OP_NOP;
+                        } else {
+                            newInst[newIp] = OP_NOP;
+                            newInst[newIp + 1] = OP_NOP;
+                        }
+                    } else {
+                        newInst[newIp + 1] = newTarget;
+                    }
 
                 case OP_PUSH_TRY:
                     var oldCatch = newInst[newIp + 1];
@@ -1468,13 +1547,29 @@ class BytecodeCompiler {
         }
     }
 
+    static function isOnlyNops(newInst:Array<Int>, start:Int, end:Int):Bool {
+        if (end <= start) return false;
+        var i = start;
+        while (i < end && i < newInst.length) {
+            if (newInst[i] != OP_NOP) return false;
+            i++;
+        }
+        return true;
+    }
+
     static function getJumpDest(newInst:Array<Int>, target:Int):Int {
         var visited = new Map<Int, Bool>();
         var curr = target;
-        while (curr < newInst.length && newInst[curr] == OP_JUMP) {
-            if (visited.exists(curr)) break;
-            visited.set(curr, true);
-            curr = newInst[curr + 1];
+        while (curr < newInst.length) {
+            if (newInst[curr] == OP_JUMP) {
+                if (visited.exists(curr)) break;
+                visited.set(curr, true);
+                curr = newInst[curr + 1];
+            } else if (newInst[curr] == OP_NOP) {
+                curr++;
+            } else {
+                break;
+            }
         }
         return curr;
     }

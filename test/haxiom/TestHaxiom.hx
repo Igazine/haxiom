@@ -2944,6 +2944,74 @@ class TestHaxiom {
 		trace("SUCCESS: FFI package auto-registration verified in Bytecode VM.");
 		haxiom.useVM = false;
 
+		// 69. VM Performance & Bytecode Optimizations Verification
+		// Part A: VM stack and frame pooling stress test
+		var script69_perf = "
+			function recursiveSum(n:Int):Int {
+				if (n <= 1) return n;
+				return n + recursiveSum(n - 1);
+			}
+			
+			var total = 0;
+			for (i in 0...100) {
+				total = total + recursiveSum(10);
+			}
+			if (total != 5500) throw 'Stack/frame pooling returned wrong result: ' + total;
+		";
+		
+		haxiom.useVM = true;
+		haxiom.interpret(script69_perf);
+		trace("SUCCESS: VM Scope/Frame/Stack pooling stress test verified.");
+		haxiom.useVM = false;
+
+		// Part B: Peephole Optimizer checks
+		// Test 1: Redundant GET_LOCAL + POP elimination (y;)
+		var script69_opt1 = "
+			var y = 100;
+			y;
+		";
+		var ast1 = haxiom.compile(script69_opt1);
+		var chunk1 = BytecodeCompiler.compile(ast1, null, true, false, false);
+		var insts1 = chunk1.instructions;
+		
+		var foundGetLocalPop = false;
+		var i = 0;
+		while (i < insts1.length - 2) {
+			if (insts1[i] == 2 && insts1[i + 2] == 42) {
+				foundGetLocalPop = true;
+				break;
+			}
+			i++;
+		}
+		if (foundGetLocalPop) {
+			throw "Peephole optimization failed: redundant OP_GET_LOCAL + OP_POP not eliminated";
+		}
+		trace("SUCCESS: Peephole optimization (GET_LOCAL + POP elimination) verified.");
+
+		// Test 2: Redundant Conditional JUMP to next IP conversion to POP
+		var chunk2 = new haxiom.VM.BytecodeChunk([29, 2], [], [], 0);
+		BytecodeCompiler.optimizeChunk(chunk2);
+		if (chunk2.instructions.length != 1 || chunk2.instructions[0] != 42) {
+			throw "Peephole optimization failed: redundant conditional jump [29, 2] was not optimized to [42] (got: " + chunk2.instructions + ")";
+		}
+		trace("SUCCESS: Peephole optimization (Conditional JUMP to next IP) verified.");
+
+		// Test 3: Redundant fall-through JUMP conversion to NOPs
+		var chunk3 = new haxiom.VM.BytecodeChunk([28, 2], [], [], 0);
+		BytecodeCompiler.optimizeChunk(chunk3);
+		if (chunk3.instructions.length != 0) {
+			throw "Peephole optimization failed: redundant jump [28, 2] was not optimized to [] (got: " + chunk3.instructions + ")";
+		}
+		trace("SUCCESS: Peephole optimization (JUMP to next IP) verified.");
+
+		// Test 4: Jump remapping to next IP (Pass 2 optimization)
+		var chunk4 = new haxiom.VM.BytecodeChunk([29, 4, 2, 0, 42], [], [], 1);
+		BytecodeCompiler.optimizeChunk(chunk4);
+		if (chunk4.instructions.length != 2 || chunk4.instructions[0] != 42 || chunk4.instructions[1] != 0) {
+			throw "Peephole optimization failed: Pass 2 remapped jump was not optimized to [42, 0] (got: " + chunk4.instructions + ")";
+		}
+		trace("SUCCESS: Peephole optimization (Pass 2 remapped JUMP) verified.");
+
 		trace("SUCCESS: Bytecode Verification & Safety Checks verified.");
 	}
 

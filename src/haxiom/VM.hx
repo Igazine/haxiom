@@ -177,6 +177,8 @@ class VMCallFrame {
 class VM {
     public static var enablePooling:Bool = true;
     static var framePool:Array<VMCallFrame> = [];
+    static var stackPool:Array<Array<Dynamic>> = [];
+    static var callFramesPool:Array<Array<VMCallFrame>> = [];
 
     public static inline function isTruthy(v:Dynamic):Bool {
         return v != null && v != false;
@@ -250,14 +252,21 @@ class VM {
     }
 
     public static function executeLoop(interp:Interp, fiber:Null<VMFiber>, chunk:Null<BytecodeChunk>, scope:Null<Scope>, ?currentThis:Dynamic, ?methodName:String = "toplevel", ?args:Array<Dynamic>):Dynamic {
-        var stack:Array<Dynamic> = [];
-        var callFrames:Array<VMCallFrame> = [];
-        
+        var stack:Array<Dynamic> = null;
+        var callFrames:Array<VMCallFrame> = null;
         var isResumption = (fiber != null && fiber.callFrames.length > 0);
+        
         if (isResumption) {
             stack = fiber.stack;
             callFrames = fiber.callFrames;
         } else {
+            if (enablePooling) {
+                stack = stackPool.length > 0 ? stackPool.pop() : [];
+                callFrames = callFramesPool.length > 0 ? callFramesPool.pop() : [];
+            } else {
+                stack = [];
+                callFrames = [];
+            }
             var frame = obtainFrame(chunk, 0, scope, methodName);
             if (args != null) {
                 for (i in 0...args.length) {
@@ -1592,6 +1601,17 @@ class VM {
             for (f in callFrames) {
                 recycleFrame(f);
             }
+            if (enablePooling && (fiber == null || !fiber.isSuspended)) {
+                #if haxe4
+                stack.resize(0);
+                callFrames.resize(0);
+                #else
+                while (stack.length > 0) stack.pop();
+                while (callFrames.length > 0) callFrames.pop();
+                #end
+                stackPool.push(stack);
+                callFramesPool.push(callFrames);
+            }
             return res;
         } catch (e:Dynamic) {
             trace("VM EXECUTION ERROR: " + e + "\nVM CALLSTACK: " + haxe.CallStack.toString(haxe.CallStack.exceptionStack()));
@@ -1610,6 +1630,17 @@ class VM {
             if (fiber == null || !fiber.isSuspended) {
                 for (f in callFrames) {
                     recycleFrame(f);
+                }
+                if (enablePooling) {
+                    #if haxe4
+                    stack.resize(0);
+                    callFrames.resize(0);
+                    #else
+                    while (stack.length > 0) stack.pop();
+                    while (callFrames.length > 0) callFrames.pop();
+                    #end
+                    stackPool.push(stack);
+                    callFramesPool.push(callFrames);
                 }
             }
             if (fiber == null) {
