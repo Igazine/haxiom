@@ -23,5 +23,5 @@
     <haxeflag name="--macro" value="keep('openfl.display.DisplayObjectContainer', null, true)" />
     <haxeflag name="--macro" value="keep('feathers.controls.Button', null, true)" />
     <haxeflag name="--macro" value="keep('feathers.controls.LayoutGroup', null, true)" />
-
+	<haxeflag name="--macro" value="haxiom.macro.FFIMacro.exposePackage('feathers.controls')" />
 </project>

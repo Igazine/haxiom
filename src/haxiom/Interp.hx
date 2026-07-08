@@ -490,6 +490,7 @@ class Interp {
         #if linux preprocessorFlags.set("linux", true); #end
         #if debug preprocessorFlags.set("debug", true); #end
         preprocessorFlags.set("haxiom", true);
+        preprocessorFlags.set("haxiom_script", true);
     }
 
     public function new() {

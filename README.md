@@ -159,10 +159,10 @@ Haxiom supports most core Haxe language elements with specific limitations to ke
 
 ## Integration & Architectural Patterns
 
-### 1. IDE-Friendly Host Interop (`#if !haxiom` dummy scope)
-To write scripts utilizing host-injected globals inside an IDE without producing Language Server errors, wrap dummy host class declarations in your script with `#if !haxiom`:
+### 1. IDE-Friendly Host Interop (`#if !haxiom_script` dummy scope)
+To write scripts utilizing host-injected globals inside an IDE without producing Language Server errors, wrap dummy host class declarations in your script with `#if !haxiom_script`:
 ```haxe
-#if !haxiom
+#if !haxiom_script
 class ScriptContext {
     public static var container:Dynamic;
 }
