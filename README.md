@@ -11,8 +11,10 @@ Haxiom is designed for game engines, host applications, and modding frameworks t
 - **Haxe-in-Haxe Parsing & Interpretation**: A custom Lexer and Parser that tokenizes and builds Haxe AST representation, which can be run directly using the AST Interpreter (`useVM = false`).
 - **Register Bytecode VM**: Compiles the AST into register VM bytecode instructions (HXBC format) and runs them in a high-speed execution loop (`useVM = true`), achieving **up to 1,200x speedups** over direct AST interpretation.
 - **Dead Code Elimination (DCE)**: Prunes dead private class methods/fields, unreachable statements after interrupts (`return`, `throw`, `break`), and unused pure local variables to minimize payload sizes.
+- **Peephole & Bytecode Optimizations**: Discards redundant `OP_DUP` + `OP_POP` or `OP_GET_LOCAL` + `OP_POP` statements, and converts conditional or fall-through jumps targeting adjacent code blocks into simple `OP_POP`/NOP operations.
 - **Static Type Checking**: Includes an opt-in static type checking phase during compilation to strictly validate variables, generics (class and enum generics), typedef structures, and collections.
-- **Foreign Function Interface (FFI)**: Expose host variables, instances, native classes, and namespaces to guest scripts with access safety locks.
+- **Foreign Function Interface (FFI)**: Expose host variables, instances, native classes, and namespaces to guest scripts with access safety locks. Supports compile-time automated package exposure via macros.
+- **Enhanced VM Pooling**: Recycles stack arrays, call frames, and scopes in the virtual machine execution loop, minimizing runtime garbage collection overhead.
 - **Ahead-of-Time (AOT) Method Compilation**: Methods compile AOT directly into bytecode chunks while setting their AST representations to `null` to conserve constant pool payload space, falling back to VM execution transparently at runtime.
 - **Compact AST Binary Serializer**: Compresses Haxe expressions into serialized binary payloads utilizing ZigZag varint compression and local string pools.
 - **Execution Safeguards**: Limit guest execution with an instruction/operation budget (`maxInstructions`) to block infinite loops and resource consumption.
@@ -111,6 +113,25 @@ class Main {
 }
 ```
 
+### 4. Compile-Time FFI Package Auto-Registration
+
+Expose entire host library packages (e.g., `openfl.display.*`, `feathers.controls.*`) dynamically without writing manual class mappings:
+
+* **In compiler build configuration (`build.hxml`)**:
+  ```hxml
+  --macro haxiom.macro.FFIMacro.exposePackage("openfl.display")
+  ```
+
+* **In host startup code**:
+  ```haxe
+  import haxiom.FFI;
+  import haxiom.Haxiom;
+
+  var engine = new Haxiom();
+  // Automatically resolves and registers all classes in exposed packages at runtime
+  FFI.registerExposedClasses(engine);
+  ```
+
 ---
 
 ## Language Support & Syntax Matrix
@@ -123,14 +144,15 @@ Haxiom supports most core Haxe language elements with specific limitations to ke
 * **Rest Arguments**: Prefix `...args:Dynamic` syntax mapped to native array slices.
 * **Finals**: local variables (`final x`), class instance fields, and static fields. Mutability is strictly checked at compilation and runtime.
 * **Strict Semicolons**: Semicolons are required on statement-level expressions and declarations, using standard Haxe exemptions (e.g. compound constructs, last expression in a block).
+* **Regular Expressions**: Native support for Haxe's `~/pattern/flags` regex literals, including escaped delimiters `\/` and flags. Auto-whitelisted `EReg` class, allowing guest scripts to call standard Haxe regex matching (`match()`, `matched()`, etc.) directly.
+* **Class-Path Enum Constructors**: Refer to enum constructors using their qualified name (e.g., `Color.Red` or `pack.enums.Color.Red`), short constructors (e.g., `Red` when imported), and parameterized enum case mapping.
+* **Abstract Implicit Casting**: Safe, automatic conversion between abstract types and their underlying types (implicit `from`/`to` casts) during assignments, argument passing, and returns.
 
 ### Literals & Operators
 * **Supported**: Hexadecimal (`0xFF`) / binary (`0b10`) integer literals, scientific Floats (`2.1e5`), boolean literals, range iterator (`1...3`), null-coalescing (`??`), and safe navigation/optional chaining (`obj?.field`).
 * **Not Supported**:
   * Standalone floating-point notation without decimal trailing digits (e.g. `3.` parses as integer `3` and dot token; write `3.0` instead).
-  * Regular expressions (`~/regex/` syntax).
   * Compile-time character code evaluation (e.g. `"A".code` returns `null`; use `"A".charCodeAt(0)`).
-  * Guest enum constructor namespaces (refer to guest enum constructors directly like `Haxe` instead of `MyEnum.Haxe`).
   * Bitwise compound assignments (`<<=`, `>>=`, etc.).
 
 ---
