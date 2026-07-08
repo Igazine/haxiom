@@ -57,7 +57,34 @@ class StaticTypeChecker {
                     if (m.name == "new") {
                         info.ctorArgs = m.args;
                     } else {
-                        info.methods.set(m.name, m);
+                        var finalRet = m.retType;
+                        if (m.body != null && hasAwait(m.body)) {
+                            var alreadyFuture = false;
+                            if (finalRet != null) {
+                                switch (finalRet) {
+                                    case TPath(path, _):
+                                        var pathStr = path.join(".");
+                                        if (pathStr == "Future" || pathStr == "haxiom.Future") {
+                                            alreadyFuture = true;
+                                        }
+                                    default:
+                                }
+                            }
+                            if (!alreadyFuture && finalRet != null) {
+                                finalRet = TPath(["haxiom", "Future"], [finalRet]);
+                            } else if (finalRet == null) {
+                                finalRet = TPath(["haxiom", "Future"], [TPath(["Dynamic"], [])]);
+                            }
+                        }
+                        var mCopy = {
+                            name: m.name,
+                            args: m.args,
+                            retType: finalRet,
+                            body: m.body,
+                            isStatic: m.isStatic,
+                            isPublic: m.isPublic
+                        };
+                        info.methods.set(m.name, mCopy);
                     }
                 }
                 for (f in fields) {
@@ -468,6 +495,31 @@ class StaticTypeChecker {
 
     function inferCallType(calleeExpr:Expr, args:Array<Expr>, env:LocalEnv):TypeDecl {
         switch (calleeExpr.def) {
+            case EField(obj, field):
+                if (field == "await" && obj != null) {
+                    switch (obj.def) {
+                        case EIdent("Haxiom"):
+                            if (args.length == 1) {
+                                var argType = inferType(args[0], env);
+                                if (argType != null) {
+                                    switch (argType) {
+                                        case TPath(path, typeParams):
+                                            var typeName = path.join(".");
+                                            if ((typeName == "Future" || typeName == "haxiom.Future") && typeParams.length > 0) {
+                                                return typeParams[0];
+                                            }
+                                        default:
+                                    }
+                                    return argType;
+                                }
+                            }
+                            return null;
+                        default:
+                    }
+                }
+            default:
+        }
+        switch (calleeExpr.def) {
             case EField(objExpr, methodName):
                 var objType = inferType(objExpr, env);
                 if (objType == null) return null;
@@ -711,6 +763,95 @@ class StaticTypeChecker {
             case TAnonymous(fields):
                 return "{" + fields.map(f -> f.name + ":" + typeStr(f.type)).join(", ") + "}";
         }
+    }
+
+    static function hasAwait(expr:Expr):Bool {
+        if (expr == null) return false;
+        switch (expr.def) {
+            case ECall(e, args):
+                switch (e.def) {
+                    case EField(obj, field):
+                        switch (obj.def) {
+                            case EIdent(name):
+                                if (name == "Haxiom" && field == "await") return true;
+                            default:
+                        }
+                    default:
+                }
+                if (hasAwait(e)) return true;
+                for (arg in args) {
+                    if (hasAwait(arg)) return true;
+                }
+            case EFunction(_, _, _, _):
+                return false;
+            case EVar(_, _, init, _, _):
+                if (hasAwait(init)) return true;
+            case EAssign(target, e):
+                if (hasAwait(target) || hasAwait(e)) return true;
+            case EBinop(_, e1, e2):
+                if (hasAwait(e1) || hasAwait(e2)) return true;
+            case EUnop(_, e):
+                if (hasAwait(e)) return true;
+            case EField(e, _):
+                if (hasAwait(e)) return true;
+            case EArrayDecl(values):
+                for (v in values) {
+                    if (hasAwait(v)) return true;
+                }
+            case EObjectDecl(fields):
+                for (f in fields) {
+                    if (hasAwait(f.expr)) return true;
+                }
+            case EMapDecl(values):
+                for (v in values) {
+                    if (hasAwait(v.key) || hasAwait(v.value)) return true;
+                }
+            case EBlock(exprs):
+                for (ex in exprs) {
+                    if (hasAwait(ex)) return true;
+                }
+            case EIf(cond, e1, e2):
+                if (hasAwait(cond) || hasAwait(e1) || hasAwait(e2)) return true;
+            case EWhile(cond, e):
+                if (hasAwait(cond) || hasAwait(e)) return true;
+            case EDoWhile(cond, e):
+                if (hasAwait(cond) || hasAwait(e)) return true;
+            case EFor(_, it, e):
+                if (hasAwait(it) || hasAwait(e)) return true;
+            case ESwitch(e, cases, defExpr):
+                if (hasAwait(e)) return true;
+                for (c in cases) {
+                    for (val in c.values) {
+                        if (hasAwait(val)) return true;
+                    }
+                    if (hasAwait(c.guard)) return true;
+                    if (hasAwait(c.expr)) return true;
+                }
+                if (hasAwait(defExpr)) return true;
+            case EReturn(e):
+                if (hasAwait(e)) return true;
+            case EThrow(e):
+                if (hasAwait(e)) return true;
+            case ETry(tryExpr, catches):
+                if (hasAwait(tryExpr)) return true;
+                for (c in catches) {
+                    if (hasAwait(c.pattern)) return true;
+                    if (hasAwait(c.guard)) return true;
+                    if (hasAwait(c.body)) return true;
+                }
+            case ECast(e, _):
+                if (hasAwait(e)) return true;
+            case ESafeField(e, _):
+                if (hasAwait(e)) return true;
+            case ENew(_, args):
+                for (arg in args) {
+                    if (hasAwait(arg)) return true;
+                }
+            case EMeta(_, e):
+                if (hasAwait(e)) return true;
+            default:
+        }
+        return false;
     }
 }
 

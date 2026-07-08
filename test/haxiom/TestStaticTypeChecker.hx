@@ -147,6 +147,21 @@ class TestStaticTypeChecker {
             'var r = Result.Ok(42);'
         );
 
+        expectNoError("Implicit Future wrapping and unwrapping",
+            'import haxiom.Future;\n' +
+            'class MyService {\n' +
+            '  public static function getAge():Int {\n' +
+            '    var res = Haxiom.await(getDelay());\n' +
+            '    return res;\n' +
+            '  }\n' +
+            '  public static function getDelay():Future<Int> {\n' +
+            '    return null;\n' +
+            '  }\n' +
+            '}\n' +
+            'var f:Future<Int> = MyService.getAge();\n' +
+            'var val:Int = Haxiom.await(f);'
+        );
+
         // ---------------------------------------------------------------
         // 9. Static type checking is disabled by default
         // ---------------------------------------------------------------
