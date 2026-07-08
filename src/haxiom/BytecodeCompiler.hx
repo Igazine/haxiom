@@ -52,7 +52,8 @@ class BytecodeCompiler {
     }
 
     public static function compile(expr:Expr, ?args:Array<FunctionArg>, ?isTopLevel:Bool = true, ?isAsync:Bool = false, ?debugMode:Bool = false, ?functionName:String):BytecodeChunk {
-        var compiler = new BytecodeCompiler(args, isTopLevel, isAsync, debugMode, functionName);
+        var actualAsync = isAsync || hasAwait(expr);
+        var compiler = new BytecodeCompiler(args, isTopLevel, actualAsync, debugMode, functionName);
         if (!isTopLevel) {
             compiler.findCapturedVars(expr, new Map<String, Bool>(), compiler.capturedVars);
         }
@@ -1602,5 +1603,94 @@ class BytecodeCompiler {
             default:
                 throw 'Unknown opcode in optimizer: $op';
         }
+    }
+
+    static function hasAwait(expr:Expr):Bool {
+        if (expr == null) return false;
+        switch (expr.def) {
+            case ECall(e, args):
+                switch (e.def) {
+                    case EField(obj, field):
+                        switch (obj.def) {
+                            case EIdent(name):
+                                if (name == "Haxiom" && field == "await") return true;
+                            default:
+                        }
+                    default:
+                }
+                if (hasAwait(e)) return true;
+                for (arg in args) {
+                    if (hasAwait(arg)) return true;
+                }
+            case EFunction(_, _, _, _):
+                return false;
+            case EVar(_, _, init, _, _):
+                if (hasAwait(init)) return true;
+            case EAssign(target, e):
+                if (hasAwait(target) || hasAwait(e)) return true;
+            case EBinop(_, e1, e2):
+                if (hasAwait(e1) || hasAwait(e2)) return true;
+            case EUnop(_, e):
+                if (hasAwait(e)) return true;
+            case EField(e, _):
+                if (hasAwait(e)) return true;
+            case EArrayDecl(values):
+                for (v in values) {
+                    if (hasAwait(v)) return true;
+                }
+            case EObjectDecl(fields):
+                for (f in fields) {
+                    if (hasAwait(f.expr)) return true;
+                }
+            case EMapDecl(values):
+                for (v in values) {
+                    if (hasAwait(v.key) || hasAwait(v.value)) return true;
+                }
+            case EBlock(exprs):
+                for (ex in exprs) {
+                    if (hasAwait(ex)) return true;
+                }
+            case EIf(cond, e1, e2):
+                if (hasAwait(cond) || hasAwait(e1) || hasAwait(e2)) return true;
+            case EWhile(cond, e):
+                if (hasAwait(cond) || hasAwait(e)) return true;
+            case EDoWhile(cond, e):
+                if (hasAwait(cond) || hasAwait(e)) return true;
+            case EFor(_, it, e):
+                if (hasAwait(it) || hasAwait(e)) return true;
+            case ESwitch(e, cases, defExpr):
+                if (hasAwait(e)) return true;
+                for (c in cases) {
+                    for (val in c.values) {
+                        if (hasAwait(val)) return true;
+                    }
+                    if (hasAwait(c.guard)) return true;
+                    if (hasAwait(c.expr)) return true;
+                }
+                if (hasAwait(defExpr)) return true;
+            case EReturn(e):
+                if (hasAwait(e)) return true;
+            case EThrow(e):
+                if (hasAwait(e)) return true;
+            case ETry(tryExpr, catches):
+                if (hasAwait(tryExpr)) return true;
+                for (c in catches) {
+                    if (hasAwait(c.pattern)) return true;
+                    if (hasAwait(c.guard)) return true;
+                    if (hasAwait(c.body)) return true;
+                }
+            case ECast(e, _):
+                if (hasAwait(e)) return true;
+            case ESafeField(e, _):
+                if (hasAwait(e)) return true;
+            case ENew(_, args):
+                for (arg in args) {
+                    if (hasAwait(arg)) return true;
+                }
+            case EMeta(_, e):
+                if (hasAwait(e)) return true;
+            default:
+        }
+        return false;
     }
 }

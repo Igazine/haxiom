@@ -39,8 +39,10 @@ class TestAsyncVM {
                         testUncaughtExceptionAwait(() -> {
                             testAwaitNonPromise(() -> {
                                 testASTModeRejection(() -> {
-                                    trace("SUCCESS: All Haxiom Async/Await VM tests passed!");
-                                    onComplete();
+                                    testAutoAsyncDetection(() -> {
+                                        trace("SUCCESS: All Haxiom Async/Await VM tests passed!");
+                                        onComplete();
+                                    });
                                 });
                             });
                         });
@@ -304,5 +306,38 @@ class TestAsyncVM {
 
         trace("SUCCESS: testASTModeRejection passed.");
         cb();
+    }
+
+    static function testAutoAsyncDetection(cb:Void->Void) {
+        var engine = new Haxiom();
+        engine.useVM = true;
+        engine.setGlobal("delay", (ms:Int, val:Dynamic) -> delay(ms, val));
+
+        var script = '
+            class AutoClass {
+                public static function run() {
+                    var myClosure = function() {
+                        var res = Haxiom.await(delay(10, 42));
+                        return res;
+                    };
+                    
+                    var x = Haxiom.await(delay(10, 8));
+                    var y = Haxiom.await(myClosure());
+                    return x + y;
+                }
+            }
+            AutoClass.run();
+        ';
+        var promise:Future = engine.interpret(script);
+        promise.then(
+            (val) -> {
+                if (val != 50) throw "testAutoAsyncDetection failed: expected 50, got " + val;
+                trace("SUCCESS: testAutoAsyncDetection passed.");
+                cb();
+            },
+            (err) -> {
+                throw "testAutoAsyncDetection failed with error: " + err;
+            }
+        );
     }
 }
