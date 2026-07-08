@@ -203,6 +203,12 @@ Haxe replaces inline constants (like `MouseEvent.CLICK`) with literal values dur
 ### 9. Platform-Agnostic Instruction Safeguards
 Protect applications from infinite loops by setting `engine.maxInstructions`. The engine counts operation nodes (AST) or instruction cycles (VM) and aborts with a callstack trace on threshold breach. This check is instruction-based, making it **100% deterministic and platform-independent**.
 
+### 10. Asynchronous Script Execution (Fibers)
+Haxiom supports non-blocking asynchronous script execution utilizing user-land cooperative fibers. Any guest function or closure that calls `Haxiom.await(future)` is implicitly compiled as an asynchronous chunk.
+
+* **Implicit Async Detection**: The compiler automatically scans the AST of function/closure bodies. If it detects a `Haxiom.await` call, it compiles the chunk as async (returning a promise-like `Future` when evaluated) without requiring any custom compiler keywords or `@:haxiom.async` metadata.
+* **Non-Blocking Yielding**: When executing `Haxiom.await` on a pending future, the virtual machine pauses execution, suspends the `VMFiber` state (stack, call frames, scopes), and returns immediately, allowing the host application's event loop to continue running. When resolved, the fiber is scheduled to resume exactly where it was paused.
+
 ---
 
 ## Performance Benchmark
