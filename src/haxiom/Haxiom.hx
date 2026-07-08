@@ -153,6 +153,16 @@ class Haxiom {
 		FFI.exposedModules.set("haxiom.AST", ["haxiom.ExprDef", "haxiom.TypeDecl"]);
 		FFI.registerEnum(this, "haxiom.ExprDef", haxiom.AST.ExprDef);
 		FFI.registerEnum(this, "haxiom.TypeDecl", haxiom.AST.TypeDecl);
+		FFI.registerClass(this, "haxiom.Future", haxiom.Future);
+	}
+
+	/**
+	 * A placeholder helper to represent asynchronous fiber suspension in guest scripts.
+	 * 
+	 * @throws String If invoked directly in host Haxe code.
+	 */
+	public static function await<T>(future:Dynamic):T {
+		throw "Haxiom.await() can only be used inside Haxiom guest scripts executing in the VM.";
 	}
 
 	/**

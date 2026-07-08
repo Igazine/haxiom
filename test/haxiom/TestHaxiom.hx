@@ -3012,6 +3012,34 @@ class TestHaxiom {
 		}
 		trace("SUCCESS: Peephole optimization (Pass 2 remapped JUMP) verified.");
 
+		// Test 5: Haxiom.await host execution failure and Future availability
+		var hostAwaitError = false;
+		try {
+			Haxiom.await(null);
+		} catch (e:Dynamic) {
+			if (Std.string(e).indexOf("can only be used inside Haxiom guest scripts") != -1) {
+				hostAwaitError = true;
+			}
+		}
+		if (!hostAwaitError) {
+			throw "FAIL: Haxiom.await did not throw when executed in host code";
+		}
+		trace("SUCCESS: Haxiom.await host blocking verified.");
+
+		// Verify Future availability in guest code
+		var futureVerifyScript = "
+			import haxiom.Future;
+			var fut = new Future();
+			fut.resolve('test');
+			fut;
+		";
+		var engine = new Haxiom();
+		var futRes:Dynamic = engine.interpret(futureVerifyScript);
+		if (futRes == null || !Std.isOfType(futRes, Future)) {
+			throw "FAIL: haxiom.Future type import or instantiation failed in guest script";
+		}
+		trace("SUCCESS: Future type whitelisting and resolution verified.");
+
 		trace("SUCCESS: Bytecode Verification & Safety Checks verified.");
 	}
 
