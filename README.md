@@ -4,6 +4,9 @@ Haxiom is a secure, sandboxed Haxe-in-Haxe scripting engine and bytecode Virtual
 
 Haxiom is designed for game engines, host applications, and modding frameworks that need a high-performance, sandboxed scripting layer with robust type-checking, Ahead-of-Time (AOT) compilation, and compact serialization.
 
+> [!IMPORTANT]
+> Haxiom is currently a developer preview. It's stable enough to experiment with and for learning. However, the API may change in the future.
+
 ---
 
 ## Key Features
