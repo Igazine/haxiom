@@ -35,8 +35,12 @@ class Main extends Sprite {
         onResize(null);
 
         // Safely forward keyboard events to gameRoot (no direct stage exposure to guest scripts)
+        var isForwarding = false;
         stage.addEventListener(KeyboardEvent.KEY_DOWN, function(event:KeyboardEvent) {
+            if (isForwarding) return;
+            isForwarding = true;
             gameRoot.dispatchEvent(event);
+            isForwarding = false;
         });
 
         // Initialize Haxiom engine

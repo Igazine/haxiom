@@ -975,6 +975,7 @@ class Parser {
                 return mk(EFunction(name, args, retType, body), t.pos);
             case TBracketOpen:
                 next();
+                skipNewlines();
                 if (is(TBracketClose)) {
                     next();
                     return mk(EArrayDecl([]), t.pos);
@@ -982,15 +983,19 @@ class Parser {
                 var nextT = peek();
                 if (nextT.def == TFor || nextT.def == TWhile || nextT.def == TIf) {
                     var compStmt = parseStatement();
+                    skipNewlines();
                     expect(TBracketClose);
                     return desugarComprehension(compStmt, t.pos);
                 }
                 var first = parseExpr();
+                skipNewlines();
                 switch (first.def) {
                     case EBinop("=>", key, value):
                         var pairs = [{ key: key, value: value }];
                         while (match(TComma)) {
+                            skipNewlines();
                             var k = parseExpr();
+                            skipNewlines();
                             switch (k.def) {
                                 case EBinop("=>", nextKey, nextValue):
                                     pairs.push({ key: nextKey, value: nextValue });
@@ -998,13 +1003,17 @@ class Parser {
                                     throw new CompileException("Expected => in map declaration", k.pos.line, k.pos.col, file);
                             }
                         }
+                        skipNewlines();
                         expect(TBracketClose);
                         return mk(EMapDecl(pairs), t.pos);
                     default:
                         var values = [first];
                         while (match(TComma)) {
+                            skipNewlines();
                             values.push(parseExpr());
+                            skipNewlines();
                         }
+                        skipNewlines();
                         expect(TBracketClose);
                         return mk(EArrayDecl(values), t.pos);
                 }

@@ -4213,6 +4213,7 @@ class Interp {
                         if (mDyn.bytecodeChunk == null && method.body != null) {
                             mDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(method.body, method.args, false, isMethodAsync, debugMode, method.name);
                         }
+                        isMethodAsync = mDyn.bytecodeChunk.isAsync;
                         res = haxiom.VM.runChunk(this, mDyn.bytecodeChunk, fScope, obj, className + "." + method.name, mappedArgs);
                     } else {
                         res = eval(method.body, fScope);
