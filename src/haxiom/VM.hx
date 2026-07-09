@@ -1438,14 +1438,16 @@ class VM {
                             
                             // Fallback: resolve method as a field and invoke
                             var resolvedField:Dynamic = interp.evalField(obj, fieldName, frame.scope, currentPos());
-                            if (resolvedField != null && Reflect.isFunction(resolvedField)) {
-                                var newCache = new InlineCacheEntry();
-                                newCache.lastObject = obj;
-                                newCache.lastClass = Type.getClass(obj);
-                                newCache.cachedValue = resolvedField;
-                                newCache.isMethod = true;
-                                frame.chunk.inlineCaches.set(cacheKey, newCache);
+                            if (resolvedField == null || !Reflect.isFunction(resolvedField)) {
+                                throw 'Method "$fieldName" not found or is not a function on object $obj';
                             }
+                            var newCache = new InlineCacheEntry();
+                            newCache.lastObject = obj;
+                            newCache.lastClass = Type.getClass(obj);
+                            newCache.cachedValue = resolvedField;
+                            newCache.isMethod = true;
+                            frame.chunk.inlineCaches.set(cacheKey, newCache);
+                            
                             var res = Reflect.callMethod(obj, cast resolvedField, args);
                             stack.push(res);
                         }

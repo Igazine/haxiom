@@ -509,6 +509,8 @@ class Interp {
             string: Std.string,
             parseInt: Std.parseInt,
             parseFloat: Std.parseFloat,
+            int: Std.int,
+            random: Std.random,
             isOfType: (v:Dynamic, t:Dynamic) -> {
                 if (t == mapPlaceholder) {
                     return Std.isOfType(v, haxe.Constraints.IMap);
