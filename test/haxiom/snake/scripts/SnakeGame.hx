@@ -20,6 +20,7 @@ class SnakeGame {
     var direction:Int; // 0=Up, 1=Right, 2=Down, 3=Left
     var snake:Array<Dynamic>; // Array of segments {x:Int, y:Int}
     var food:Dynamic; // {x:Int, y:Int}
+    var speedDelay:Int; // Current tick delay in ms (decreases as snake eats)
     
     var root:Sprite;
     var canvas:Sprite;
@@ -38,12 +39,13 @@ class SnakeGame {
         direction = 1;
         snake = [];
         food = {x: 5, y: 5};
+        speedDelay = 150;
         
         root = ScriptContext.gameRoot;
     }
     
     public function start() {
-        trace("SnakeGame script start() executing...");
+        trace("SnakeGame starting...");
         // Create canvas
         canvas = new Sprite();
         root.addChild(canvas);
@@ -69,15 +71,15 @@ class SnakeGame {
         
         menuText = new TextField();
         var menuTf = new TextFormat();
-        menuTf.size = 28;
+        menuTf.size = 24;
         menuTf.color = 0x00FF00;
         menuText.defaultTextFormat = menuTf;
-        menuText.x = 100;
-        menuText.y = 250;
-        menuText.width = 400;
-        menuText.height = 100;
+        menuText.x = 80;
+        menuText.y = 230;
+        menuText.width = 440;
+        menuText.height = 150;
         menuText.selectable = false;
-        menuText.text = "HAXIOM SNAKE\nClick anywhere to start!";
+        menuText.text = "HAXIOM SNAKE\nControl with WASD or Arrows\nClick anywhere to start!";
         menuOverlay.addChild(menuText);
         
         // Listen to click on stage/gameRoot to start/restart
@@ -94,24 +96,21 @@ class SnakeGame {
     }
     
     function tickLoop() {
-        trace("tickLoop started");
         while (true) {
-            trace("tickLoop iteration. State: " + state);
             if (state == "Playing") {
                 update();
                 draw();
             }
-            Haxiom.await(Timer.delay(120)); // ~8 frames per second for game tick
+            Haxiom.await(Timer.delay(speedDelay)); // Dynamic speed delay
         }
     }
     
     function onClickMenu(e:MouseEvent) {
-        trace("onClickMenu called! current state: " + state);
         if (state == "Menu" || state == "GameOver") {
             resetGame();
             state = "Playing";
             menuOverlay.visible = false;
-            trace("State changed to Playing. menuOverlay hidden.");
+            trace("Game started");
         }
     }
     
@@ -119,6 +118,7 @@ class SnakeGame {
         score = 0;
         scoreLabel.text = "Score: 0";
         direction = 1; // Right
+        speedDelay = 150; // Initial delay (slow)
         
         // Start snake at center
         snake = [
@@ -128,7 +128,6 @@ class SnakeGame {
         ];
         
         spawnFood();
-        trace("resetGame finished. Snake size: " + snake.length + ", food position: " + food.x + "," + food.y);
     }
     
     function spawnFood() {
@@ -153,7 +152,6 @@ class SnakeGame {
         if (state != "Playing") return;
         
         var key = e.keyCode;
-        trace("Key down: " + key);
         if (key == Keyboard.UP || key == 87) { // Up or W
             if (direction != 2) direction = 0;
         } else if (key == Keyboard.RIGHT || key == 68) { // Right or D
@@ -168,10 +166,7 @@ class SnakeGame {
     function update() {
         // Calculate new head position
         var head = snake[0];
-        if (head == null) {
-            trace("Error: snake head is null!");
-            return;
-        }
+        if (head == null) return;
         var nx = head.x;
         var ny = head.y;
         
@@ -182,7 +177,6 @@ class SnakeGame {
         
         // Collision checks: Wall
         if (nx < 0 || nx >= 30 || ny < 0 || ny >= 30) {
-            trace("Wall collision detected at: " + nx + "," + ny);
             triggerGameOver();
             return;
         }
@@ -190,7 +184,6 @@ class SnakeGame {
         // Collision checks: Self
         for (seg in snake) {
             if (seg.x == nx && seg.y == ny) {
-                trace("Self collision detected at: " + nx + "," + ny);
                 triggerGameOver();
                 return;
             }
@@ -205,7 +198,9 @@ class SnakeGame {
             score += 10;
             scoreLabel.text = "Score: " + score;
             spawnFood();
-            trace("Food eaten! Score: " + score + ", New food at: " + food.x + "," + food.y);
+            // Speed up: subtract 5ms delay (minimum cap at 50ms)
+            speedDelay = Std.int(Math.max(50, speedDelay - 5));
+            trace("Food eaten! Speed delay: " + speedDelay + "ms");
         } else {
             // Remove tail if didn't eat
             snake.pop();
@@ -214,9 +209,9 @@ class SnakeGame {
     
     function triggerGameOver() {
         state = "GameOver";
-        menuText.text = "GAME OVER\nScore: " + score + "\nClick to Restart";
+        menuText.text = "GAME OVER\nScore: " + score + "\nClick anywhere to restart";
         menuOverlay.visible = true;
-        trace("Game Over triggered.");
+        trace("Game Over. Final Score: " + score);
     }
     
     function draw() {
