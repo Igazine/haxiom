@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<project>
+	<meta title="HaxiomSnake" package="net.digigun.haxiom.snake" version="1.0.0" company="Digigun.net"/>
+	<app main="Main" file="HaxiomSnake"/>
+
+	<window allow-high-dpi="true"/>
+	<window fps="60"/>
+	<window fps="0" if="html5"/>
+	<window width="800" height="800" unless="html5" />
+	<window background="#111111" />
+	
+	<source path="."/>
+
+	<assets path="scripts" include="*" />
+	
+	<haxelib name="openfl"/>
+	<haxelib name="haxiom"/>
+	
+	<haxeflag name="-dce" value="no" />
+	<haxeflag name="--macro" value="keep('openfl.events.EventDispatcher', null, true)" />
+	<haxeflag name="--macro" value="keep('openfl.display.DisplayObjectContainer', null, true)" />
+	<haxeflag name="--macro" value="keep('openfl.display.Sprite', null, true)" />
+	<haxeflag name="--macro" value="keep('openfl.text.TextField', null, true)" />
+	<haxeflag name="--macro" value="keep('openfl.text.TextFormat', null, true)" />
+</project>
