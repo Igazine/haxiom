@@ -15,6 +15,7 @@
 	
 	<haxelib name="openfl"/>
 	<haxelib name="haxiom"/>
+	<haxelib name="actuate"/>
 	
 	<haxeflag name="-dce" value="no" />
 	<haxeflag name="--macro" value="keep('openfl.events.EventDispatcher', null, true)" />
@@ -22,4 +23,5 @@
 	<haxeflag name="--macro" value="keep('openfl.display.Sprite', null, true)" />
 	<haxeflag name="--macro" value="keep('openfl.text.TextField', null, true)" />
 	<haxeflag name="--macro" value="keep('openfl.text.TextFormat', null, true)" />
+	<haxeflag name="--macro" value="keep('motion.Actuate', null, true)" />
 </project>

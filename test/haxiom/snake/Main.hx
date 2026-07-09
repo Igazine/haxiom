@@ -47,6 +47,19 @@ class Main extends Sprite {
         engine = new Haxiom();
         engine.useVM = true;
 
+        // Set up module resolver for loading packaged guest scripts dynamically
+        engine.moduleResolver = function(modulePath:String):String {
+            var relativePath = "scripts/" + modulePath.split(".").join("/") + ".hx";
+            if (openfl.utils.Assets.exists(relativePath)) {
+                return openfl.utils.Assets.getText(relativePath);
+            }
+            var flatPath = "scripts/" + modulePath + ".hx";
+            if (openfl.utils.Assets.exists(flatPath)) {
+                return openfl.utils.Assets.getText(flatPath);
+            }
+            return null;
+        };
+
         // Register FFI classes
         registerFFI(engine);
 
@@ -78,6 +91,9 @@ class Main extends Sprite {
         FFI.registerClass(haxiom, "openfl.events.MouseEvent", openfl.events.MouseEvent);
         FFI.registerClass(haxiom, "openfl.events.KeyboardEvent", openfl.events.KeyboardEvent);
         FFI.registerClass(haxiom, "openfl.ui.Keyboard", openfl.ui.Keyboard);
+        
+        // Expose Actuate for visual tweening effects
+        FFI.registerClass(haxiom, "motion.Actuate", motion.Actuate);
         
         // Expose a host Timer that maps haxe.Timer.delay to Haxiom Future resolutions
         FFI.registerClass(haxiom, "Timer", HaxiomTimer);

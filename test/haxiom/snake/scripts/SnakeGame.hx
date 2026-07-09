@@ -14,13 +14,17 @@ class Timer {
 }
 #end
 
+import snake.entities.Snake;
+import snake.entities.Food;
+import snake.utils.EffectManager;
+
 class SnakeGame {
     var state:String; // "Menu", "Playing", "GameOver"
     var score:Int;
-    var direction:Int; // 0=Up, 1=Right, 2=Down, 3=Left
-    var snake:Array<Dynamic>; // Array of segments {x:Int, y:Int}
-    var food:Dynamic; // {x:Int, y:Int}
-    var speedDelay:Int; // Current tick delay in ms (decreases as snake eats)
+    var speedDelay:Int;
+    
+    var snakeObj:Snake;
+    var foodObj:Food;
     
     var root:Sprite;
     var canvas:Sprite;
@@ -36,10 +40,10 @@ class SnakeGame {
     public function new() {
         state = "Menu";
         score = 0;
-        direction = 1;
-        snake = [];
-        food = {x: 5, y: 5};
         speedDelay = 150;
+        
+        snakeObj = new Snake();
+        foodObj = new Food();
         
         root = ScriptContext.gameRoot;
     }
@@ -117,35 +121,10 @@ class SnakeGame {
     function resetGame() {
         score = 0;
         scoreLabel.text = "Score: 0";
-        direction = 1; // Right
-        speedDelay = 150; // Initial delay (slow)
+        speedDelay = 150;
         
-        // Start snake at center
-        snake = [
-            {x: 15, y: 15},
-            {x: 14, y: 15},
-            {x: 13, y: 15}
-        ];
-        
-        spawnFood();
-    }
-    
-    function spawnFood() {
-        var valid = false;
-        var rx = 0;
-        var ry = 0;
-        while (!valid) {
-            rx = Std.int(Math.random() * 30);
-            ry = Std.int(Math.random() * 30);
-            valid = true;
-            for (seg in snake) {
-                if (seg.x == rx && seg.y == ry) {
-                    valid = false;
-                    break;
-                }
-            }
-        }
-        food = {x: rx, y: ry};
+        snakeObj.reset();
+        foodObj.spawn(snakeObj.segments);
     }
     
     function onKeyDown(e:KeyboardEvent) {
@@ -153,57 +132,47 @@ class SnakeGame {
         
         var key = e.keyCode;
         if (key == Keyboard.UP || key == 87) { // Up or W
-            if (direction != 2) direction = 0;
+            if (snakeObj.direction != 2) snakeObj.direction = 0;
         } else if (key == Keyboard.RIGHT || key == 68) { // Right or D
-            if (direction != 3) direction = 1;
+            if (snakeObj.direction != 3) snakeObj.direction = 1;
         } else if (key == Keyboard.DOWN || key == 83) { // Down or S
-            if (direction != 0) direction = 2;
+            if (snakeObj.direction != 0) snakeObj.direction = 2;
         } else if (key == Keyboard.LEFT || key == 65) { // Left or A
-            if (direction != 1) direction = 3;
+            if (snakeObj.direction != 1) snakeObj.direction = 3;
         }
     }
     
     function update() {
-        // Calculate new head position
-        var head = snake[0];
-        if (head == null) return;
-        var nx = head.x;
-        var ny = head.y;
+        var nextHead = snakeObj.getNextHead();
+        if (nextHead == null) return;
         
-        if (direction == 0) ny -= 1;
-        else if (direction == 1) nx += 1;
-        else if (direction == 2) ny += 1;
-        else if (direction == 3) nx -= 1;
-        
-        // Collision checks: Wall
-        if (nx < 0 || nx >= 30 || ny < 0 || ny >= 30) {
+        // Wall collision
+        if (snakeObj.checkWallCollision(nextHead.x, nextHead.y)) {
             triggerGameOver();
             return;
         }
         
-        // Collision checks: Self
-        for (seg in snake) {
-            if (seg.x == nx && seg.y == ny) {
-                triggerGameOver();
-                return;
-            }
+        // Self collision
+        if (snakeObj.checkSelfCollision(nextHead.x, nextHead.y)) {
+            triggerGameOver();
+            return;
         }
         
-        // Move snake
-        var newHead = {x: nx, y: ny};
-        snake.unshift(newHead);
-        
         // Check if food eaten
-        if (nx == food.x && ny == food.y) {
+        var eaten = (nextHead.x == foodObj.x && nextHead.y == foodObj.y);
+        
+        snakeObj.moveForward(nextHead.x, nextHead.y, eaten);
+        
+        if (eaten) {
             score += 10;
             scoreLabel.text = "Score: " + score;
-            spawnFood();
-            // Speed up: subtract 5ms delay (minimum cap at 50ms)
+            
+            // Trigger visual bite effect at the food location (hosted on the parent canvas)
+            EffectManager.playBiteEffect(canvas, foodObj.x, foodObj.y);
+            
+            foodObj.spawn(snakeObj.segments);
             speedDelay = Std.int(Math.max(50, speedDelay - 5));
             trace("Food eaten! Speed delay: " + speedDelay + "ms");
-        } else {
-            // Remove tail if didn't eat
-            snake.pop();
         }
     }
     
@@ -230,18 +199,18 @@ class SnakeGame {
         
         // Draw food (red block)
         g.beginFill(0xFF0000);
-        g.drawRect(food.x * 20, 50 + food.y * 20, 20, 20);
+        g.drawRect(foodObj.x * 20, 50 + foodObj.y * 20, 20, 20);
         g.endFill();
         
         // Draw snake (green blocks, with neon green for head)
-        for (i in 0...snake.length) {
-            var seg = snake[i];
+        for (i in 0...snakeObj.segments.length) {
+            var seg = snakeObj.segments[i];
             if (i == 0) {
                 g.beginFill(0x00FF00); // Head
             } else {
                 g.beginFill(0x008800); // Body
             }
-            g.drawRect(seg.x * 20 + 1, 50 + seg.y * 20 + 1, 18, 18); // 1px gap between segments
+            g.drawRect(seg.x * 20 + 1, 50 + seg.y * 20 + 1, 18, 18);
             g.endFill();
         }
         
