@@ -6,7 +6,7 @@ class Preprocessor {
     public static function evaluate(exprStr:String, flags:Map<String, Bool>):Bool {
         if (exprStr == null || StringTools.trim(exprStr) == "") return true;
         try {
-            var lexer = new Lexer(exprStr, "preprocessor");
+            var lexer = new Lexer(exprStr, "preprocessor", flags);
             var tokens = lexer.tokenize();
             var parser = new Parser(tokens, "preprocessor");
             var ast = parser.parseExprOnly();

@@ -497,7 +497,7 @@ class Lexer {
                     var exprStr = s.substring(startIdx, j - 1);
                     i = j;
 
-                    var subLexer = new Lexer(exprStr, file);
+                    var subLexer = new Lexer(exprStr, file, flags);
                     subLexer.line = startLine;
                     subLexer.col = startCol + startIdx;
                     var subTokens = subLexer.tokenize();

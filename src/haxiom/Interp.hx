@@ -5329,7 +5329,7 @@ class Interp {
             var src = moduleResolver(fqName);
             if (src != null) {
                 var moduleScope = new Scope(globals);
-                var lexer = new Lexer(src);
+                var lexer = new Lexer(src, fqName, preprocessorFlags);
                 var tokens = lexer.tokenize();
                 var parser = new Parser(tokens);
                 var ast = parser.parse();
