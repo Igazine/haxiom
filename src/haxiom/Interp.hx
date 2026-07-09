@@ -445,6 +445,18 @@ class Interp {
     public var lastSource:Null<String> = null;
     public var preprocessorFlags:Map<String, Bool> = new Map();
     public var lastActiveLocals:Null<Map<String, Dynamic>> = null;
+    public var disposed(default, null):Bool = false;
+
+    public function dispose():Void {
+        disposed = true;
+        globals = new Scope(null); // Clear root scope and references
+        importedModules.clear();
+        lastActiveLocals = null;
+        currentThis = null;
+        currentConstructorInstance = null;
+        activeUsings = [];
+        callStack = [];
+    }
 
     public inline function pushFrame(methodName:String, pos:Pos) {
         callStack.push({ method: methodName, pos: pos });

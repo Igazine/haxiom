@@ -253,6 +253,9 @@ class VM {
     }
 
     public static function executeLoop(interp:Interp, fiber:Null<VMFiber>, chunk:Null<BytecodeChunk>, scope:Null<Scope>, ?currentThis:Dynamic, ?methodName:String = "toplevel", ?args:Array<Dynamic>):Dynamic {
+        if (interp.disposed) {
+            return null;
+        }
         var stack:Array<Dynamic> = null;
         var callFrames:Array<VMCallFrame> = null;
         var isResumption = (fiber != null && fiber.callFrames.length > 0);

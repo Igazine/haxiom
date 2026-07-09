@@ -166,6 +166,23 @@ class Haxiom {
 	}
 
 	/**
+	 * Read-only status indicating whether this engine instance has been disposed.
+	 */
+	public var disposed(get, never):Bool;
+
+	inline function get_disposed()
+		return interp.disposed;
+
+	/**
+	 * Disposes of the engine instance, freeing all globals, scopes, AST caches, and aborting active fibers.
+	 */
+	public function dispose():Void {
+		interp.dispose();
+		astCache.clear();
+		astCacheSize = 0;
+	}
+
+	/**
 	 * Tokenizes, parses, expands macros, and optimizes a raw script string into a compiled Haxiom AST expression.
 	 * 
 	 * @param source The script source code string to compile.

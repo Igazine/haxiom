@@ -40,8 +40,10 @@ class TestAsyncVM {
                             testAwaitNonPromise(() -> {
                                 testASTModeRejection(() -> {
                                     testAutoAsyncDetection(() -> {
-                                        trace("SUCCESS: All Haxiom Async/Await VM tests passed!");
-                                        onComplete();
+                                        testDisposal(() -> {
+                                            trace("SUCCESS: All Haxiom Async/Await VM tests passed!");
+                                            onComplete();
+                                        });
                                     });
                                 });
                             });
@@ -339,5 +341,45 @@ class TestAsyncVM {
                 throw "testAutoAsyncDetection failed with error: " + err;
             }
         );
+    }
+
+    static function testDisposal(cb:Void->Void) {
+        var engine = new Haxiom();
+        engine.useVM = true;
+        engine.setGlobal("delay", (ms:Int, val:Dynamic) -> delay(ms, val));
+
+        var counter = 0;
+        engine.setGlobal("increment", () -> {
+            counter++;
+        });
+
+        var script = '
+            class DisposedTest {
+                public static function run() {
+                    Haxiom.await(delay(15, null));
+                    increment();
+                    Haxiom.await(delay(15, null));
+                    increment();
+                }
+            }
+            DisposedTest.run();
+        ';
+
+        var promise:Future = engine.interpret(script);
+        engine.dispose();
+        
+        if (!engine.disposed) throw "testDisposal failed: expected engine to be flagged as disposed";
+
+        #if (eval || macro)
+        cb();
+        #else
+        Timer.delay(() -> {
+            if (counter != 0) {
+                throw "testDisposal failed: guest script executed functions after dispose! counter = " + counter;
+            }
+            trace("SUCCESS: testDisposal passed.");
+            cb();
+        }, 50);
+        #end
     }
 }
