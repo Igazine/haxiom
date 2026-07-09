@@ -43,6 +43,7 @@ class SnakeGame {
     }
     
     public function start() {
+        trace("SnakeGame script start() executing...");
         // Create canvas
         canvas = new Sprite();
         root.addChild(canvas);
@@ -93,7 +94,9 @@ class SnakeGame {
     }
     
     function tickLoop() {
+        trace("tickLoop started");
         while (true) {
+            trace("tickLoop iteration. State: " + state);
             if (state == "Playing") {
                 update();
                 draw();
@@ -103,10 +106,12 @@ class SnakeGame {
     }
     
     function onClickMenu(e:MouseEvent) {
+        trace("onClickMenu called! current state: " + state);
         if (state == "Menu" || state == "GameOver") {
             resetGame();
             state = "Playing";
             menuOverlay.visible = false;
+            trace("State changed to Playing. menuOverlay hidden.");
         }
     }
     
@@ -123,6 +128,7 @@ class SnakeGame {
         ];
         
         spawnFood();
+        trace("resetGame finished. Snake size: " + snake.length + ", food position: " + food.x + "," + food.y);
     }
     
     function spawnFood() {
@@ -147,6 +153,7 @@ class SnakeGame {
         if (state != "Playing") return;
         
         var key = e.keyCode;
+        trace("Key down: " + key);
         if (key == Keyboard.UP || key == 87) { // Up or W
             if (direction != 2) direction = 0;
         } else if (key == Keyboard.RIGHT || key == 68) { // Right or D
@@ -161,6 +168,10 @@ class SnakeGame {
     function update() {
         // Calculate new head position
         var head = snake[0];
+        if (head == null) {
+            trace("Error: snake head is null!");
+            return;
+        }
         var nx = head.x;
         var ny = head.y;
         
@@ -171,6 +182,7 @@ class SnakeGame {
         
         // Collision checks: Wall
         if (nx < 0 || nx >= 30 || ny < 0 || ny >= 30) {
+            trace("Wall collision detected at: " + nx + "," + ny);
             triggerGameOver();
             return;
         }
@@ -178,6 +190,7 @@ class SnakeGame {
         // Collision checks: Self
         for (seg in snake) {
             if (seg.x == nx && seg.y == ny) {
+                trace("Self collision detected at: " + nx + "," + ny);
                 triggerGameOver();
                 return;
             }
@@ -192,6 +205,7 @@ class SnakeGame {
             score += 10;
             scoreLabel.text = "Score: " + score;
             spawnFood();
+            trace("Food eaten! Score: " + score + ", New food at: " + food.x + "," + food.y);
         } else {
             // Remove tail if didn't eat
             snake.pop();
@@ -202,6 +216,7 @@ class SnakeGame {
         state = "GameOver";
         menuText.text = "GAME OVER\nScore: " + score + "\nClick to Restart";
         menuOverlay.visible = true;
+        trace("Game Over triggered.");
     }
     
     function draw() {

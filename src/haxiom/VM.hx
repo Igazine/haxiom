@@ -245,6 +245,7 @@ class VM {
         if (chunk.isAsync) {
             var fiber = new VMFiber();
             fiber.scope = scope;
+            fiber.thisContext = currentThis;
             executeLoop(interp, fiber, chunk, scope, currentThis, methodName, args);
             return fiber.future;
         }
@@ -259,6 +260,7 @@ class VM {
         if (isResumption) {
             stack = fiber.stack;
             callFrames = fiber.callFrames;
+            interp.currentThis = fiber.thisContext;
         } else {
             if (enablePooling) {
                 stack = stackPool.length > 0 ? stackPool.pop() : [];
@@ -1516,6 +1518,7 @@ class VM {
                             fiber.isSuspended = true;
                             fiber.stack = stack;
                             fiber.callFrames = callFrames;
+                            fiber.thisContext = interp.currentThis;
                             
                             registerAwait(promise,
                                 (val) -> {
@@ -1751,6 +1754,7 @@ class VMFiber {
     public var stack:Array<Dynamic> = [];
     public var future:haxiom.Future;
     public var scope:Scope = null;
+    public var thisContext:Dynamic = null;
     public var isSuspended:Bool = false;
     public var hasError:Bool = false;
     public var error:Dynamic = null;
