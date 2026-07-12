@@ -256,6 +256,20 @@ class VM {
         if (interp.disposed) {
             return null;
         }
+        var targetNamespace = "toplevel";
+        if (currentThis != null) {
+            if (Std.isOfType(currentThis, HaxiomInstance)) {
+                targetNamespace = (cast currentThis : HaxiomInstance).cls.name;
+            } else if (Std.isOfType(currentThis, HaxiomClass)) {
+                targetNamespace = (cast currentThis : HaxiomClass).name;
+            }
+        } else if (interp.currentPackage.length > 0) {
+            targetNamespace = interp.currentPackage.join(".");
+        }
+        
+        if (interp.isNamespaceHalted(targetNamespace)) {
+            return null;
+        }
         var stack:Array<Dynamic> = null;
         var callFrames:Array<VMCallFrame> = null;
         var isResumption = (fiber != null && fiber.callFrames.length > 0);
@@ -1420,6 +1434,25 @@ class VM {
                                     throw 'Parent method or field "$fieldName" not found on class ${superInst.inst.cls.name}';
                                 }
                             }
+                            if (obj != null && Std.isOfType(obj, HaxiomClass)) {
+                                var classObj:HaxiomClass = cast obj;
+                                var m = interp.findMethod(classObj, fieldName);
+                                if (m != null) {
+                                    boundMethod = interp.bindMethod(classObj, m);
+                                    
+                                    var newCache = new InlineCacheEntry();
+                                    newCache.lastObject = classObj;
+                                    newCache.lastClass = null;
+                                    newCache.cachedMethodDef = m;
+                                    newCache.cachedValue = boundMethod;
+                                    newCache.isMethod = true;
+                                    frame.chunk.inlineCaches.set(cacheKey, newCache);
+                                    
+                                    var res = Reflect.callMethod(null, boundMethod, args);
+                                    stack.push(res);
+                                    continue;
+                                }
+                            }
 
                             if (obj != null && Std.isOfType(obj, HaxiomInstance)) {
                                 var instObj:HaxiomInstance = cast obj;
@@ -1564,6 +1597,30 @@ class VM {
                     }
                 }
                 
+                // Build script exception info before unwinding callFrames
+                var vmCallStack = [];
+                var fileInfo = "script";
+                var lineVal = 1;
+                var colVal = 1;
+                
+                // Calculate position based on current frames before unwinding
+                if (callFrames.length > 0) {
+                    for (frame in callFrames) {
+                        var mName = frame.chunk != null ? frame.methodName : "toplevel";
+                        var errIp = frame.ip > 0 ? frame.ip - 1 : 0;
+                        var fInfo = (frame.chunk != null && errIp < frame.chunk.positions.length && frame.chunk.positions[errIp] != null) ? frame.chunk.positions[errIp].file : "script";
+                        var lVal = (frame.chunk != null && errIp < frame.chunk.positions.length && frame.chunk.positions[errIp] != null) ? frame.chunk.positions[errIp].line : 1;
+                        var cVal = (frame.chunk != null && errIp < frame.chunk.positions.length && frame.chunk.positions[errIp] != null) ? frame.chunk.positions[errIp].col : 1;
+                        vmCallStack.push({
+                            method: mName,
+                            pos: { file: fInfo, line: lVal, col: cVal }
+                        });
+                        fileInfo = fInfo;
+                        lineVal = lVal;
+                        colVal = cVal;
+                    }
+                }
+
                 var foundHandler = false;
                 while (callFrames.length > 0) {
                     var f = callFrames[callFrames.length - 1];
@@ -1591,7 +1648,33 @@ class VM {
                 if (foundHandler) {
                     continue;
                 }
-                throw e;
+                
+                var se:ScriptException = null;
+                if (Std.isOfType(e, ScriptException)) {
+                    se = cast e;
+                } else {
+                    var traceLines = [];
+                    var locationStr = "Runtime Error: " + Std.string(e) + " at " + fileInfo + ":" + lineVal + ":" + colVal;
+                    var codeFrame = ScriptException.makeCodeFrame(interp.lastSource, lineVal, colVal, fileInfo);
+                    if (codeFrame != "") {
+                        locationStr += "\n" + codeFrame;
+                    }
+                    traceLines.push(locationStr);
+                    var i = vmCallStack.length - 1;
+                    while (i >= 0) {
+                        var frame = vmCallStack[i];
+                        var fileInfoFrame = frame.pos.file != null ? frame.pos.file : "script";
+                        traceLines.push('    at ' + frame.method + ' (' + fileInfoFrame + ':' + frame.pos.line + ':' + frame.pos.col + ')');
+                        i--;
+                    }
+                    if (vmCallStack.length == 0) {
+                        traceLines.push('    at toplevel (' + fileInfo + ':' + lineVal + ':' + colVal + ')');
+                    }
+                    var formatted = traceLines.join("\n");
+                    se = new ScriptException(e, vmCallStack, formatted, lineVal, colVal, fileInfo, interp.lastActiveLocals);
+                    interp.lastActiveLocals = null;
+                }
+                throw se;
             }
         }
             var res = stack.length > 0 ? stack[stack.length - 1] : null;
@@ -1622,13 +1705,19 @@ class VM {
             }
             return res;
         } catch (e:Dynamic) {
-            trace("VM EXECUTION ERROR: " + e + "\nVM CALLSTACK: " + haxe.CallStack.toString(haxe.CallStack.exceptionStack()));
-            #if js
-            // haxe.Log.trace("executeLoop caught exception: " + e + ", stack: " + js.Syntax.code("({0} && {0}.stack ? {0}.stack : null)", e), null);
-            #end
+            var se:ScriptException = null;
+            if (Std.isOfType(e, ScriptException)) {
+                se = cast e;
+            } else {
+                se = new ScriptException("Runtime Error: " + Std.string(e), [], "Runtime Error: " + Std.string(e), 1, 1, "script");
+            }
+
+            interp.haltNamespace(targetNamespace);
+
             if (fiber != null) {
                 if (!fiber.isSuspended) {
-                    fiber.future.reject(e);
+                    var rejectVal = Std.isOfType(e, ScriptException) ? (cast e : ScriptException).rawValue : e;
+                    fiber.future.reject(rejectVal);
                     if (fiber.scope != null) {
                         Scope.recycle(fiber.scope);
                         fiber.scope = null;
@@ -1651,8 +1740,16 @@ class VM {
                     callFramesPool.push(callFrames);
                 }
             }
+            
+            if (interp.errorHandler != null) {
+                interp.errorHandler(se);
+            }
+            
             if (fiber == null) {
-                throw e;
+                if (interp.errorHandler != null) {
+                    return null;
+                }
+                throw se;
             } else {
                 return null;
             }

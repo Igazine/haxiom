@@ -68,16 +68,91 @@ class Haxiom {
 	inline function set_importWhitelist(v)
 		return interp.importWhitelist = v;
 
+	var _onCompilerError:Null<ScriptException->Void> = null;
+	var _onRuntimeError:Null<ScriptException->Void> = null;
+	var _errorHandler:Null<ScriptException->Void> = null;
+
+	/**
+	 * Optional callback triggered when a compilation error occurs.
+	 */
+	public var onCompilerError(get, set):Null<ScriptException->Void>;
+
+	inline function get_onCompilerError()
+		return _onCompilerError;
+
+	inline function set_onCompilerError(v) {
+		_onCompilerError = v;
+		updateInterpErrorHandler();
+		return v;
+	}
+
+	/**
+	 * Optional callback triggered when a runtime execution error occurs.
+	 */
+	public var onRuntimeError(get, set):Null<ScriptException->Void>;
+
+	inline function get_onRuntimeError()
+		return _onRuntimeError;
+
+	inline function set_onRuntimeError(v) {
+		_onRuntimeError = v;
+		updateInterpErrorHandler();
+		return v;
+	}
+
 	/**
 	 * Optional callback triggered when a runtime or compile error occurs during script execution.
 	 */
 	public var errorHandler(get, set):Null<ScriptException->Void>;
 
 	inline function get_errorHandler()
-		return interp.errorHandler;
+		return _errorHandler;
 
-	inline function set_errorHandler(v)
-		return interp.errorHandler = v;
+	inline function set_errorHandler(v) {
+		_errorHandler = v;
+		updateInterpErrorHandler();
+		return v;
+	}
+
+	function updateInterpErrorHandler() {
+		if (_onRuntimeError != null || _errorHandler != null) {
+			interp.errorHandler = (err:ScriptException) -> {
+				var ns = getActiveNamespace();
+				if (ns != null) {
+					interp.haltNamespace(ns);
+				}
+				if (_onRuntimeError != null) {
+					_onRuntimeError(err);
+				}
+				if (_errorHandler != null) {
+					_errorHandler(err);
+				}
+			};
+		} else {
+			interp.errorHandler = null;
+		}
+	}
+
+	function getActiveNamespace():Null<String> {
+		if (interp.currentPackage != null && interp.currentPackage.length > 0) {
+			return interp.currentPackage.join(".");
+		}
+		return null;
+	}
+
+	/**
+	 * Queries whether a package namespace has been halted due to a runtime error.
+	 */
+	public function isNamespaceHalted(name:String):Bool {
+		return interp.isNamespaceHalted(name);
+	}
+
+	/**
+	 * Clears all halted namespace states.
+	 */
+	public function clearHaltedNamespaces():Void {
+		interp.clearHaltedNamespaces();
+	}
 
 	/**
 	 * If true, Haxiom compiles the AST to bytecode and executes it via the HXBC virtual machine.
@@ -267,6 +342,10 @@ class Haxiom {
 			}
 			return folded;
 		} catch (e:ScriptException) {
+			if (onCompilerError != null) {
+				onCompilerError(e);
+				return null;
+			}
 			if (errorHandler != null) {
 				errorHandler(e);
 				return null;
@@ -279,6 +358,10 @@ class Haxiom {
 				formatted += "\n" + codeFrame;
 			}
 			var se = new ScriptException(e.message, [], formatted, e.line, e.col, e.file);
+			if (onCompilerError != null) {
+				onCompilerError(se);
+				return null;
+			}
 			if (errorHandler != null) {
 				errorHandler(se);
 				return null;
@@ -286,6 +369,10 @@ class Haxiom {
 			throw se;
 		} catch (err:Dynamic) {
 			var se = new ScriptException(Std.string(err), [], "Compile Error: " + Std.string(err), 1, 1, fileInfo);
+			if (onCompilerError != null) {
+				onCompilerError(se);
+				return null;
+			}
 			if (errorHandler != null) {
 				errorHandler(se);
 				return null;

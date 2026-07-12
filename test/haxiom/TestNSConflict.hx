@@ -125,6 +125,93 @@ class TestNSConflict {
         }
         trace("Verification 5 (Single Instance sandboxed modules): PASSED");
 
-        trace("ALL SCOPE-AWARE TYPE AND DYNAMIC NAMESPACE VERIFICATIONS PASSED SUCCESSFULLY!");
+        // Verification 6: Error Callbacks and Namespace Halting
+        trace("Verification 6: Testing Error Callbacks and Namespace Halting...");
+        
+        var compileErrorCaught = false;
+        var runtimeErrorCaught = false;
+        var lastCompileError:haxiom.ScriptException = null;
+        var lastRuntimeError:haxiom.ScriptException = null;
+        
+        var errorEngine = new haxiom.Haxiom();
+        
+        errorEngine.onCompilerError = function(e) {
+            compileErrorCaught = true;
+            lastCompileError = e;
+        };
+        
+        errorEngine.onRuntimeError = function(e) {
+            runtimeErrorCaught = true;
+            lastRuntimeError = e;
+        };
+        
+        // 1. Verify Compiler Error Callback
+        var invalidScript = "class Bad { static function main() { return 1 + ; } }";
+        var res = errorEngine.compile(invalidScript);
+        if (res != null || !compileErrorCaught) {
+            throw "Verification 6 failed: compiler error callback not triggered or did not suppress exception";
+        }
+        trace("Verification 6 (Compiler Error Callback): PASSED");
+        
+        // 2. Verify Runtime Error Namespace Halting (VM Mode)
+        errorEngine.useVM = true;
+        var runtimeErrScript = "
+            class BuggyMod {
+                static public function doCrash() {
+                    var x:Dynamic = null;
+                    return x.someField; // Null pointer exception
+                }
+                static public function doSuccess() {
+                    return 'Mod execution success!';
+                }
+            }
+        ";
+        
+        errorEngine.interpret(runtimeErrScript, null, false, "buggy_ns");
+        
+        runtimeErrorCaught = false;
+        var crashRes = errorEngine.interpret("buggy_ns.BuggyMod.doCrash();");
+        if (crashRes != null || !runtimeErrorCaught) {
+            throw "Verification 6 failed: VM runtime error callback not triggered or did not suppress exception";
+        }
+        
+        if (!errorEngine.isNamespaceHalted("buggy_ns")) {
+            throw "Verification 6 failed: buggy_ns namespace not halted after VM runtime exception";
+        }
+        trace("Verification 6 (VM Namespace Halting on Exception): PASSED");
+        
+        // Try to call doSuccess() in halted namespace in VM mode
+        var successRes = errorEngine.interpret("buggy_ns.BuggyMod.doSuccess();");
+        if (successRes != null) {
+            throw "Verification 6 failed: method in halted namespace buggy_ns was executed under VM mode";
+        }
+        trace("Verification 6 (VM Halted Namespace Block): PASSED");
+
+        // 3. Verify Runtime Error Namespace Halting (AST Mode)
+        errorEngine.clearHaltedNamespaces();
+        if (errorEngine.isNamespaceHalted("buggy_ns")) {
+            throw "Verification 6 failed: clearHaltedNamespaces did not clear buggy_ns halt status";
+        }
+        errorEngine.useVM = false;
+        
+        runtimeErrorCaught = false;
+        var crashResAST = errorEngine.interpret("buggy_ns.BuggyMod.doCrash();");
+        if (crashResAST != null || !runtimeErrorCaught) {
+            throw "Verification 6 failed: AST runtime error callback not triggered or did not suppress exception";
+        }
+        
+        if (!errorEngine.isNamespaceHalted("buggy_ns")) {
+            throw "Verification 6 failed: buggy_ns namespace not halted after AST runtime exception";
+        }
+        trace("Verification 6 (AST Namespace Halting on Exception): PASSED");
+        
+        // Try to call doSuccess() in halted namespace in AST mode
+        var successResAST = errorEngine.interpret("buggy_ns.BuggyMod.doSuccess();");
+        if (successResAST != null) {
+            throw "Verification 6 failed: method in halted namespace buggy_ns was executed under AST mode";
+        }
+        trace("Verification 6 (AST Halted Namespace Block): PASSED");
+
+        trace("ALL SCOPE-AWARE TYPE, DYNAMIC NAMESPACE AND ERROR HANDLING CALLBACK VERIFICATIONS PASSED SUCCESSFULLY!");
     }
 }

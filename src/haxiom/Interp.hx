@@ -441,6 +441,25 @@ class Interp {
 
     public var callStack:Array<{method:String, pos:Pos}> = [];
     public var errorHandler:Null<ScriptException->Void> = null;
+    public var haltedNamespaces:Map<String, Bool> = new Map();
+
+    public function isNamespaceHalted(name:String):Bool {
+        if (name == null || name == "") return false;
+        var segments = name.split(".");
+        var rootNamespace = segments[0];
+        return haltedNamespaces.exists(rootNamespace);
+    }
+    
+    public function haltNamespace(name:String):Void {
+        if (name == null || name == "" || name == "toplevel" || name == "anonymous") return;
+        var segments = name.split(".");
+        haltedNamespaces.set(segments[0], true);
+    }
+    
+    public function clearHaltedNamespaces():Void {
+        haltedNamespaces.clear();
+    }
+
     var lastEvalPos:Pos = null;
     public var lastSource:Null<String> = null;
     public var preprocessorFlags:Map<String, Bool> = new Map();
@@ -4192,7 +4211,7 @@ class Interp {
                 mappedArgs.push(val);
             }
             var oldThis = currentThis;
-            currentThis = obj;
+                currentThis = obj;
             var oldAbstract = inAbstractMethod;
             if (Std.isOfType(obj, HaxiomAbstractInstance)) {
                 inAbstractMethod = true;
@@ -4203,7 +4222,12 @@ class Interp {
                     className = (cast obj : HaxiomInstance).cls.name;
                 } else if (Std.isOfType(obj, HaxiomAbstractInstance)) {
                     className = (cast obj : HaxiomAbstractInstance).abstractType.name;
+                } else if (Std.isOfType(obj, HaxiomClass)) {
+                    className = (cast obj : HaxiomClass).name;
                 }
+            }
+            if (isNamespaceHalted(className)) {
+                return null;
             }
             pushFrame(className + "." + method.name, method.body != null ? method.body.pos : { line: 1, col: 1 });
                 var isMethodAsync = false;
@@ -4274,7 +4298,21 @@ class Interp {
                 currentThis = oldThis;
                 popFrame();
                 if (!isMethodAsync) Scope.recycle(fScope);
-                throw e;
+                
+                var se:ScriptException = null;
+                if (Std.isOfType(e, ScriptException)) {
+                    se = cast e;
+                } else {
+                    se = new ScriptException(e, callStack.copy(), "Runtime Error: " + Std.string(e), 1, 1, className + "." + method.name);
+                }
+                
+                haltNamespace(className);
+                
+                if (errorHandler != null) {
+                    errorHandler(se);
+                    return null;
+                }
+                throw se;
             }
         };
         var hasRest = false;
