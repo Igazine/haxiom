@@ -101,8 +101,9 @@ class Haxiom {
 	}
 
 	/**
-	 * Optional callback triggered when a runtime or compile error occurs during script execution.
+	 * Optional callback triggered when a runtime or compile error occurs during script execution. Deprecated.
 	 */
+	@:deprecated
 	public var errorHandler(get, set):Null<ScriptException->Void>;
 
 	inline function get_errorHandler()
@@ -246,7 +247,8 @@ class Haxiom {
 	 * and each dot-separated segment must start with a letter or underscore.
 	 */
 	public static function isValidNamespace(ns:String):Bool {
-		if (ns == null || ns == "") return false;
+		if (ns == null || ns == "")
+			return false;
 		var r = ~/^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)*$/;
 		return r.match(ns);
 	}
@@ -720,7 +722,8 @@ class Haxiom {
 		}
 
 		if (targetInterface == null || haxe.macro.TypeTools.toString(targetInterface) == "Dynamic") {
-			Context.error("Could not determine target interface type. Please specify it explicitly, e.g. construct(IPlugin, className) or via variable type annotation", className.pos);
+			Context.error("Could not determine target interface type. Please specify it explicitly, e.g. construct(IPlugin, className) or via variable type annotation",
+				className.pos);
 		}
 
 		var expectedTypeStr:String = null;
