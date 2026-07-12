@@ -1,4 +1,5 @@
 .ignored
+ignored/
 **/bin
 *.code-workspace
 .DS_Store
