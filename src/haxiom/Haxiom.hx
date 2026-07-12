@@ -166,6 +166,17 @@ class Haxiom {
 	}
 
 	/**
+	 * Validates if the supplied package namespace string is a valid identifier path.
+	 * Must contain only alphanumeric characters, underscores, and dots,
+	 * and each dot-separated segment must start with a letter or underscore.
+	 */
+	public static function isValidNamespace(ns:String):Bool {
+		if (ns == null || ns == "") return false;
+		var r = ~/^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)*$/;
+		return r.match(ns);
+	}
+
+	/**
 	 * Read-only status indicating whether this engine instance has been disposed.
 	 */
 	public var disposed(get, never):Bool;
@@ -189,7 +200,15 @@ class Haxiom {
 	 * @param filename Optional filename path to associate with parsed symbols (used for error reporting).
 	 * @return The optimized AST node root representation, or null if compilation failed.
 	 */
-	public function compile(source:String, ?filename:String, ?staticTypes:Bool = false):haxiom.AST.Expr {
+	public function compile(source:String, ?filename:String, ?staticTypes:Bool = false, ?customPackage:String):haxiom.AST.Expr {
+		if (customPackage != null) {
+			if (!isValidNamespace(customPackage)) {
+				throw "Invalid custom package namespace format: " + customPackage;
+			}
+			interp.currentPackage = customPackage.split(".");
+		} else {
+			interp.currentPackage = [];
+		}
 		if (enableAstCache && astCache.exists(source)) {
 			var folded = astCache.get(source);
 			if (staticTypes || enableStaticTypes) {
@@ -280,9 +299,18 @@ class Haxiom {
 	 * Runs in VM mode if `useVM = true`, or AST evaluation mode if `useVM = false`.
 	 * 
 	 * @param ast The root AST node representation of the script to execute.
+	 * @param customPackage Optional custom package namespace to execute within.
 	 * @return The computed return value from script execution.
 	 */
-	public function execute<T>(ast:haxiom.AST.Expr):T {
+	public function execute<T>(ast:haxiom.AST.Expr, ?customPackage:String):T {
+		if (customPackage != null) {
+			if (!isValidNamespace(customPackage)) {
+				throw "Invalid custom package namespace format: " + customPackage;
+			}
+			interp.currentPackage = customPackage.split(".");
+		} else {
+			interp.currentPackage = [];
+		}
 		var result = interp.execute(ast);
 		return cast result;
 	}
@@ -292,13 +320,15 @@ class Haxiom {
 	 * 
 	 * @param source The raw script source code string to interpret.
 	 * @param onDone Optional callback invoked with the execution result upon success.
+	 * @param staticTypes Enable compile-time static type checking.
+	 * @param customPackage Optional custom package namespace to isolate classes compiled/executed.
 	 * @return The computed execution result.
 	 */
-	public function interpret<T>(source:String, ?onDone:T->Void, ?staticTypes:Bool = false):T {
-		var ast = compile(source, currentFilename, staticTypes);
+	public function interpret<T>(source:String, ?onDone:T->Void, ?staticTypes:Bool = false, ?customPackage:String):T {
+		var ast = compile(source, currentFilename, staticTypes, customPackage);
 		if (ast == null)
 			return null;
-		var result:T = execute(ast);
+		var result:T = execute(ast, customPackage);
 		if (onDone != null)
 			onDone(result);
 		return result;

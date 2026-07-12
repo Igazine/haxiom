@@ -60,6 +60,71 @@ class TestNSConflict {
             throw "Package Path verification failed";
         }
 
-        trace("ALL SCOPE-AWARE TYPE VERIFICATIONS PASSED SUCCESSFULLY!");
+        // 4. Dynamic Namespace Validation
+        trace("Verification 4: Dynamic Namespace Validation");
+        var validNS = ["plugin_a", "my.awesome.plugin", "_internal.v2"];
+        var invalidNS = ["1plugin", ".plugin", "plugin..name", "plugin.1name", "plugin-a", ""];
+        
+        for (ns in validNS) {
+            if (!Haxiom.isValidNamespace(ns)) {
+                throw "Expected valid namespace but failed: " + ns;
+            }
+        }
+        for (ns in invalidNS) {
+            if (Haxiom.isValidNamespace(ns)) {
+                throw "Expected invalid namespace but succeeded: " + ns;
+            }
+        }
+        trace("Verification 4 (Dynamic Namespace Validation): PASSED");
+
+        // 5. Host-Driven Sandboxed Namespace Loading (Single Haxiom instance)
+        trace("Verification 5: Single Instance sandboxed modules");
+        var engine = new Haxiom();
+        engine.useVM = true;
+        
+        var scriptA = "
+            class Main {
+                public var msg:String;
+                public function new() {
+                    msg = 'Hello from Mod A';
+                }
+                public function getMsg():String {
+                    return msg;
+                }
+            }
+        ";
+        
+        var scriptB = "
+            class Main {
+                public var msg:String;
+                public function new() {
+                    msg = 'Hello from Mod B';
+                }
+                public function getMsg():String {
+                    return msg;
+                }
+            }
+        ";
+
+        // Load both into different namespaces
+        engine.interpret(scriptA, null, false, "mod_a");
+        engine.interpret(scriptB, null, false, "mod_b");
+
+        // Instantiate both dynamically at runtime
+        var instA:Dynamic = engine.interpret("new mod_a.Main();");
+        var instB:Dynamic = engine.interpret("new mod_b.Main();");
+
+        var msgA:String = engine.resolveField(instA, "getMsg")();
+        var msgB:String = engine.resolveField(instB, "getMsg")();
+        
+        trace("Verification 5 (Mod A Message): " + msgA);
+        trace("Verification 5 (Mod B Message): " + msgB);
+
+        if (msgA != "Hello from Mod A" || msgB != "Hello from Mod B") {
+            throw "Host-Driven Sandboxed Namespace execution failed: class definitions collided or returned wrong values";
+        }
+        trace("Verification 5 (Single Instance sandboxed modules): PASSED");
+
+        trace("ALL SCOPE-AWARE TYPE AND DYNAMIC NAMESPACE VERIFICATIONS PASSED SUCCESSFULLY!");
     }
 }
