@@ -20,6 +20,8 @@ Haxiom is designed for game engines, host applications, and modding frameworks t
 - **Enhanced VM Pooling**: Recycles stack arrays, call frames, and scopes in the virtual machine execution loop, minimizing runtime garbage collection overhead.
 - **Ahead-of-Time (AOT) Method Compilation**: Methods compile AOT directly into bytecode chunks while setting their AST representations to `null` to conserve constant pool payload space, falling back to VM execution transparently at runtime.
 - **Compact AST Binary Serializer**: Compresses Haxe expressions into serialized binary payloads utilizing ZigZag varint compression and local string pools.
+- **Scope-Aware Type Checking & Shadowing**: Type declarations check the active execution scopes for custom shadowing or redefinitions of classes, enums, or core Haxe types (e.g. shadowing `String`) before falling back to native validations.
+- **Dynamic Package Namespacing**: Support loading multiple scripts into distinct sandboxed package namespaces dynamically at runtime on a single Haxiom instance (using the optional `customPackage` argument) to prevent global namespace collisions.
 - **Execution Safeguards**: Limit guest execution with an instruction/operation budget (`maxInstructions`) to block infinite loops and resource consumption.
 
 ---
@@ -211,6 +213,19 @@ Haxiom supports non-blocking asynchronous script execution utilizing user-land c
 
 * **Implicit Async Detection**: The compiler automatically scans the AST of function/closure bodies. If it detects a `Haxiom.await` call, it compiles the chunk as async (returning a promise-like `Future` when evaluated) without requiring any custom compiler keywords or `@:haxiom.async` metadata.
 * **Non-Blocking Yielding**: When executing `Haxiom.await` on a pending future, the virtual machine pauses execution, suspends the `VMFiber` state (stack, call frames, scopes), and returns immediately, allowing the host application's event loop to continue running. When resolved, the fiber is scheduled to resume exactly where it was paused.
+
+### 11. Dynamic Package Namespacing & Sandboxing
+To load multiple third-party scripts/mods defining identical class names (e.g. `class Main`) on a single `Haxiom` instance without collisions, compile/interpret them under different namespaces using the optional `customPackage` parameter:
+```haxe
+// Compile or interpret within an isolated namespace
+engine.interpret(sourceA, null, false, "mod_a");
+engine.interpret(sourceB, null, false, "mod_b");
+
+// Instantiate guest classes dynamically via fully qualified names at runtime
+var pluginA = engine.interpret("new mod_a.Main();");
+var pluginB = engine.interpret("new mod_b.Main();");
+```
+Neither developer has to write package declarations or know the prefix. Haxiom automatically compiles all script symbols under the provided namespace.
 
 ---
 
