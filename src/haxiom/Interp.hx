@@ -909,7 +909,7 @@ class Interp {
 
 					var constr = findMethod(cls, "new");
 					if (constr != null) {
-						checkMemberAccess(cls, constr.isPublic);
+						checkMemberAccess(cls, constr.isPublic, pos);
 						var cScope = Scope.create(scope);
 						cScope.declare("this", inst);
 						for (i in 0...constr.args.length) {
@@ -1777,7 +1777,7 @@ class Interp {
 			var inst:HaxiomInstance = cast obj;
 			var fDef = findFieldDef(inst.cls, field);
 			if (fDef != null) {
-				checkMemberAccess(inst.cls, fDef.isPublic);
+				checkMemberAccess(inst.cls, fDef.isPublic, pos);
 				if (fDef.property != null && !isInsideAccessor(field)) {
 					var getAccessor = fDef.property.get;
 					if (getAccessor == "get") {
@@ -1796,7 +1796,7 @@ class Interp {
 
 			var m = findMethod(inst.cls, field);
 			if (m != null) {
-				checkMemberAccess(inst.cls, m.isPublic);
+				checkMemberAccess(inst.cls, m.isPublic, pos);
 				return bindMethod(obj, m);
 			}
 			var usingRes = resolveUsing(obj, field);
@@ -1809,14 +1809,14 @@ class Interp {
 			var cls:HaxiomClass = cast obj;
 			var fDef = findFieldDef(cls, field);
 			if (fDef != null) {
-				checkMemberAccess(cls, fDef.isPublic);
+				checkMemberAccess(cls, fDef.isPublic, pos);
 			}
 			if (cls.staticFields.exists(field))
 				return cls.staticFields.get(field);
 
 			var m = findStaticMethod(cls, field);
 			if (m != null) {
-				checkMemberAccess(cls, m.isPublic);
+				checkMemberAccess(cls, m.isPublic, pos);
 				return bindMethod(obj, m);
 			}
 			var usingRes = resolveUsing(obj, field);
@@ -1945,7 +1945,7 @@ class Interp {
 		return null;
 	}
 
-	function assignField(obj:Dynamic, field:String, val:Dynamic, scope:Scope):Dynamic {
+	function assignField(obj:Dynamic, field:String, val:Dynamic, scope:Scope, ?pos:Pos):Dynamic {
 		if (obj == null)
 			throw 'Cannot set field "$field" of null';
 		if (Std.isOfType(obj, HaxiomAbstractInstance)) {
@@ -1967,14 +1967,14 @@ class Interp {
 					}
 				}
 			}
-			return assignField(inst.underlyingValue, field, val, scope);
+			return assignField(inst.underlyingValue, field, val, scope, pos);
 		}
 
 		if (Std.isOfType(obj, HaxiomInstance)) {
 			var inst:HaxiomInstance = cast obj;
 			var fDef = findFieldDef(inst.cls, field);
 			if (fDef != null) {
-				checkMemberAccess(inst.cls, fDef.isPublic);
+				checkMemberAccess(inst.cls, fDef.isPublic, pos);
 				if (fDef.property != null && !isInsideAccessor(field)) {
 					var setAccessor = fDef.property.set;
 					if (setAccessor == "set") {
@@ -2005,7 +2005,7 @@ class Interp {
 				var cls:HaxiomClass = cast obj;
 				var fDef = findFieldDef(cls, field);
 				if (fDef != null) {
-					checkMemberAccess(cls, fDef.isPublic);
+					checkMemberAccess(cls, fDef.isPublic, pos);
 					if (fDef.isFinal) {
 						throw 'Cannot reassign static final field $field';
 					}
@@ -2238,12 +2238,12 @@ class Interp {
 						var obj = eval(objExpr, scope);
 						if (obj == null)
 							throw 'Cannot write field "$field" of null';
-						return assignField(obj, field, val, scope);
+						return assignField(obj, field, val, scope, e.pos);
 					case ESafeField(objExpr, field):
 						var obj = eval(objExpr, scope);
 						if (obj == null)
 							return null;
-						return assignField(obj, field, val, scope);
+						return assignField(obj, field, val, scope, e.pos);
 					case EBinop("[]", objExpr, indexExpr):
 						var obj = eval(objExpr, scope);
 						var idx = eval(indexExpr, scope);
@@ -3029,7 +3029,7 @@ class Interp {
 					// Run constructor 'new'
 					var constr = findMethod(cls, "new");
 					if (constr != null) {
-						checkMemberAccess(cls, constr.isPublic);
+						checkMemberAccess(cls, constr.isPublic, e.pos);
 						var cScope = Scope.create(scope);
 						cScope.declare("this", inst);
 						for (i in 0...constr.args.length) {
@@ -3283,6 +3283,9 @@ class Interp {
 									if (classField == null) {
 										throw 'Class ${cls.name} does not implement field ${itfField.name} required by interface ${itf.name} at ${pos.line}:${pos.col}';
 									}
+									if (!classField.isPublic) {
+										throw 'Field ${cls.name}.${itfField.name} must be public to implement interface ${itf.name} at ${pos.line}:${pos.col}';
+									}
 									if (itfField.property != null) {
 										if (classField.property == null) {
 											throw 'Field ${cls.name}.${itfField.name} must be a property to implement interface ${itf.name} at ${pos.line}:${pos.col}';
@@ -3324,6 +3327,9 @@ class Interp {
 										} else {
 											throw 'Class ${cls.name} does not implement method ${itfMethod.name} required by interface ${itf.name} at ${pos.line}:${pos.col}';
 										}
+									}
+									if (!classMethod.isPublic) {
+										throw 'Method ${cls.name}.${itfMethod.name} must be public to implement interface ${itf.name} at ${pos.line}:${pos.col}';
 									}
 									if (classMethod.args.length != itfMethod.args.length) {
 										throw 'Method ${cls.name}.${itfMethod.name} has argument count mismatch: expected ${itfMethod.args.length} but got ${classMethod.args.length} at ${pos.line}:${pos.col}';
@@ -4166,8 +4172,10 @@ class Interp {
 		return false;
 	}
 
-	function checkMemberAccess(targetCls:HaxiomClass, isPublic:Bool):Void {
+	function checkMemberAccess(targetCls:HaxiomClass, isPublic:Bool, ?pos:Pos):Void {
 		if (isPublic)
+			return;
+		if (pos != null && pos.file == "host")
 			return;
 		if (currentThis != null) {
 			if (Std.isOfType(currentThis, HaxiomInstance)) {

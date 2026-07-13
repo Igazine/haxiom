@@ -52,8 +52,25 @@ class StaticTypeChecker {
 				for (e in exprs)
 					collectDeclarations(e);
 
-			case EClass(name, fields, methods, _, _, params, _):
+			case EClass(name, fields, methods, parent, interfaces, params, _):
+				trace("collectDeclarations EClass file=" + expr.pos.file + " name=" + name + " fields.length=" + fields.length + " methods.length=" + methods.length);
 				var info = new ClassInfo(name, params != null ? params : []);
+				if (parent != null) {
+					switch (parent) {
+						case TPath(path, _):
+							info.parentName = path.join(".");
+						default:
+					}
+				}
+				if (interfaces != null) {
+					for (itf in interfaces) {
+						switch (itf) {
+							case TPath(path, _):
+								info.interfaces.push(path.join("."));
+							default:
+						}
+					}
+				}
 				for (m in methods) {
 					if (m.name == "new") {
 						info.ctorArgs = m.args;
@@ -89,7 +106,42 @@ class StaticTypeChecker {
 					}
 				}
 				for (f in fields) {
-					info.fields.set(f.name, f.type);
+					info.fields.set(f.name, {
+						type: f.type,
+						isStatic: f.isStatic,
+						isPublic: f.isPublic
+					});
+				}
+				classes.set(name, info);
+
+			case EInterface(name, fields, methods, parents, params, _):
+				var info = new ClassInfo(name, params != null ? params : []);
+				if (parents != null) {
+					for (p in parents) {
+						switch (p) {
+							case TPath(path, _):
+								info.parentName = path.join(".");
+							default:
+						}
+					}
+				}
+				for (m in methods) {
+					var mCopy = {
+						name: m.name,
+						args: m.args,
+						retType: m.retType,
+						body: m.body,
+						isStatic: false,
+						isPublic: true // Interface methods are always public
+					};
+					info.methods.set(m.name, mCopy);
+				}
+				for (f in fields) {
+					info.fields.set(f.name, {
+						type: f.type,
+						isStatic: false,
+						isPublic: true // Interface fields are always public
+					});
 				}
 				classes.set(name, info);
 
@@ -194,15 +246,21 @@ class StaticTypeChecker {
 				}
 				checkExpr(body, childEnv);
 
-			case EClass(_, _, methods, _, _, _, _):
+			case EClass(className, _, methods, _, _, _, _):
 				for (m in methods) {
 					var childEnv = new LocalEnv(env);
+					childEnv.currentClass = className;
 					for (a in m.args) {
 						if (a.type != null)
 							childEnv.set(a.name, a.type);
 					}
 					checkExpr(m.body, childEnv);
 				}
+				checkInterfaceImplementationsVisibility(className, expr.pos);
+
+			case EField(objExpr, field) | ESafeField(objExpr, field):
+				checkFieldVisibility(objExpr, field, env, expr.pos);
+				checkExpr(objExpr, env);
 
 			default:
 				// For other expression forms just recurse into sub-expressions
@@ -301,6 +359,7 @@ class StaticTypeChecker {
 	function checkCall(calleeExpr:Expr, args:Array<Expr>, env:LocalEnv, pos:Pos):Void {
 		switch (calleeExpr.def) {
 			case EField(objExpr, methodName):
+				checkFieldVisibility(objExpr, methodName, env, pos);
 				var objType = inferType(objExpr, env);
 
 				// Detect enum constructor calls: MyEnum.CtorName(args)
@@ -470,7 +529,13 @@ class StaticTypeChecker {
 				return TPath(["EReg"], []);
 
 			case EIdent(name):
-				return env.get(name);
+				if (env.exists(name)) {
+					return env.get(name);
+				}
+				if (classes.exists(name)) {
+					return TPath([name], []);
+				}
+				return null;
 
 			case EVar(name, type, initExpr, _, _):
 				if (type != null)
@@ -622,7 +687,7 @@ class StaticTypeChecker {
 					var cls = classes.get(typeName);
 					if (cls.fields.exists(field)) {
 						var bindings = buildGenericBindings(cls.params, typeParams);
-						return applyBindings(cls.fields.get(field), bindings);
+						return applyBindings(cls.fields.get(field).type, bindings);
 					}
 				}
 				return null;
@@ -691,6 +756,8 @@ class StaticTypeChecker {
 			case [TPath(srcPath, srcParams), TPath(dstPath, dstParams)]:
 				var sn = srcPath.join(".");
 				var dn = dstPath.join(".");
+				if (sn == "haxiom.Future") sn = "Future";
+				if (dn == "haxiom.Future") dn = "Future";
 				// Allow numeric widening Int → Float
 				if (dn == "Float" && sn == "Int")
 					return true;
@@ -955,6 +1022,130 @@ class StaticTypeChecker {
 		}
 		return false;
 	}
+
+	function addError(msg:String, pos:Pos):Void {
+		throw new CompileException(msg, pos != null ? pos.line : 1, pos != null ? pos.col : 1, pos != null ? pos.file : "script");
+	}
+
+	function isClassIdentifier(expr:Expr):Bool {
+		switch (expr.def) {
+			case EIdent(name):
+				return classes.exists(name);
+			default:
+				return false;
+		}
+	}
+
+	function checkFieldVisibility(objExpr:Expr, field:String, env:LocalEnv, pos:Pos):Void {
+		var isStaticAccess = isClassIdentifier(objExpr);
+		var typeName:String = null;
+		if (isStaticAccess) {
+			switch (objExpr.def) {
+				case EIdent(name): typeName = name;
+				default:
+			}
+		} else {
+			var objType = inferType(objExpr, env);
+			if (objType != null) {
+				switch (objType) {
+					case TPath(path, _): typeName = path.join(".");
+					default:
+				}
+			}
+		}
+		if (typeName != null && classes.exists(typeName)) {
+			var cls = classes.get(typeName);
+			var isPublic = true;
+			var isStatic = false;
+			var found = false;
+
+			if (cls.fields.exists(field)) {
+				var f = cls.fields.get(field);
+				isPublic = f.isPublic;
+				isStatic = f.isStatic;
+				found = true;
+			} else if (cls.methods.exists(field)) {
+				var m = cls.methods.get(field);
+				isPublic = m.isPublic;
+				isStatic = m.isStatic;
+				found = true;
+			}
+			if (found) {
+				// 1. Static vs Instance validation
+				if (isStaticAccess && !isStatic) {
+					addError('Cannot access instance member ${field} as static on ${typeName}', pos);
+				}
+
+				// 2. Private visibility validation
+				if (!isPublic) {
+					if (env.currentClass == null || (!isSubclassOfName(env.currentClass, typeName) && !isSubclassOfName(typeName, env.currentClass))) {
+						addError('Cannot access private member ${field} of class ${typeName}', pos);
+					}
+				}
+			}
+		}
+	}
+
+	function isSubclassOfName(sub:String, parent:String):Bool {
+		var curr = sub;
+		while (curr != null) {
+			if (curr == parent)
+				return true;
+			if (classes.exists(curr)) {
+				curr = classes.get(curr).parentName;
+			} else {
+				break;
+			}
+		}
+		return false;
+	}
+
+	function checkInterfaceImplementationsVisibility(className:String, pos:Pos):Void {
+		if (!classes.exists(className)) return;
+		var cls = classes.get(className);
+		
+		var allItfMethods = new Map<String, Bool>();
+		var allItfFields = new Map<String, Bool>();
+		var visitedItf = new Map<String, Bool>();
+
+		function collectItfMembers(itfName:String) {
+			if (visitedItf.exists(itfName)) return;
+			visitedItf.set(itfName, true);
+			if (classes.exists(itfName)) {
+				var itf = classes.get(itfName);
+				for (mKey in itf.methods.keys()) {
+					allItfMethods.set(mKey, true);
+				}
+				for (fKey in itf.fields.keys()) {
+					allItfFields.set(fKey, true);
+				}
+				if (itf.parentName != null) {
+					collectItfMembers(itf.parentName);
+				}
+			}
+		}
+
+		for (itfName in cls.interfaces) {
+			collectItfMembers(itfName);
+		}
+
+		for (mName in allItfMethods.keys()) {
+			if (cls.methods.exists(mName)) {
+				var m = cls.methods.get(mName);
+				if (!m.isPublic) {
+					addError('Method ${className}.${mName} must be public to implement interface', pos);
+				}
+			}
+		}
+		for (fName in allItfFields.keys()) {
+			if (cls.fields.exists(fName)) {
+				var f = cls.fields.get(fName);
+				if (!f.isPublic) {
+					addError('Field ${className}.${fName} must be public to implement interface', pos);
+				}
+			}
+		}
+	}
 }
 
 // -----------------------------------------------------------------------------
@@ -965,9 +1156,13 @@ class StaticTypeChecker {
 class LocalEnv {
 	var parent:LocalEnv;
 	var vars:Map<String, TypeDecl> = new Map();
+	public var currentClass:Null<String> = null;
 
 	function new(?parent:LocalEnv) {
 		this.parent = parent;
+		if (parent != null) {
+			this.currentClass = parent.currentClass;
+		}
 	}
 
 	function set(name:String, type:TypeDecl):Void {
@@ -999,6 +1194,8 @@ class LocalEnv {
 class ClassInfo {
 	var name:String;
 	var params:Array<String>;
+	var parentName:Null<String> = null;
+	var interfaces:Array<String> = [];
 	var ctorArgs:Array<FunctionArg>;
 	var methods:Map<String, {
 		name:String,
@@ -1008,7 +1205,7 @@ class ClassInfo {
 		isStatic:Bool,
 		isPublic:Bool
 	}> = new Map();
-	var fields:Map<String, TypeDecl> = new Map();
+	var fields:Map<String, {type:TypeDecl, isStatic:Bool, isPublic:Bool}> = new Map();
 
 	function new(name:String, params:Array<String>) {
 		this.name = name;

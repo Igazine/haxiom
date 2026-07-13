@@ -163,6 +163,71 @@ class TestStaticTypeChecker {
         );
 
         // ---------------------------------------------------------------
+        // 10. Accessing private fields from outside the class should fail
+        // ---------------------------------------------------------------
+        expectTypeError("Accessing private field",
+            'class Person {\n' +
+            '    private var age:Int = 10;\n' +
+            '    public function new() {}\n' +
+            '}\n' +
+            'var p = new Person();\n' +
+            'trace(p.age);'
+        );
+
+        // ---------------------------------------------------------------
+        // 11. Accessing private methods from outside the class should fail
+        // ---------------------------------------------------------------
+        expectTypeError("Accessing private method",
+            'class Person {\n' +
+            '    private function getSecret():Int { return 42; }\n' +
+            '    public function new() {}\n' +
+            '}\n' +
+            'var p = new Person();\n' +
+            'p.getSecret();'
+        );
+
+        // ---------------------------------------------------------------
+        // 12. Declaring class reading its own private fields should pass
+        // ---------------------------------------------------------------
+        expectNoError("Self class private access",
+            'class Person {\n' +
+            '    private var age:Int = 10;\n' +
+            '    public function new() {}\n' +
+            '    public function showAge():Void {\n' +
+            '        trace(age);\n' +
+            '    }\n' +
+            '}'
+        );
+
+        // ---------------------------------------------------------------
+        // 13. Subclass accessing parent private fields should pass
+        // ---------------------------------------------------------------
+        expectNoError("Subclass private access",
+            'class Base {\n' +
+            '    private var secret:Int = 99;\n' +
+            '    public function new() {}\n' +
+            '}\n' +
+            'class Derived extends Base {\n' +
+            '    public function printSecret():Void {\n' +
+            '        trace(secret);\n' +
+            '    }\n' +
+            '}'
+        );
+
+        // ---------------------------------------------------------------
+        // 14. Declaring interface-required method as private should fail
+        // ---------------------------------------------------------------
+        expectTypeError("Private method implementing interface",
+            'interface IRunnable {\n' +
+            '    function run():Void;\n' +
+            '}\n' +
+            'class Runner implements IRunnable {\n' +
+            '    public function new() {}\n' +
+            '    private function run():Void {}\n' +
+            '}'
+        );
+
+        // ---------------------------------------------------------------
         // 9. Static type checking is disabled by default
         // ---------------------------------------------------------------
         trace("--- Testing static checking is OFF by default ---");

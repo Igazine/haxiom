@@ -327,9 +327,13 @@ class Optimizer {
 	 *
 	 * Runs after foldConstants so constant-folded branches are already resolved.
 	 */
+	static var globalUsages:Map<String, Int>;
+
 	static function eliminateDeadCode(expr:Expr):Expr {
 		if (expr == null)
 			return null;
+		globalUsages = new Map();
+		collectUsages(expr, globalUsages);
 		return dceExpr(expr);
 	}
 
@@ -338,11 +342,8 @@ class Optimizer {
 			return null;
 		switch (expr.def) {
 			case EBlock(exprs):
-				// Collect usages across the entire block first, then prune
-				var usages = new Map<String, Int>();
-				for (e in exprs)
-					collectUsages(e, usages);
-				var pruned = pruneBlock(exprs, usages);
+				// Prune using global usages
+				var pruned = pruneBlock(exprs, globalUsages);
 				// Map children; if nothing changed, return expr unchanged
 				var mapped = pruned.map(dceExpr);
 				// Check if the block was modified (different length or any child changed)
@@ -358,29 +359,19 @@ class Optimizer {
 				return modified ? {def: EBlock(mapped), pos: expr.pos} : expr;
 
 			case EClass(name, fields, methods, parent, interfaces, params, meta):
-				// Collect all names referenced anywhere in the class body
-				var usages = new Map<String, Int>();
-				for (m in methods) {
-					if (m.body != null)
-						collectUsages(m.body, usages);
-				}
-				for (f in fields) {
-					if (f.expr != null)
-						collectUsages(f.expr, usages);
-				}
-				// Keep a method if: public, or named "new", or its name appears in usages
+				// Keep a method if: public, or named "new", or its name appears in globalUsages
 				var prunedMethods = methods.filter(m -> {
 					if (m.isPublic)
 						return true;
 					if (m.name == "new")
 						return true;
-					return usages.exists(m.name);
+					return globalUsages.exists(m.name);
 				});
-				// Keep a field if: public, or its name appears in usages (read/written anywhere)
+				// Keep a field if: public, or its name appears in globalUsages (read/written anywhere)
 				var prunedFields = fields.filter(f -> {
 					if (f.isPublic)
 						return true;
-					return usages.exists(f.name);
+					return globalUsages.exists(f.name);
 				});
 				var modified = prunedMethods.length != methods.length || prunedFields.length != fields.length;
 				var finalMethods = prunedMethods.map(m -> {
@@ -670,7 +661,8 @@ class Optimizer {
 			case EUnop(_, e):
 				collectUsages(e, usages);
 
-			case EField(e, _) | ESafeField(e, _):
+			case EField(e, field) | ESafeField(e, field):
+				usages.set(field, (usages.exists(field) ? usages.get(field) : 0) + 1);
 				collectUsages(e, usages);
 
 			case ECall(e, args):

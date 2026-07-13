@@ -1468,6 +1468,7 @@ class VM {
 									var classObj:HaxiomClass = cast obj;
 									var m = interp.findMethod(classObj, fieldName);
 									if (m != null) {
+										interp.checkMemberAccess(classObj, m.isPublic, currentPos());
 										boundMethod = interp.bindMethod(classObj, m);
 
 										var newCache = new InlineCacheEntry();
@@ -1488,6 +1489,7 @@ class VM {
 									var instObj:HaxiomInstance = cast obj;
 									var m = interp.findMethod(instObj.cls, fieldName);
 									if (m != null) {
+										interp.checkMemberAccess(instObj.cls, m.isPublic, currentPos());
 										boundMethod = interp.bindMethod(instObj, m);
 
 										var newCache = new InlineCacheEntry();

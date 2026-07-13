@@ -2930,6 +2930,82 @@ class TestHaxiom {
 		}
 		trace("SUCCESS: Future type whitelisting and resolution verified.");
 
+		// 70. Runtime Visibility Verification
+		var visibilityCheckScript = "
+			class SecretAgent {
+				private var secret:Int = 1007;
+				public function new() {}
+				private function doUndercover():String {
+					return 'agent_' + secret;
+				}
+				public function callInternal():String {
+					return doUndercover();
+				}
+			}
+			new SecretAgent();
+		";
+		
+		// AST mode private method block check
+		var visAstEngine = new Haxiom();
+		visAstEngine.useVM = false;
+		var visAstInst = visAstEngine.interpret(visibilityCheckScript);
+		visAstEngine.setGlobal("myInst", visAstInst);
+		
+		expectError(visAstEngine, "
+			class Spy {
+				public function new() {}
+				public function spyOn(agent:Dynamic) {
+					return agent.doUndercover();
+				}
+			}
+			new Spy().spyOn(myInst);
+		", "Cannot access private member of class", "AST private method access block");
+
+		// VM mode private method block check
+		var visVMEngine = new Haxiom();
+		visVMEngine.useVM = true;
+		var visVMInst = visVMEngine.interpret(visibilityCheckScript);
+		visVMEngine.setGlobal("myInst", visVMInst);
+		
+		expectError(visVMEngine, "
+			class Spy {
+				public function new() {}
+				public function spyOn(agent:Dynamic) {
+					return agent.doUndercover();
+				}
+			}
+			new Spy().spyOn(myInst);
+		", "Cannot access private member of class", "VM private method access block");
+
+		// Host bypass check
+		try {
+			var astResolvedVal = visAstEngine.resolveField(visAstInst, "secret");
+			var astResolvedMethod = visAstEngine.resolveField(visAstInst, "doUndercover");
+			var astCallRes = Reflect.callMethod(null, astResolvedMethod, []);
+			
+			var vmResolvedVal = visVMEngine.resolveField(visVMInst, "secret");
+			var vmResolvedMethod = visVMEngine.resolveField(visVMInst, "doUndercover");
+			var vmCallRes = Reflect.callMethod(null, vmResolvedMethod, []);
+			
+			if (astResolvedVal != 1007 || astCallRes != "agent_1007" || vmResolvedVal != 1007 || vmCallRes != "agent_1007") {
+				throw "Host resolved values or method calls mismatch: AST=" + astResolvedVal + "/" + astCallRes + ", VM=" + vmResolvedVal + "/" + vmCallRes;
+			}
+			trace("SUCCESS: Host bypass of private members verified for both AST and VM.");
+		} catch (e:Dynamic) {
+			throw "FAIL: Host was blocked from accessing private guest members: " + e;
+		}
+
+		// Interface implementation visibility check
+		expectError(visAstEngine, "
+			interface IGuest {
+				function show():Void;
+			}
+			class GuestImpl implements IGuest {
+				public function new() {}
+				private function show():Void {}
+			}
+		", "must be public to implement interface", "Guest interface method visibility check");
+
 		trace("SUCCESS: Bytecode Verification & Safety Checks verified.");
 	}
 
