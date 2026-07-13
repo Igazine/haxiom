@@ -640,9 +640,10 @@ class Interp {
 	public function new() {
 		initDefaultFlags();
 		// Core standard print/trace redirection
-		globals.declare("trace", (v:Dynamic) -> {
-			haxe.Log.trace(Std.string(v), null);
-		});
+		globals.declare("trace", Reflect.makeVarArgs((args:Array<Dynamic>) -> {
+			var str = [for (a in args) Std.string(a)].join(", ");
+			haxe.Log.trace(str, null);
+		}));
 
 		// Dynamic Math binding
 		globals.declare("Math", Math);

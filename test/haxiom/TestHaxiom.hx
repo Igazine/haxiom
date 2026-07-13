@@ -1954,6 +1954,24 @@ class TestHaxiom {
 		testStdHaxiom.interpret(script62_success);
 		trace("SUCCESS: Manually imported standard library classes work correctly");
 
+		// Verify varargs trace
+		var loggedString:String = null;
+		var oldTrace = haxe.Log.trace;
+		haxe.Log.trace = function(v:Dynamic, ?infos:haxe.PosInfos) {
+			loggedString = Std.string(v);
+		};
+		try {
+			testStdHaxiom.interpret("trace('varargs', 1, 2, 'three');");
+			haxe.Log.trace = oldTrace;
+		} catch (e:Dynamic) {
+			haxe.Log.trace = oldTrace;
+			throw e;
+		}
+		if (loggedString != "varargs, 1, 2, three") {
+			throw "FAIL: varargs trace failed to format comma-separated arguments: " + loggedString;
+		}
+		trace("SUCCESS: Varargs trace verified successfully");
+
 		// 63. Script-Side Property Getters/Setters Verification
 		var script63 = "
             class TestProperties {
