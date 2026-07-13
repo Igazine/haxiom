@@ -237,6 +237,7 @@ class Lexer {
 					case "abstract": TAbstract;
 					case "typedef": TTypedef;
 					case "inline": TInline;
+					case "macro": TMacro;
 					default: TIdent(id);
 				};
 				tokens.push({def: def, pos: {line: startLine, col: startCol, file: file}});

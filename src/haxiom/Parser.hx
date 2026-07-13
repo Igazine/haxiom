@@ -57,6 +57,9 @@ class Parser {
 		}
 		var expr:Expr = null;
 		switch (t.def) {
+			case TMacro:
+				next();
+				throw new CompileException("Haxe macros are not supported in Haxiom guest scripts", t.pos.line, t.pos.col, file);
 			case TPackage:
 				if (meta != null)
 					throw new CompileException("Metadata cannot be attached to a package declaration", t.pos.line, t.pos.col, file);
@@ -287,17 +290,31 @@ class Parser {
 		}
 	}
 
+	function parseMetadataNameSegment():String {
+		var t = peek();
+		switch (t.def) {
+			case TIdent(v):
+				next();
+				return v;
+			case TMacro:
+				next();
+				return "macro";
+			default:
+				throw new CompileException('Expected identifier but got ${t.def}', t.pos.line, t.pos.col, file);
+		}
+	}
+
 	function parseMetadata():Array<{name:String, params:Array<Expr>}> {
 		var meta = [];
 		while (match(TAt)) {
 			var name = "";
 			if (match(TColon)) {
-				name = ":" + expectIdent();
+				name = ":" + parseMetadataNameSegment();
 			} else {
-				name = expectIdent();
+				name = parseMetadataNameSegment();
 			}
 			while (match(TDot)) {
-				name += "." + expectIdent();
+				name += "." + parseMetadataNameSegment();
 			}
 			var params = [];
 			if (match(TParenOpen)) {
@@ -347,6 +364,11 @@ class Parser {
 			var isFinal = false;
 			var isOverride = false;
 			var isAbstractMethod = false;
+
+			if (is(TMacro)) {
+				var t = peek();
+				throw new CompileException("Haxe macros are not supported in Haxiom guest scripts", t.pos.line, t.pos.col, file);
+			}
 
 			while (true) {
 				if (match(TStatic)) {
@@ -954,6 +976,9 @@ class Parser {
 	function parsePrimary():Expr {
 		var t = peek();
 		switch (t.def) {
+			case TMacro:
+				next();
+				throw new CompileException("Haxe macros are not supported in Haxiom guest scripts", t.pos.line, t.pos.col, file);
 			case TCast:
 				next();
 				if (match(TParenOpen)) {

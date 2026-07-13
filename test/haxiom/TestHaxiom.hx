@@ -3095,6 +3095,12 @@ class TestHaxiom {
 		}
 		trace("SUCCESS: Closure bind() redirection verified for both AST and VM modes.");
 
+		// Verify macro keyword rejection tests
+		var macroEngine = new haxiom.Haxiom();
+		expectError(macroEngine, "macro var x = 1;", "macros are not supported", "macro var statement");
+		expectError(macroEngine, "1 + macro 2;", "macros are not supported", "macro primary expression");
+		expectError(macroEngine, "class Test { macro function foo() {} }", "macros are not supported", "macro class method");
+
 		trace("SUCCESS: Bytecode Verification & Safety Checks verified.");
 	}
 

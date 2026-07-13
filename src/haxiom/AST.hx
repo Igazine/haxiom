@@ -56,6 +56,7 @@ enum TokenDef {
     TOverride;
     TTypedef;
     TInline;
+    TMacro;
     
     // Operators
     TPlus;
