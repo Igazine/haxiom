@@ -3056,13 +3056,25 @@ class TestHaxiom {
 			}
 			class Dog extends Animal {
 				public function new() {}
-				override public function sound():String {
+				public function sound():String {
 					return 'woof';
 				}
 			}
 			var d = new Dog();
 			if (d.sound() != 'woof') throw 'Invalid abstract method return value';
 		");
+
+		// Illegal override keyword on abstract method implementation should fail
+		expectError(visAstEngine, "
+			abstract class Base {
+				public function new() {}
+				abstract public function run():Void;
+			}
+			class Derived extends Base {
+				public function new() {}
+				override public function run():Void {}
+			}
+		", "overrides an abstract method and must not use the override keyword", "Override on abstract implementation runtime check");
 
 		// Test bind() in both AST and VM modes
 		for (vmMode in [false, true]) {

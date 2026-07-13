@@ -317,12 +317,25 @@ class TestStaticTypeChecker {
             '}\n' +
             'class Dog extends Animal {\n' +
             '    public function new() {}\n' +
+            '    public function sound():Void {}\n' +
+            '}'
+        );
+
+        // 23. Implementing abstract method with override keyword should fail
+        // ---------------------------------------------------------------
+        expectTypeError("Override on abstract method implementation",
+            'abstract class Animal {\n' +
+            '    public function new() {}\n' +
+            '    abstract public function sound():Void;\n' +
+            '}\n' +
+            'class Dog extends Animal {\n' +
+            '    public function new() {}\n' +
             '    override public function sound():Void {}\n' +
             '}'
         );
 
         // ---------------------------------------------------------------
-        // 23. Static type checking is disabled by default
+        // 24. Static type checking is disabled by default
         // ---------------------------------------------------------------
         trace("--- Testing static checking is OFF by default ---");
         try {

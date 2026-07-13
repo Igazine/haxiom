@@ -3218,9 +3218,11 @@ class Interp {
 					if (m.isOverride) {
 						if (parentMethod == null) {
 							throw new haxiom.CompileException('Method ${mName} is marked override but no parent class method was found', 0, 0, fqName);
+						} else if (parentMethod.isAbstract == true) {
+							throw new haxiom.CompileException('Method ${mName} overrides an abstract method and must not use the override keyword', 0, 0, fqName);
 						}
 					} else {
-						if (parentMethod != null && mName != "new") {
+						if (parentMethod != null && parentMethod.isAbstract != true && mName != "new") {
 							throw new haxiom.CompileException('Field ${mName} overrides parent class field and requires the override keyword', 0, 0, fqName);
 						}
 					}

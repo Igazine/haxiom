@@ -260,6 +260,8 @@ class StaticTypeChecker {
 						if (m.isOverride) {
 							if (parentMethod == null) {
 								addError('Method ${m.name} is marked override but no parent class method was found', expr.pos);
+							} else if (parentMethod.isAbstract == true) {
+								addError('Method ${m.name} overrides an abstract method and must not use the override keyword', expr.pos);
 							} else {
 								// Signature validation
 								if (parentMethod.args.length != m.args.length) {
@@ -278,7 +280,7 @@ class StaticTypeChecker {
 								}
 							}
 						} else {
-							if (parentMethod != null && m.name != "new") {
+							if (parentMethod != null && parentMethod.isAbstract != true && m.name != "new") {
 								addError('Field ${m.name} overrides parent class field and requires the override keyword', expr.pos);
 							}
 						}
