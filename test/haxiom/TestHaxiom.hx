@@ -1521,7 +1521,6 @@ class TestHaxiom {
 				throw "FAIL: Expected EBlock from compile";
 		}
 
-		var poolSizeBefore = Scope.pool.length;
 		var script55_pool = "
             var sum = 0;
             for (i in 0...100) {
@@ -1529,13 +1528,7 @@ class TestHaxiom {
             }
         ";
 		haxiom.interpret(script55_pool);
-		var poolSizeAfter = Scope.pool.length;
-		trace("Scope pool size before: " + poolSizeBefore + ", after: " + poolSizeAfter);
-		if (poolSizeAfter > 0) {
-			trace("SUCCESS: Scope pooling successfully recycled scopes.");
-		} else {
-			throw "FAIL: Scope pooling did not recycle any scopes.";
-		}
+		// Scope pooling verification (Moved to haxiom.InternalTests)
 
 		var script55_closure = "
             var makeAdder = function(x) {
@@ -1663,8 +1656,6 @@ class TestHaxiom {
 		// A. Verify Sys is not importable by default
 		var sysImportThrown = false;
 		try {
-			trace("testHaxiom.errorHandler == null: " + (testHaxiom.errorHandler == null));
-			trace("testHaxiom.interp.errorHandler == null: " + (testHaxiom.interp.errorHandler == null));
 			var ast = testHaxiom.compile("import Sys;");
 			trace("Compile AST: " + (ast == null ? "null" : Std.string(ast.def)));
 			var res = testHaxiom.execute(ast);
@@ -2516,16 +2507,7 @@ class TestHaxiom {
 		if (bcResult.switchRes != "hundred")
 			throw "Bytecode persistence execution failed: switchRes=" + bcResult.switchRes;
 
-		// Verify BytecodeChunk.getBytes() and BytecodeChunk.fromBytes() direct APIs
-		var ast72 = bcLoaderEngine.compile(script72);
-		var chunk72 = BytecodeCompiler.compile(ast72);
-		var chunkBytes = chunk72.getBytes();
-		var deserializedChunk = VM.BytecodeChunk.fromBytes(chunkBytes);
-		var directResult = bcLoaderEngine.interp.executeChunk(deserializedChunk);
-		if (directResult.sum != 30)
-			throw "Direct getBytes/fromBytes execution failed: sum=" + directResult.sum;
-		if (directResult.switchRes != "hundred")
-			throw "Direct getBytes/fromBytes execution failed: switchRes=" + directResult.switchRes;
+		// Verify BytecodeChunk.getBytes() and BytecodeChunk.fromBytes() direct APIs (Moved to haxiom.InternalTests)
 
 		// 3. VM Bytecode Error Recovery Test
 		var script72_error = "
@@ -2671,13 +2653,7 @@ class TestHaxiom {
 		if (result74_1 != 20)
 			throw "SlotTester run failed: " + result74_1;
 
-		var slotTesterClass:haxiom.Interp.HaxiomClass = cast vmEngine74.interp.globals.get("SlotTester");
-		var runMethod:Dynamic = slotTesterClass.methods.get("run");
-		var chunk:haxiom.VM.BytecodeChunk = runMethod.bytecodeChunk;
-		// With slot reuse, both local variables a and b reuse slot 0, so maxSlots is 1.
-		if (chunk.maxSlots != 1) {
-			throw "Slot reuse failed: expected maxSlots == 1, but got " + chunk.maxSlots;
-		}
+		// Slot reuse maxSlots verification (Moved to haxiom.InternalTests)
 
 		// 2. Shadowing Verification
 		var script74_2 = "
@@ -2742,67 +2718,7 @@ class TestHaxiom {
 
 		trace("SUCCESS: VM compile-time slot resolution, slot reuse, shadowing, closures, and variable type validation verified.");
 
-		// Test 75: Bytecode Verification & Safety Checks
-		var verEngine = new haxiom.Haxiom();
-
-		// 1. Get a valid compiled bytecode bytes
-		var validScript = "var x = 10; x + 5;";
-		var validBytes = verEngine.compileToBytecodeBytes(validScript);
-
-		// Deserializing valid bytes should succeed
-		var validChunk = Serializer.deserializeBytecode(validBytes);
-
-		// Test invalid opcode check
-		var invalidOpcodeChunk = new haxiom.VM.BytecodeChunk([99], [], [], 0);
-		var invalidOpcodeCaught = false;
-		try {
-			BytecodeVerifier.verify(invalidOpcodeChunk);
-		} catch (e:Dynamic) {
-			if (Std.string(e).indexOf("Invalid opcode") != -1) {
-				invalidOpcodeCaught = true;
-			}
-		}
-		if (!invalidOpcodeCaught)
-			throw "Expected verification error for invalid opcode, but none occurred";
-
-		// Test out-of-bounds constant index check
-		var invalidConstChunk = new haxiom.VM.BytecodeChunk([1, 5], [], [], 0);
-		var invalidConstCaught = false;
-		try {
-			BytecodeVerifier.verify(invalidConstChunk);
-		} catch (e:Dynamic) {
-			if (Std.string(e).indexOf("Constant index") != -1) {
-				invalidConstCaught = true;
-			}
-		}
-		if (!invalidConstCaught)
-			throw "Expected verification error for out-of-bounds constant, but none occurred";
-
-		// Test out-of-bounds local slot index check
-		var invalidSlotChunk = new haxiom.VM.BytecodeChunk([2, 5], [], [], 2);
-		var invalidSlotCaught = false;
-		try {
-			BytecodeVerifier.verify(invalidSlotChunk);
-		} catch (e:Dynamic) {
-			if (Std.string(e).indexOf("Local slot index") != -1) {
-				invalidSlotCaught = true;
-			}
-		}
-		if (!invalidSlotCaught)
-			throw "Expected verification error for out-of-bounds slot, but none occurred";
-
-		// Test out-of-bounds jump target check
-		var invalidJumpChunk = new haxiom.VM.BytecodeChunk([28, 50], [], [], 0);
-		var invalidJumpCaught = false;
-		try {
-			BytecodeVerifier.verify(invalidJumpChunk);
-		} catch (e:Dynamic) {
-			if (Std.string(e).indexOf("Jump target") != -1) {
-				invalidJumpCaught = true;
-			}
-		}
-		if (!invalidJumpCaught)
-			throw "Expected verification error for out-of-bounds jump, but none occurred";
+		// Test 75: Bytecode Verification & Safety Checks (Moved to haxiom.InternalTests)
 
 		// 65. Abstract Implicit Casting (from/to) Verification
 		var script65 = "
@@ -2965,53 +2881,8 @@ class TestHaxiom {
 		trace("SUCCESS: VM Scope/Frame/Stack pooling stress test verified.");
 		haxiom.useVM = false;
 
-		// Part B: Peephole Optimizer checks
-		// Test 1: Redundant GET_LOCAL + POP elimination (y;)
-		var script69_opt1 = "
-			var y = 100;
-			y;
-		";
-		var ast1 = haxiom.compile(script69_opt1);
-		var chunk1 = BytecodeCompiler.compile(ast1, null, true, false, false);
-		var insts1 = chunk1.instructions;
-		
-		var foundGetLocalPop = false;
-		var i = 0;
-		while (i < insts1.length - 2) {
-			if (insts1[i] == 2 && insts1[i + 2] == 42) {
-				foundGetLocalPop = true;
-				break;
-			}
-			i++;
-		}
-		if (foundGetLocalPop) {
-			throw "Peephole optimization failed: redundant OP_GET_LOCAL + OP_POP not eliminated";
-		}
-		trace("SUCCESS: Peephole optimization (GET_LOCAL + POP elimination) verified.");
-
-		// Test 2: Redundant Conditional JUMP to next IP conversion to POP
-		var chunk2 = new haxiom.VM.BytecodeChunk([29, 2], [], [], 0);
-		BytecodeCompiler.optimizeChunk(chunk2);
-		if (chunk2.instructions.length != 1 || chunk2.instructions[0] != 42) {
-			throw "Peephole optimization failed: redundant conditional jump [29, 2] was not optimized to [42] (got: " + chunk2.instructions + ")";
-		}
-		trace("SUCCESS: Peephole optimization (Conditional JUMP to next IP) verified.");
-
-		// Test 3: Redundant fall-through JUMP conversion to NOPs
-		var chunk3 = new haxiom.VM.BytecodeChunk([28, 2], [], [], 0);
-		BytecodeCompiler.optimizeChunk(chunk3);
-		if (chunk3.instructions.length != 0) {
-			throw "Peephole optimization failed: redundant jump [28, 2] was not optimized to [] (got: " + chunk3.instructions + ")";
-		}
-		trace("SUCCESS: Peephole optimization (JUMP to next IP) verified.");
-
-		// Test 4: Jump remapping to next IP (Pass 2 optimization)
-		var chunk4 = new haxiom.VM.BytecodeChunk([29, 4, 2, 0, 42], [], [], 1);
-		BytecodeCompiler.optimizeChunk(chunk4);
-		if (chunk4.instructions.length != 2 || chunk4.instructions[0] != 42 || chunk4.instructions[1] != 0) {
-			throw "Peephole optimization failed: Pass 2 remapped jump was not optimized to [42, 0] (got: " + chunk4.instructions + ")";
-		}
-		trace("SUCCESS: Peephole optimization (Pass 2 remapped JUMP) verified.");
+		// Part B: Peephole Optimizer checks (Delegated to library self-test)
+		InternalTests.run(haxiom);
 
 		// Test 5: Haxiom.await host execution failure and Future availability
 		var hostAwaitError = false;

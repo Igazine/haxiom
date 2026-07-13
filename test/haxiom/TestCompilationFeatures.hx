@@ -822,15 +822,14 @@ class TestCompilationFeatures {
         }
         
         // Verify class definitions and static variable updates
-        var mainClass:Dynamic = engine.interp.globals.get("Main");
+        var mainClass = engine.getGlobal("Main");
         if (mainClass == null) {
             deleteDirRecursive(tempDir);
             throw "Main class was not registered in engine globals";
         }
         
-        var haxiomClass:haxiom.Interp.HaxiomClass = cast mainClass;
-        var resString = haxiomClass.staticFields.get("resultString");
-        var resInt = haxiomClass.staticFields.get("resultInt");
+        var resString = engine.resolveField(mainClass, "resultString");
+        var resInt = engine.resolveField(mainClass, "resultInt");
         
         if (resString != "Hello from MyClass") {
             deleteDirRecursive(tempDir);
@@ -882,8 +881,8 @@ class TestCompilationFeatures {
         engineOverride.importWhitelist = null;
         engineOverride.executeBytes(overrideBytes);
         
-        var mainOverrideClass:haxiom.Interp.HaxiomClass = cast engineOverride.interp.globals.get("MainOverride");
-        var checkExistsVal = mainOverrideClass.staticFields.get("checkExists");
+        var mainOverrideClass = engineOverride.getGlobal("MainOverride");
+        var checkExistsVal = engineOverride.resolveField(mainOverrideClass, "checkExists");
         if (checkExistsVal != true) {
             deleteDirRecursive(tempDir);
             throw "Expected local override of FileSystem.exists to return true, but got: " + checkExistsVal;

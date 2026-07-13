@@ -219,8 +219,8 @@ class TestHXBCSecurityDebug {
 
         engine.interpret(script);
 
-        var clsVal:haxiom.Interp.HaxiomClass = cast engine.interp.globals.get("AutoMainDemo");
-        var ranVal = clsVal.staticFields.get("ran");
+        var clsVal = engine.getGlobal("AutoMainDemo");
+        var ranVal = engine.resolveField(clsVal, "ran");
         if (ranVal != true) {
             throw "Automatic main execution failed: AutoMainDemo.main was not run!";
         }
@@ -230,8 +230,8 @@ class TestHXBCSecurityDebug {
         engineAST.useVM = false;
         engineAST.interpret(script);
 
-        var clsValAST:haxiom.Interp.HaxiomClass = cast engineAST.interp.globals.get("AutoMainDemo");
-        var ranValAST = clsValAST.staticFields.get("ran");
+        var clsValAST = engineAST.getGlobal("AutoMainDemo");
+        var ranValAST = engineAST.resolveField(clsValAST, "ran");
         if (ranValAST != true) {
             throw "Automatic main execution (AST) failed: AutoMainDemo.main was not run!";
         }
@@ -317,12 +317,12 @@ class TestHXBCSecurityDebug {
         engine1.currentFilename = "Basic.hx";
         engine1.interpret(script);
         
-        var clsAnother1:haxiom.Interp.HaxiomClass = cast engine1.interp.globals.get("AnotherClass");
-        var clsBasic1:haxiom.Interp.HaxiomClass = cast engine1.interp.globals.get("Basic");
-        if (clsAnother1.staticFields.get("ran") == true) {
+        var clsAnother1 = engine1.getGlobal("AnotherClass");
+        var clsBasic1 = engine1.getGlobal("Basic");
+        if (engine1.resolveField(clsAnother1, "ran") == true) {
             throw "Incorrectly executed AnotherClass.main instead of Basic.main when filename was Basic.hx";
         }
-        if (clsBasic1.staticFields.get("ran") != true) {
+        if (engine1.resolveField(clsBasic1, "ran") != true) {
             throw "Failed to execute Basic.main when filename was Basic.hx";
         }
 
@@ -333,12 +333,12 @@ class TestHXBCSecurityDebug {
         engine2.currentFilename = "Basic.hx";
         engine2.interpret(script);
 
-        var clsAnother2:haxiom.Interp.HaxiomClass = cast engine2.interp.globals.get("AnotherClass");
-        var clsBasic2:haxiom.Interp.HaxiomClass = cast engine2.interp.globals.get("Basic");
-        if (clsAnother2.staticFields.get("ran") != true) {
+        var clsAnother2 = engine2.getGlobal("AnotherClass");
+        var clsBasic2 = engine2.getGlobal("Basic");
+        if (engine2.resolveField(clsAnother2, "ran") != true) {
             throw "Failed to execute AnotherClass.main under explicit override";
         }
-        if (clsBasic2.staticFields.get("ran") == true) {
+        if (engine2.resolveField(clsBasic2, "ran") == true) {
             throw "Incorrectly executed Basic.main under override AnotherClass";
         }
 

@@ -14,11 +14,12 @@ import haxe.macro.Type;
  * Provides APIs for compiling, interpreting, and executing scripts in either
  * AST interpretation mode or compiled Bytecode VM mode.
  */
+@:allow(haxiom)
 class Haxiom {
 	/**
 	 * The underlying interpreter instance carrying the execution scope, globals, and callbacks.
 	 */
-	public var interp:Interp;
+	var interp:Interp;
 
 	/**
 	 * If true, enables caching of compiled ASTs to speed up subsequent executions of identical script strings.
@@ -41,7 +42,7 @@ class Haxiom {
 	/**
 	 * Internal cache storing compiled AST nodes by their raw source code key.
 	 */
-	public var astCache:Map<String, haxiom.AST.Expr> = new Map();
+	var astCache:Map<String, haxiom.AST.Expr> = new Map();
 
 	var astCacheSize:Int = 0;
 

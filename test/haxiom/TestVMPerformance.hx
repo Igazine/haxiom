@@ -71,23 +71,22 @@ class TestVMPerformance {
 
         var engine = new haxiom.Haxiom();
         var ast = engine.compile(script);
-        var chunk = haxiom.BytecodeCompiler.compile(ast);
 
         // Warm up
         for (i in 0...5) {
-            engine.interp.useVM = false;
+            engine.useVM = false;
             engine.execute(ast);
             
-            engine.interp.useVM = true;
+            engine.useVM = true;
             haxiom.VM.enablePooling = false;
-            engine.interp.executeChunk(chunk);
+            engine.execute(ast);
 
             haxiom.VM.enablePooling = true;
-            engine.interp.executeChunk(chunk);
+            engine.execute(ast);
         }
 
         // 1. AST Interpreter
-        engine.interp.useVM = false;
+        engine.useVM = false;
         var start = haxe.Timer.stamp();
         for (i in 0...iterations) {
             engine.execute(ast);
@@ -95,20 +94,20 @@ class TestVMPerformance {
         var astTime = haxe.Timer.stamp() - start;
 
         // 2. VM No Pooling
-        engine.interp.useVM = true;
+        engine.useVM = true;
         haxiom.VM.enablePooling = false;
         var start = haxe.Timer.stamp();
         for (i in 0...iterations) {
-            engine.interp.executeChunk(chunk);
+            engine.execute(ast);
         }
         var vmNoPoolTime = haxe.Timer.stamp() - start;
 
         // 3. VM With Pooling
-        engine.interp.useVM = true;
+        engine.useVM = true;
         haxiom.VM.enablePooling = true;
         var start = haxe.Timer.stamp();
         for (i in 0...iterations) {
-            engine.interp.executeChunk(chunk);
+            engine.execute(ast);
         }
         var vmPoolTime = haxe.Timer.stamp() - start;
 
