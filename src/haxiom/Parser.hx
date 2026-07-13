@@ -160,7 +160,12 @@ class Parser {
 			case TClass:
 				expr = parseClass(meta);
 			case TAbstract:
-				expr = parseAbstract(meta);
+				if (peek(1).def == TClass) {
+					next(); // consume TAbstract
+					expr = parseClass(meta, true);
+				} else {
+					expr = parseAbstract(meta);
+				}
 			case TTypedef:
 				expr = parseTypedef();
 			case TInterface:
@@ -310,7 +315,13 @@ class Parser {
 		return meta.length > 0 ? meta : null;
 	}
 
-	function parseClass(?meta:Array<{name:String, params:Array<Expr>}>):Expr {
+	function parseClass(?meta:Array<{name:String, params:Array<Expr>}>, isAbstract:Bool = false):Expr {
+		if (isAbstract) {
+			if (meta == null) {
+				meta = [];
+			}
+			meta.push({name: ":abstract", params: []});
+		}
 		var t = expect(TClass);
 		var name = expectIdent();
 		registerType(name, t.pos);
@@ -334,6 +345,8 @@ class Parser {
 			var isStatic = false;
 			var isPublic = false; // Default member visibility is private
 			var isFinal = false;
+			var isOverride = false;
+			var isAbstractMethod = false;
 
 			while (true) {
 				if (match(TStatic)) {
@@ -346,6 +359,10 @@ class Parser {
 					isFinal = true;
 				} else if (match(TInline)) {
 					// Ignore inline modifier
+				} else if (match(TOverride)) {
+					isOverride = true;
+				} else if (match(TAbstract)) {
+					isAbstractMethod = true;
 				} else {
 					break;
 				}
@@ -392,7 +409,12 @@ class Parser {
 				}
 				var mArgs = parseArgs();
 				var mRetType = parseOptType();
-				var mBody = parseBlock();
+				var mBody = null;
+				if (isAbstractMethod) {
+					expect(TSemicolon);
+				} else {
+					mBody = parseBlock();
+				}
 				methods.push({
 					name: mName,
 					args: mArgs,
@@ -400,6 +422,8 @@ class Parser {
 					body: mBody,
 					isStatic: isStatic,
 					isPublic: isPublic,
+					isOverride: isOverride,
+					isAbstract: isAbstractMethod,
 					meta: fMeta
 				});
 			} else {

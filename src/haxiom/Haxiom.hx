@@ -327,12 +327,12 @@ class Haxiom {
 
 			var folded = Optimizer.foldConstants(ast);
 
-			if (enableDCE) {
-				folded = Optimizer.eliminateDeadCode(folded);
-			}
-
 			if (staticTypes || enableStaticTypes) {
 				haxiom.StaticTypeChecker.check(folded, interp);
+			}
+
+			if (enableDCE) {
+				folded = Optimizer.eliminateDeadCode(folded);
 			}
 
 			if (enableAstCache) {

@@ -53,6 +53,7 @@ enum TokenDef {
     TEnum;
     TUsing;
     TAbstract;
+    TOverride;
     TTypedef;
     TInline;
     
@@ -143,7 +144,7 @@ enum ExprDef {
     
     EClass(name:String, 
            fields:Array<{name:String, type:Null<TypeDecl>, expr:Expr, isStatic:Bool, isPublic:Bool, isFinal:Bool, ?property:{get:String, set:String}, ?meta:Array<{name:String, params:Array<Expr>}>}>, 
-           methods:Array<{name:String, args:Array<FunctionArg>, retType:Null<TypeDecl>, body:Expr, isStatic:Bool, isPublic:Bool, ?meta:Array<{name:String, params:Array<Expr>}>}>, 
+           methods:Array<{name:String, args:Array<FunctionArg>, retType:Null<TypeDecl>, body:Null<Expr>, isStatic:Bool, isPublic:Bool, ?isOverride:Bool, ?isAbstract:Bool, ?meta:Array<{name:String, params:Array<Expr>}>}>, 
            ?parent:TypeDecl,
            ?interfaces:Array<TypeDecl>,
            ?params:Array<String>,

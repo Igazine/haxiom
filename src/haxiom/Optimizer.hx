@@ -179,9 +179,11 @@ class Optimizer {
 					name: m.name,
 					args: m.args,
 					retType: m.retType,
-					body: foldConstants(m.body),
+					body: m.body == null ? null : foldConstants(m.body),
 					isStatic: m.isStatic,
 					isPublic: m.isPublic,
+					isOverride: m.isOverride,
+					isAbstract: m.isAbstract,
 					meta: m.meta
 				});
 				EClass(name, foldedFields, foldedMethods, parent, interfaces, params, meta);
@@ -375,7 +377,7 @@ class Optimizer {
 				});
 				var modified = prunedMethods.length != methods.length || prunedFields.length != fields.length;
 				var finalMethods = prunedMethods.map(m -> {
-					var newBody = dceExpr(m.body);
+					var newBody = m.body == null ? null : dceExpr(m.body);
 					if (newBody != m.body) {
 						modified = true;
 						return {
@@ -385,6 +387,8 @@ class Optimizer {
 							body: newBody,
 							isStatic: m.isStatic,
 							isPublic: m.isPublic,
+							isOverride: m.isOverride,
+							isAbstract: m.isAbstract,
 							meta: m.meta
 						};
 					}
@@ -746,7 +750,25 @@ class Optimizer {
 			case EFunction(_, _, _, body):
 				collectUsages(body, usages);
 
-			case EClass(_, fields, methods, _, _, _, _):
+			case EClass(_, fields, methods, parent, interfaces, _, _):
+				if (parent != null) {
+					switch (parent) {
+						case TPath(path, _) if (path.length > 0):
+							var name = path[path.length - 1];
+							usages.set(name, (usages.exists(name) ? usages.get(name) : 0) + 1);
+						default:
+					}
+				}
+				if (interfaces != null) {
+					for (itf in interfaces) {
+						switch (itf) {
+							case TPath(path, _) if (path.length > 0):
+								var name = path[path.length - 1];
+								usages.set(name, (usages.exists(name) ? usages.get(name) : 0) + 1);
+							default:
+						}
+					}
+				}
 				for (f in fields)
 					if (f.expr != null)
 						collectUsages(f.expr, usages);

@@ -52,9 +52,9 @@ class StaticTypeChecker {
 				for (e in exprs)
 					collectDeclarations(e);
 
-			case EClass(name, fields, methods, parent, interfaces, params, _):
-				trace("collectDeclarations EClass file=" + expr.pos.file + " name=" + name + " fields.length=" + fields.length + " methods.length=" + methods.length);
+			case EClass(name, fields, methods, parent, interfaces, params, meta):
 				var info = new ClassInfo(name, params != null ? params : []);
+				info.isAbstract = hasMeta(meta, ":abstract");
 				if (parent != null) {
 					switch (parent) {
 						case TPath(path, _):
@@ -100,7 +100,9 @@ class StaticTypeChecker {
 							retType: finalRet,
 							body: m.body,
 							isStatic: m.isStatic,
-							isPublic: m.isPublic
+							isPublic: m.isPublic,
+							isOverride: m.isOverride,
+							isAbstract: m.isAbstract
 						};
 						info.methods.set(m.name, mCopy);
 					}
@@ -247,7 +249,53 @@ class StaticTypeChecker {
 				checkExpr(body, childEnv);
 
 			case EClass(className, _, methods, _, _, _, _):
+				var cls = classes.get(className);
+				if (cls != null) {
+					// 1. Override validation
+					for (m in methods) {
+						var parentMethod = findParentMethod(cls.parentName, m.name);
+						#if haxiom_debug_stc
+						trace('STC override check class: $className, method: ${m.name}, isOverride: ${m.isOverride}, parentMethod: ${parentMethod != null}');
+						#end
+						if (m.isOverride) {
+							if (parentMethod == null) {
+								addError('Method ${m.name} is marked override but no parent class method was found', expr.pos);
+							} else {
+								// Signature validation
+								if (parentMethod.args.length != m.args.length) {
+									addError('Method ${m.name} overrides parent class method but has different argument count', expr.pos);
+								} else {
+									for (i in 0...m.args.length) {
+										var parentArg = parentMethod.args[i];
+										var childArg = m.args[i];
+										if (Std.string(parentArg.type) != Std.string(childArg.type)) {
+											addError('Method ${m.name} overrides parent class method but has incompatible type for argument ${childArg.name}', expr.pos);
+										}
+									}
+								}
+								if (Std.string(parentMethod.retType) != Std.string(m.retType)) {
+									addError('Method ${m.name} overrides parent class method but has different return type', expr.pos);
+								}
+							}
+						} else {
+							if (parentMethod != null && m.name != "new") {
+								addError('Field ${m.name} overrides parent class field and requires the override keyword', expr.pos);
+							}
+						}
+					}
+
+					// 2. Concrete class abstract implementation validation
+					if (!cls.isAbstract) {
+						var unimplemented = getUnimplementedAbstractMethods(cls);
+						for (absM in unimplemented) {
+							addError('Class ${className} must implement abstract method ${absM.methodName} of parent class ${absM.parentName}', expr.pos);
+						}
+					}
+				}
+
 				for (m in methods) {
+					if (m.body == null)
+						continue; // Abstract methods have no body to check
 					var childEnv = new LocalEnv(env);
 					childEnv.currentClass = className;
 					for (a in m.args) {
@@ -480,6 +528,9 @@ class StaticTypeChecker {
 				var typeName = path.join(".");
 				if (classes.exists(typeName)) {
 					var cls = classes.get(typeName);
+					if (cls.isAbstract) {
+						addError('Cannot instantiate abstract class ${typeName}', pos);
+					}
 					if (cls.ctorArgs != null && cls.ctorArgs.length > 0) {
 						var bindings = buildGenericBindings(cls.params, typeParams);
 						for (i in 0...cls.ctorArgs.length) {
@@ -668,6 +719,11 @@ class StaticTypeChecker {
 		if (objType == null)
 			return null;
 		switch (objType) {
+			case TFun(args, ret):
+				if (field == "bind") {
+					return TPath(["Dynamic"], []);
+				}
+				return null;
 			case TAnonymous(fields):
 				for (f in fields) {
 					if (f.name == field)
@@ -1086,6 +1142,72 @@ class StaticTypeChecker {
 		}
 	}
 
+	function findParentMethod(parentName:Null<String>, methodName:String):Dynamic {
+		if (parentName == null)
+			return null;
+		if (classes.exists(parentName)) {
+			var pCls = classes.get(parentName);
+			if (pCls.methods.exists(methodName)) {
+				return pCls.methods.get(methodName);
+			}
+			return findParentMethod(pCls.parentName, methodName);
+		}
+		return null;
+	}
+
+	function getUnimplementedAbstractMethods(cls:ClassInfo):Array<{methodName:String, parentName:String}> {
+		var unimplemented = [];
+		var currentParent = cls.parentName;
+		var abstractMethods = new Map<String, String>();
+
+		while (currentParent != null && classes.exists(currentParent)) {
+			var pCls = classes.get(currentParent);
+			for (mName in pCls.methods.keys()) {
+				var m = pCls.methods.get(mName);
+				if (m.isAbstract) {
+					if (!abstractMethods.exists(mName)) {
+						abstractMethods.set(mName, currentParent);
+					}
+				}
+			}
+			currentParent = pCls.parentName;
+		}
+
+		for (mName in abstractMethods.keys()) {
+			var implemented = false;
+			var current:ClassInfo = cls;
+			while (current != null) {
+				if (current.methods.exists(mName)) {
+					var m = current.methods.get(mName);
+					if (!m.isAbstract) {
+						implemented = true;
+						break;
+					}
+				}
+				if (current.parentName != null && classes.exists(current.parentName)) {
+					current = classes.get(current.parentName);
+				} else {
+					break;
+				}
+			}
+			if (!implemented) {
+				unimplemented.push({methodName: mName, parentName: abstractMethods.get(mName)});
+			}
+		}
+
+		return unimplemented;
+	}
+
+	function hasMeta(meta:Null<Array<{name:String, params:Array<Expr>}>>, name:String):Bool {
+		if (meta == null)
+			return false;
+		for (m in meta) {
+			if (m.name == name)
+				return true;
+		}
+		return false;
+	}
+
 	function isSubclassOfName(sub:String, parent:String):Bool {
 		var curr = sub;
 		while (curr != null) {
@@ -1194,6 +1316,7 @@ class LocalEnv {
 class ClassInfo {
 	var name:String;
 	var params:Array<String>;
+	var isAbstract:Bool = false;
 	var parentName:Null<String> = null;
 	var interfaces:Array<String> = [];
 	var ctorArgs:Array<FunctionArg>;
@@ -1203,7 +1326,9 @@ class ClassInfo {
 		retType:Null<TypeDecl>,
 		body:Expr,
 		isStatic:Bool,
-		isPublic:Bool
+		isPublic:Bool,
+		?isOverride:Bool,
+		?isAbstract:Bool
 	}> = new Map();
 	var fields:Map<String, {type:TypeDecl, isStatic:Bool, isPublic:Bool}> = new Map();
 

@@ -115,12 +115,26 @@ class Scope {
 	}
 }
 
+typedef ClassMethodInfo = {
+	name:String,
+	args:Array<FunctionArg>,
+	retType:Null<TypeDecl>,
+	body:Null<Expr>,
+	isStatic:Bool,
+	isPublic:Bool,
+	?isOverride:Bool,
+	?isAbstract:Bool,
+	?bytecodeChunk:haxiom.VM.BytecodeChunk,
+	?meta:Array<{name:String, params:Array<Dynamic>}>
+};
+
 @:allow(haxiom)
 class HaxiomClass {
 	var name:String;
 	var params:Array<String> = [];
 	var parentType:TypeDecl;
 	var parent:HaxiomClass;
+	var isAbstract:Bool = false;
 	var fields:Map<String, {
 		name:String,
 		type:Null<TypeDecl>,
@@ -131,17 +145,7 @@ class HaxiomClass {
 		?property:{get:String, set:String},
 		?meta:Array<{name:String, params:Array<Dynamic>}>
 	}> = new Map();
-	var methods:Map<String, {
-		name:String,
-		args:Array<FunctionArg>,
-		retType:Null<TypeDecl>,
-		body:Expr,
-		isStatic:Bool,
-		isPublic:Bool,
-		?bytecodeChunk:haxiom.VM.BytecodeChunk,
-		?meta:Array<{name:String, params:Array<Dynamic>
-		}>
-	}> = new Map();
+	var methods:Map<String, ClassMethodInfo> = new Map();
 	var staticFields:Map<String, Dynamic> = new Map();
 	var interfaces:Array<TypeDecl> = [];
 	var meta:Array<{name:String, params:Array<Dynamic>}> = [];
@@ -234,17 +238,7 @@ class HaxiomAbstract {
 		?property:{get:String, set:String},
 		?meta:Array<{name:String, params:Array<Dynamic>}>
 	}> = new Map();
-	var methods:Map<String, {
-		name:String,
-		args:Array<FunctionArg>,
-		retType:Null<TypeDecl>,
-		body:Expr,
-		isStatic:Bool,
-		isPublic:Bool,
-		?bytecodeChunk:haxiom.VM.BytecodeChunk,
-		?meta:Array<{name:String, params:Array<Dynamic>
-		}>
-	}> = new Map();
+	var methods:Map<String, ClassMethodInfo> = new Map();
 	var staticFields:Map<String, Dynamic> = new Map();
 	var meta:Array<{name:String, params:Array<Dynamic>}> = [];
 	var fromTypes:Array<String> = [];
@@ -894,6 +888,9 @@ class Interp {
 
 				if (Std.isOfType(callee, HaxiomClass)) {
 					var cls:HaxiomClass = cast callee;
+					if (cls.isAbstract) {
+						throw new haxiom.CompileException('Cannot instantiate abstract class ${cls.name}', 0, 0, cls.name);
+					}
 					var inst = new HaxiomInstance(cls);
 					populateGenericBindings(inst, cls, params, null, null, scope);
 
@@ -1209,6 +1206,14 @@ class Interp {
 	public function evalField(obj:Dynamic, field:String, scope:Scope, pos:Pos):Dynamic {
 		if (obj == null)
 			throw 'Cannot read field "$field" of null';
+
+		if (Reflect.isFunction(obj) && field == "bind") {
+			return Reflect.makeVarArgs(function(boundArgs:Array<Dynamic>) {
+				return Reflect.makeVarArgs(function(remainingArgs:Array<Dynamic>) {
+					return Reflect.callMethod(null, obj, boundArgs.concat(remainingArgs));
+				});
+			});
+		}
 
 		if (Std.isOfType(obj, String)) {
 			var str:String = cast obj;
@@ -3163,6 +3168,18 @@ class Interp {
 				cls.params = params != null ? params : [];
 				cls.interfaces = interfaceTypes != null ? interfaceTypes : [];
 				cls.meta = evaluateMetadata(meta, scope);
+				
+				var hasAbstractMeta = false;
+				if (cls.meta != null) {
+					for (m in cls.meta) {
+						if (m.name == ":abstract") {
+							hasAbstractMeta = true;
+							break;
+						}
+					}
+				}
+				cls.isAbstract = hasAbstractMeta;
+
 				for (f in fields) {
 					cls.fields.set(f.name, {
 						name: f.name,
@@ -3187,9 +3204,61 @@ class Interp {
 						body: m.body,
 						isStatic: m.isStatic,
 						isPublic: m.isPublic,
+						isOverride: mDyn.isOverride,
+						isAbstract: mDyn.isAbstract,
 						bytecodeChunk: mDyn.bytecodeChunk,
 						meta: evaluateMetadata(m.meta, scope)
 					});
+				}
+
+				// 1. Runtime override checks
+				for (mName in cls.methods.keys()) {
+					var m = cls.methods.get(mName);
+					var parentMethod = findMethod(cls.parent, mName);
+					if (m.isOverride) {
+						if (parentMethod == null) {
+							throw new haxiom.CompileException('Method ${mName} is marked override but no parent class method was found', 0, 0, fqName);
+						}
+					} else {
+						if (parentMethod != null && mName != "new") {
+							throw new haxiom.CompileException('Field ${mName} overrides parent class field and requires the override keyword', 0, 0, fqName);
+						}
+					}
+				}
+
+				// 2. Runtime concrete class abstract implementation checks
+				if (!cls.isAbstract) {
+					var currentParent = cls.parent;
+					var abstractMethods = new Map<String, String>();
+					while (currentParent != null) {
+						for (mName in currentParent.methods.keys()) {
+							var m = currentParent.methods.get(mName);
+							if (m.isAbstract) {
+								if (!abstractMethods.exists(mName)) {
+									abstractMethods.set(mName, currentParent.name);
+								}
+							}
+						}
+						currentParent = currentParent.parent;
+					}
+
+					for (mName in abstractMethods.keys()) {
+						var implemented = false;
+						var current = cls;
+						while (current != null) {
+							if (current.methods.exists(mName)) {
+								var m = current.methods.get(mName);
+								if (!m.isAbstract) {
+									implemented = true;
+									break;
+								}
+							}
+							current = current.parent;
+						}
+						if (!implemented) {
+							throw new haxiom.CompileException('Class ${name} must implement abstract method ${mName} of parent class ${abstractMethods.get(mName)}', 0, 0, fqName);
+						}
+					}
 				}
 
 				var implementedInterfaces = interfaceTypes != null ? interfaceTypes : [];
@@ -4443,17 +4512,13 @@ class Interp {
 		return findStaticMethod(cls.parent, name);
 	}
 
-	function bindMethod(obj:Dynamic, method:{
-		name:String,
-		args:Array<FunctionArg>,
-		retType:Null<TypeDecl>,
-		body:Expr,
-		isStatic:Bool,
-		isPublic:Bool,
-		?meta:Array<{name:String, params:Array<Dynamic>}>
-	}):Dynamic {
+	function bindMethod(obj:Dynamic, method:ClassMethodInfo):Dynamic {
 		var bindings = (obj != null && Std.isOfType(obj, HaxiomInstance)) ? (cast obj : HaxiomInstance).genericBindings : null;
 		var func = (callArgs:Array<Dynamic>) -> {
+			var mDyn:Dynamic = method;
+			if (mDyn.isAbstract) {
+				throw 'Cannot call abstract method ${method.name}';
+			}
 			#if haxiom_debug
 			trace('Interp bindMethod guest function invoked! callArgs=' + callArgs);
 			#end

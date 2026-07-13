@@ -111,7 +111,7 @@ class TestHaxiom {
                 public function new(name:String) {
                     super(name);
                 }
-                public function speak():String {
+                override public function speak():String {
                     return name + " barks: " + super.speak();
                 }
             }
@@ -2578,7 +2578,7 @@ class TestHaxiom {
                     this.breed = breed;
                 }
                 
-                public function greet():String {
+                override public function greet():String {
                     return 'Dog:' + this.name + ' (' + this.breed + ')';
                 }
                 
@@ -3005,6 +3005,83 @@ class TestHaxiom {
 				private function show():Void {}
 			}
 		", "must be public to implement interface", "Guest interface method visibility check");
+
+		// Override error checks
+		expectError(visAstEngine, "
+			class Base {
+				public function new() {}
+				public function show() {}
+			}
+			class Derived extends Base {
+				public function new() {}
+				public function show() {}
+			}
+		", "requires the override keyword", "Missing override runtime validation");
+
+		expectError(visAstEngine, "
+			class Base {
+				public function new() {}
+			}
+			class Derived extends Base {
+				public function new() {}
+				override public function show() {}
+			}
+		", "marked override but no parent class method was found", "Bad override runtime validation");
+
+		// Abstract class instantiation guard
+		expectError(visAstEngine, "
+			abstract class Base {
+				public function new() {}
+			}
+			var b = new Base();
+		", "Cannot instantiate abstract class", "Abstract class instantiation guard runtime validation");
+
+		// Unimplemented abstract method error
+		expectError(visAstEngine, "
+			abstract class Base {
+				public function new() {}
+				abstract public function run():Void;
+			}
+			class Derived extends Base {
+				public function new() {}
+			}
+		", "must implement abstract method", "Unimplemented abstract method runtime validation");
+
+		// Valid override and abstract class implementation
+		var validAstEngine = new haxiom.Haxiom();
+		validAstEngine.interpret("
+			abstract class Animal {
+				public function new() {}
+				abstract public function sound():String;
+			}
+			class Dog extends Animal {
+				public function new() {}
+				override public function sound():String {
+					return 'woof';
+				}
+			}
+			var d = new Dog();
+			if (d.sound() != 'woof') throw 'Invalid abstract method return value';
+		");
+
+		// Test bind() in both AST and VM modes
+		for (vmMode in [false, true]) {
+			var bindEngine = new haxiom.Haxiom();
+			bindEngine.useVM = vmMode;
+			var results = [];
+			bindEngine.setGlobal("collect", (v:Dynamic) -> results.push(v));
+			bindEngine.interpret("
+				function myfunc(a:Int, b:String):Void {
+					collect('hello-' + a + '-' + b);
+				}
+				var f = myfunc.bind(10, 'tamas');
+				f();
+			");
+			if (results[0] != "hello-10-tamas") {
+				throw "FAIL: Closure bind() failed in VM=" + vmMode + ", got: " + results[0];
+			}
+		}
+		trace("SUCCESS: Closure bind() redirection verified for both AST and VM modes.");
 
 		trace("SUCCESS: Bytecode Verification & Safety Checks verified.");
 	}

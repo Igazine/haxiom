@@ -119,9 +119,11 @@ class MacroExpander {
                     name: m.name,
                     args: m.args,
                     retType: m.retType,
-                    body: expand(m.body, interp),
+                    body: m.body == null ? null : expand(m.body, interp),
                     isStatic: m.isStatic,
                     isPublic: m.isPublic,
+                    isOverride: m.isOverride,
+                    isAbstract: m.isAbstract,
                     meta: m.meta
                 });
                 var expandedFields = fields.map(f -> {

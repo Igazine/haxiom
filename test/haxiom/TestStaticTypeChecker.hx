@@ -228,7 +228,101 @@ class TestStaticTypeChecker {
         );
 
         // ---------------------------------------------------------------
-        // 9. Static type checking is disabled by default
+        // 15. Overriding a method without override keyword should fail
+        // ---------------------------------------------------------------
+        expectTypeError("Missing override keyword",
+            'class Base {\n' +
+            '    public function new() {}\n' +
+            '    public function show():Void {}\n' +
+            '}\n' +
+            'class Derived extends Base {\n' +
+            '    public function show():Void {}\n' +
+            '}'
+        );
+
+        // 16. Marking a non-existent parent method override should fail
+        // ---------------------------------------------------------------
+        expectTypeError("Bad override keyword",
+            'class Base {\n' +
+            '    public function new() {}\n' +
+            '}\n' +
+            'class Derived extends Base {\n' +
+            '    override public function show():Void {}\n' +
+            '}'
+        );
+
+        // 17. Overriding method with signature mismatch (arguments) should fail
+        // ---------------------------------------------------------------
+        expectTypeError("Override argument count mismatch",
+            'class Base {\n' +
+            '    public function new() {}\n' +
+            '    public function show(x:Int):Void {}\n' +
+            '}\n' +
+            'class Derived extends Base {\n' +
+            '    override public function show(x:Int, y:Int):Void {}\n' +
+            '}'
+        );
+
+        // 18. Overriding method with signature mismatch (argument type) should fail
+        // ---------------------------------------------------------------
+        expectTypeError("Override argument type mismatch",
+            'class Base {\n' +
+            '    public function new() {}\n' +
+            '    public function show(x:Int):Void {}\n' +
+            '}\n' +
+            'class Derived extends Base {\n' +
+            '    override public function show(x:String):Void {}\n' +
+            '}'
+        );
+
+        // 19. Correct override should pass
+        // ---------------------------------------------------------------
+        expectNoError("Correct override",
+            'class Base {\n' +
+            '    public function new() {}\n' +
+            '    public function show(x:Int):Void {}\n' +
+            '}\n' +
+            'class Derived extends Base {\n' +
+            '    override public function show(x:Int):Void {}\n' +
+            '}'
+        );
+
+        // 20. Instantiating an abstract class should fail
+        // ---------------------------------------------------------------
+        expectTypeError("Instantiating abstract class",
+            'abstract class Animal {\n' +
+            '    public function new() {}\n' +
+            '}\n' +
+            'var a = new Animal();'
+        );
+
+        // 21. Class failing to implement inherited abstract method should fail
+        // ---------------------------------------------------------------
+        expectTypeError("Missing abstract implementation",
+            'abstract class Animal {\n' +
+            '    public function new() {}\n' +
+            '    abstract public function sound():Void;\n' +
+            '}\n' +
+            'class Dog extends Animal {\n' +
+            '    public function new() {}\n' +
+            '}'
+        );
+
+        // 22. Concrete class correctly implementing abstract method should pass
+        // ---------------------------------------------------------------
+        expectNoError("Correct abstract implementation",
+            'abstract class Animal {\n' +
+            '    public function new() {}\n' +
+            '    abstract public function sound():Void;\n' +
+            '}\n' +
+            'class Dog extends Animal {\n' +
+            '    public function new() {}\n' +
+            '    override public function sound():Void {}\n' +
+            '}'
+        );
+
+        // ---------------------------------------------------------------
+        // 23. Static type checking is disabled by default
         // ---------------------------------------------------------------
         trace("--- Testing static checking is OFF by default ---");
         try {

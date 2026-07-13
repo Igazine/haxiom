@@ -212,6 +212,7 @@ class Lexer {
 					case "in": TIn;
 					case "new": TNew;
 					case "null": TNull;
+					case "override": TOverride;
 					case "private": TPrivate;
 					case "public": TPublic;
 					case "return": TReturn;
