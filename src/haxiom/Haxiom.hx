@@ -551,8 +551,8 @@ class Haxiom {
 	 * @param name The global variable name to declare (e.g. `container`).
 	 * @param value The host object reference or value.
 	 */
-	public function setGlobal(name:String, value:Dynamic):Void {
-		interp.globals.declare(name, value);
+	public function setGlobal(name:String, value:Dynamic, ?isFinal:Bool = false):Void {
+		interp.globals.declare(name, value, null, isFinal);
 	}
 
 	/**
