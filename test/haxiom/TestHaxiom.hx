@@ -3101,12 +3101,21 @@ class TestHaxiom {
 		expectError(macroEngine, "1 + macro 2;", "macros are not supported", "macro primary expression");
 		expectError(macroEngine, "class Test { macro function foo() {} }", "macros are not supported", "macro class method");
 
-		// Verify final global re-assignment rejection tests in AST and VM modes
+		// Verify final global re-assignment rejection tests in AST and VM modes (final by default)
 		for (vmMode in [false, true]) {
 			var finalEngine = new haxiom.Haxiom();
 			finalEngine.useVM = vmMode;
-			finalEngine.setGlobal("myFinal", 100, true);
+			finalEngine.setGlobal("myFinal", 100); // final by default
 			expectError(finalEngine, "myFinal = 200;", "Cannot reassign final variable", "final global reassignment in VM=" + vmMode);
+
+			// Verify that a global explicitly marked as mutable (isFinal = false) CAN be reassigned
+			var mutableEngine = new haxiom.Haxiom();
+			mutableEngine.useVM = vmMode;
+			mutableEngine.setGlobal("myMutable", 100, false);
+			mutableEngine.interpret("myMutable = 200;");
+			if (mutableEngine.getGlobal("myMutable") != 200) {
+				throw "FAIL: Mutable global reassignment failed to update value in VM=" + vmMode;
+			}
 		}
 
 		trace("SUCCESS: Bytecode Verification & Safety Checks verified.");
