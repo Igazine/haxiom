@@ -82,16 +82,16 @@ class StaticTypeChecker {
 								switch (finalRet) {
 									case TPath(path, _):
 										var pathStr = path.join(".");
-										if (pathStr == "Future" || pathStr == "haxiom.Future") {
+										if (pathStr == "haxiom.guest.Future") {
 											alreadyFuture = true;
 										}
 									default:
 								}
 							}
 							if (!alreadyFuture && finalRet != null) {
-								finalRet = TPath(["haxiom", "Future"], [finalRet]);
+								finalRet = TPath(["haxiom", "guest", "Future"], [finalRet]);
 							} else if (finalRet == null) {
-								finalRet = TPath(["haxiom", "Future"], [TPath(["Dynamic"], [])]);
+								finalRet = TPath(["haxiom", "guest", "Future"], [TPath(["Dynamic"], [])]);
 							}
 						}
 						var mCopy = {
@@ -660,7 +660,7 @@ class StaticTypeChecker {
 									switch (argType) {
 										case TPath(path, typeParams):
 											var typeName = path.join(".");
-											if ((typeName == "Future" || typeName == "haxiom.Future") && typeParams.length > 0) {
+											if ((typeName == "Future" || typeName == "haxiom.guest.Future" || typeName == "haxiom.Future") && typeParams.length > 0) {
 												return typeParams[0];
 											}
 										default:
@@ -814,8 +814,8 @@ class StaticTypeChecker {
 			case [TPath(srcPath, srcParams), TPath(dstPath, dstParams)]:
 				var sn = srcPath.join(".");
 				var dn = dstPath.join(".");
-				if (sn == "haxiom.Future") sn = "Future";
-				if (dn == "haxiom.Future") dn = "Future";
+				if (sn == "haxiom.guest.Future") sn = "Future";
+				if (dn == "haxiom.guest.Future") dn = "Future";
 				// Allow numeric widening Int → Float
 				if (dn == "Float" && sn == "Int")
 					return true;

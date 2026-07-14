@@ -230,7 +230,7 @@ class Haxiom {
 		FFI.exposedModules.set("haxiom.AST", ["haxiom.ExprDef", "haxiom.TypeDecl"]);
 		FFI.registerEnum(this, "haxiom.ExprDef", haxiom.AST.ExprDef);
 		FFI.registerEnum(this, "haxiom.TypeDecl", haxiom.AST.TypeDecl);
-		FFI.registerClass(this, "haxiom.Future", haxiom.Future);
+		FFI.registerClass(this, "haxiom.guest.Future", haxiom.guest.Future);
 	}
 
 

@@ -211,7 +211,7 @@ Protect applications from infinite loops by setting `engine.maxInstructions`. Th
 ### 10. Asynchronous Script Execution (Fibers)
 Haxiom supports non-blocking asynchronous script execution utilizing user-land cooperative fibers. Any guest function or closure that calls `HaxiomHost.await(future)` is implicitly compiled as an asynchronous chunk.
 
-* **Implicit Async Detection**: The compiler automatically scans the AST of function/closure bodies. If it detects a `HaxiomHost.await` call, it compiles the chunk as async (returning a promise-like `Future` when evaluated) without requiring any custom compiler keywords or `@:haxiom.async` metadata.
+* **Implicit Async Detection**: The compiler automatically scans the AST of function/closure bodies. If it detects a `HaxiomHost.await` call, it compiles the chunk as async (returning a promise-like `haxiom.guest.Future` when evaluated) without requiring any custom compiler keywords or `@:haxiom.async` metadata.
 * **Non-Blocking Yielding**: When executing `HaxiomHost.await` on a pending future, the virtual machine pauses execution, suspends the `VMFiber` state (stack, call frames, scopes), and returns immediately, allowing the host application's event loop to continue running. When resolved, the fiber is scheduled to resume exactly where it was paused.
 
 ### 11. Dynamic Package Namespacing & Sandboxing

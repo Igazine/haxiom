@@ -1,4 +1,4 @@
-package haxiom;
+package haxiom.guest;
 
 /**
  * Guest-facing engine helper class.
@@ -12,7 +12,7 @@ class HaxiomHost {
 	 * 
 	 * Note: Can only be used inside Haxiom guest scripts running in VM mode.
 	 */
-	public static function await<T>(future:Dynamic):T {
+	public static function await<T>(future:Future<T>):T {
 		throw "HaxiomHost.await() can only be used inside Haxiom guest scripts executing in the VM.";
 	}
 }

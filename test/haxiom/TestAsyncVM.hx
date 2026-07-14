@@ -1,7 +1,7 @@
 package haxiom;
 
 import haxiom.Haxiom;
-import haxiom.Future;
+import haxiom.guest.Future;
 import haxe.Timer;
 
 class TestAsyncVM {

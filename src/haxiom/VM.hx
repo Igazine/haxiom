@@ -1803,7 +1803,7 @@ class VM {
 	static function isPromiseLike(val:Dynamic):Bool {
 		if (val == null)
 			return false;
-		if (Std.isOfType(val, haxiom.Future))
+		if (Std.isOfType(val, haxiom.guest.Future))
 			return true;
 		return Reflect.hasField(val, "then") && Reflect.isFunction(Reflect.field(val, "then"));
 	}
@@ -1813,14 +1813,14 @@ class VM {
 		var clsName = cls != null ? Type.getClassName(cls) : "null";
 		var hasThenField = Reflect.field(val, "then") != null;
 		#if js
-		var isInstance = js.Syntax.code("({0} instanceof haxiom_Future)", val);
+		var isInstance = js.Syntax.code("({0} instanceof haxiom_guest_Future)", val);
 		var ctorStr = js.Syntax.code("({0} && {0}.constructor ? {0}.constructor.toString() : 'null')", val);
 		// haxe.Log.trace("DEBUG registerAwait: val=" + val + " class=" + clsName + " hasThen=" + hasThenField + " instanceof=" + isInstance + " ctor=" + ctorStr, null);
 		#else
 		// haxe.Log.trace("DEBUG registerAwait: val=" + val + " class=" + clsName + " hasThen=" + hasThenField, null);
 		#end
-		if (Std.isOfType(val, haxiom.Future)) {
-			var f:haxiom.Future = cast val;
+		if (Std.isOfType(val, haxiom.guest.Future)) {
+			var f:haxiom.guest.Future<Dynamic> = cast val;
 			f.then(onResolve, onReject);
 		} else {
 			try {
@@ -1900,7 +1900,7 @@ class HaxiomSuperInstance {
 class VMFiber {
 	var callFrames:Array<VMCallFrame> = [];
 	var stack:Array<Dynamic> = [];
-	var future:haxiom.Future;
+	var future:haxiom.guest.Future<Dynamic>;
 	var scope:Scope = null;
 	var thisContext:Dynamic = null;
 	var isSuspended:Bool = false;
@@ -1908,6 +1908,6 @@ class VMFiber {
 	var error:Dynamic = null;
 
 	function new() {
-		this.future = new haxiom.Future();
+		this.future = new haxiom.guest.Future();
 	}
 }

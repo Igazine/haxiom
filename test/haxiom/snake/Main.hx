@@ -1,7 +1,7 @@
 package;
 
 import haxiom.FFI;
-import haxiom.Future;
+import haxiom.guest.Future;
 import haxiom.Haxiom;
 import openfl.display.Sprite;
 import openfl.events.Event;

@@ -148,7 +148,7 @@ class TestStaticTypeChecker {
         );
 
         expectNoError("Implicit Future wrapping and unwrapping",
-            'import haxiom.Future;\n' +
+            'import haxiom.guest.Future;\n' +
             'class MyService {\n' +
             '  public static function getAge():Int {\n' +
             '    var res = HaxiomHost.await(getDelay());\n' +

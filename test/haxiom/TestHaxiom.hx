@@ -1,6 +1,8 @@
 package haxiom;
 
 import haxiom.Interp.Scope;
+import haxiom.guest.HaxiomHost;
+import haxiom.guest.Future;
 
 class TestHaxiom {
 	static function main() {
@@ -2918,7 +2920,7 @@ class TestHaxiom {
 
 		// Verify Future availability in guest code
 		var futureVerifyScript = "
-			import haxiom.Future;
+			import haxiom.guest.Future;
 			var fut = new Future();
 			fut.resolve('test');
 			fut;
@@ -2926,7 +2928,7 @@ class TestHaxiom {
 		var engine = new Haxiom();
 		var futRes:Dynamic = engine.interpret(futureVerifyScript);
 		if (futRes == null || !Std.isOfType(futRes, Future)) {
-			throw "FAIL: haxiom.Future type import or instantiation failed in guest script";
+			throw "FAIL: haxiom.guest.Future type import or instantiation failed in guest script";
 		}
 		trace("SUCCESS: Future type whitelisting and resolution verified.");
 
