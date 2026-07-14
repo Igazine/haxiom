@@ -151,7 +151,7 @@ class TestStaticTypeChecker {
             'import haxiom.Future;\n' +
             'class MyService {\n' +
             '  public static function getAge():Int {\n' +
-            '    var res = Haxiom.await(getDelay());\n' +
+            '    var res = HaxiomHost.await(getDelay());\n' +
             '    return res;\n' +
             '  }\n' +
             '  public static function getDelay():Future<Int> {\n' +
@@ -159,7 +159,7 @@ class TestStaticTypeChecker {
             '  }\n' +
             '}\n' +
             'var f:Future<Int> = MyService.getAge();\n' +
-            'var val:Int = Haxiom.await(f);'
+            'var val:Int = HaxiomHost.await(f);'
         );
 
         // ---------------------------------------------------------------

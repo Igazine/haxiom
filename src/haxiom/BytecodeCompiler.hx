@@ -532,7 +532,7 @@ class BytecodeCompiler {
 					case EField(obj, field):
 						if (field == "await" && obj != null) {
 							switch (obj.def) {
-								case EIdent("Haxiom"):
+								case EIdent("HaxiomHost"):
 									isAwait = true;
 								default:
 							}
@@ -542,7 +542,7 @@ class BytecodeCompiler {
 
 				if (isAwait) {
 					if (args.length != 1) {
-						throw "Haxiom.await expects exactly 1 argument";
+						throw "HaxiomHost.await expects exactly 1 argument";
 					}
 					compileExpr(args[0]);
 					emit(OP_AWAIT, e.pos);
@@ -1699,7 +1699,7 @@ class BytecodeCompiler {
 					case EField(obj, field):
 						switch (obj.def) {
 							case EIdent(name):
-								if (name == "Haxiom" && field == "await") return true;
+								if (name == "HaxiomHost" && field == "await") return true;
 							default:
 						}
 					default:

@@ -108,7 +108,7 @@ class SnakeGame {
 				update();
 				draw();
 			}
-			Haxiom.await(Timer.delay(speedDelay)); // Dynamic speed delay
+			HaxiomHost.await(Timer.delay(speedDelay)); // Dynamic speed delay
 		}
 	}
 

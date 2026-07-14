@@ -2902,19 +2902,19 @@ class TestHaxiom {
 		// Part B: Peephole Optimizer checks (Delegated to library self-test)
 		InternalTests.run(haxiom);
 
-		// Test 5: Haxiom.await host execution failure and Future availability
+		// Test 5: HaxiomHost.await host execution failure and Future availability
 		var hostAwaitError = false;
 		try {
-			Haxiom.await(null);
+			HaxiomHost.await(null);
 		} catch (e:Dynamic) {
 			if (Std.string(e).indexOf("can only be used inside Haxiom guest scripts") != -1) {
 				hostAwaitError = true;
 			}
 		}
 		if (!hostAwaitError) {
-			throw "FAIL: Haxiom.await did not throw when executed in host code";
+			throw "FAIL: HaxiomHost.await did not throw when executed in host code";
 		}
-		trace("SUCCESS: Haxiom.await host blocking verified.");
+		trace("SUCCESS: HaxiomHost.await host blocking verified.");
 
 		// Verify Future availability in guest code
 		var futureVerifyScript = "

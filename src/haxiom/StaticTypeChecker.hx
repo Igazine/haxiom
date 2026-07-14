@@ -653,7 +653,7 @@ class StaticTypeChecker {
 			case EField(obj, field):
 				if (field == "await" && obj != null) {
 					switch (obj.def) {
-						case EIdent("Haxiom"):
+						case EIdent("HaxiomHost"):
 							if (args.length == 1) {
 								var argType = inferType(args[0], env);
 								if (argType != null) {
@@ -970,7 +970,7 @@ class StaticTypeChecker {
 					case EField(obj, field):
 						switch (obj.def) {
 							case EIdent(name):
-								if (name == "Haxiom" && field == "await") return true;
+								if (name == "HaxiomHost" && field == "await") return true;
 							default:
 						}
 					default:

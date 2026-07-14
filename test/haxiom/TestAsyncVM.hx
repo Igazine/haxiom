@@ -63,8 +63,8 @@ class TestAsyncVM {
             class TestClass {
                 @:haxiom.async
                 public static function run() {
-                    var x = Haxiom.await(delay(10, 5));
-                    var y = Haxiom.await(delay(10, 15));
+                    var x = HaxiomHost.await(delay(10, 5));
+                    var y = HaxiomHost.await(delay(10, 15));
                     return x + y;
                 }
             }
@@ -92,17 +92,17 @@ class TestAsyncVM {
             class NestedClass {
                 @:haxiom.async
                 public static function c(v) {
-                    var r = Haxiom.await(delay(5, v * 2));
+                    var r = HaxiomHost.await(delay(5, v * 2));
                     return r;
                 }
                 @:haxiom.async
                 public static function b(v) {
-                    var r = Haxiom.await(NestedClass.c(v));
+                    var r = HaxiomHost.await(NestedClass.c(v));
                     return r + 5;
                 }
                 @:haxiom.async
                 public static function a(v) {
-                    var r = Haxiom.await(NestedClass.b(v));
+                    var r = HaxiomHost.await(NestedClass.b(v));
                     return r + 10;
                 }
             }
@@ -130,7 +130,7 @@ class TestAsyncVM {
             class ConcurrentClass {
                 @:haxiom.async
                 public static function run(ms, val) {
-                    var x = Haxiom.await(delay(ms, val));
+                    var x = HaxiomHost.await(delay(ms, val));
                     return x;
                 }
             }
@@ -180,7 +180,7 @@ class TestAsyncVM {
                 public static function run() {
                     var res = "none";
                     try {
-                        var x = Haxiom.await(delayReject(10, "Failed!"));
+                        var x = HaxiomHost.await(delayReject(10, "Failed!"));
                     } catch (err:String) {
                         res = "Caught: " + err;
                     }
@@ -211,7 +211,7 @@ class TestAsyncVM {
             class UncaughtClass {
                 @:haxiom.async
                 public static function run() {
-                    var x = Haxiom.await(delayReject(10, "Fatal error"));
+                    var x = HaxiomHost.await(delayReject(10, "Fatal error"));
                     return x;
                 }
             }
@@ -240,9 +240,9 @@ class TestAsyncVM {
             class NonPromiseClass {
                 @:haxiom.async
                 public static function run() {
-                    var x = Haxiom.await(123);
-                    var y = Haxiom.await("hello");
-                    var z = Haxiom.await(null);
+                    var x = HaxiomHost.await(123);
+                    var y = HaxiomHost.await("hello");
+                    var z = HaxiomHost.await(null);
                     return [x, y, z];
                 }
             }
@@ -292,7 +292,7 @@ class TestAsyncVM {
         var caughtAwaitError = false;
         try {
             var script = '
-                var x = Haxiom.await(123);
+                var x = HaxiomHost.await(123);
             ';
             engine.interpret(script);
         } catch (e:Dynamic) {
@@ -304,7 +304,7 @@ class TestAsyncVM {
         }
 
         if (!caughtMethodError) throw "testASTModeRejection failed: expected async method declaration in AST mode to throw";
-        if (!caughtAwaitError) throw "testASTModeRejection failed: expected Haxiom.await in AST mode to throw";
+        if (!caughtAwaitError) throw "testASTModeRejection failed: expected HaxiomHost.await in AST mode to throw";
 
         trace("SUCCESS: testASTModeRejection passed.");
         cb();
@@ -319,12 +319,12 @@ class TestAsyncVM {
             class AutoClass {
                 public static function run() {
                     var myClosure = function() {
-                        var res = Haxiom.await(delay(10, 42));
+                        var res = HaxiomHost.await(delay(10, 42));
                         return res;
                     };
                     
-                    var x = Haxiom.await(delay(10, 8));
-                    var y = Haxiom.await(myClosure());
+                    var x = HaxiomHost.await(delay(10, 8));
+                    var y = HaxiomHost.await(myClosure());
                     return x + y;
                 }
             }
@@ -356,9 +356,9 @@ class TestAsyncVM {
         var script = '
             class DisposedTest {
                 public static function run() {
-                    Haxiom.await(delay(15, null));
+                    HaxiomHost.await(delay(15, null));
                     increment();
-                    Haxiom.await(delay(15, null));
+                    HaxiomHost.await(delay(15, null));
                     increment();
                 }
             }

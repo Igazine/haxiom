@@ -2411,8 +2411,8 @@ class Interp {
 					case EField(obj, field):
 						if (field == "await" && obj != null) {
 							switch (obj.def) {
-								case EIdent("Haxiom"):
-									throw "Haxiom.await is only supported in VM execution mode (useVM = true)";
+								case EIdent("HaxiomHost"):
+									throw "HaxiomHost.await is only supported in VM execution mode (useVM = true)";
 								default:
 							}
 						}
