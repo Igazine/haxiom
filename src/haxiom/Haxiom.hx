@@ -498,6 +498,14 @@ class Haxiom {
 		return Serializer.serializeBytecode(chunk, key);
 	}
 
+	/**
+	 * Compiles and serializes an existing AST expression tree directly into VM bytecode bytes.
+	 * 
+	 * @param ast The root AST node representation of the script.
+	 * @param key Optional encryption key to obfuscate/secure the bytecode payload.
+	 * @param debugMode If true, embeds debug symbols for local variables and positions.
+	 * @return Serialized HXBC VM bytecode bytes.
+	 */
 	public function compileASTToBytecodeBytes(ast:haxiom.AST.Expr, ?key:HXBCKey, ?debugMode:Bool = false):haxe.io.Bytes {
 		if (ast == null)
 			return null;
@@ -577,7 +585,7 @@ class Haxiom {
 		return interp.evalField(target, field, interp.globals, {line: 1, col: 1, file: "host"});
 	}
 
-	public static function appendMainCallIfPresent(expr:haxiom.AST.Expr, ?fileBaseName:String):haxiom.AST.Expr {
+	static function appendMainCallIfPresent(expr:haxiom.AST.Expr, ?fileBaseName:String):haxiom.AST.Expr {
 		var mainClasses:Array<String> = [];
 
 		function checkExpr(e:haxiom.AST.Expr) {
@@ -755,10 +763,24 @@ class Haxiom {
 		};
 	}
 
+	/**
+	 * Internal helper invoked by generated proxy macros to register a host interface via FFI.
+	 * 
+	 * @param haxiom The scripting engine instance.
+	 * @param name The fully-qualified name of the interface.
+	 */
 	public static function registerInterface(haxiom:Haxiom, name:String):Void {
 		FFI.registerValue(haxiom, name, {__isInterface: true});
 	}
 
+	/**
+	 * Internal helper invoked by generated proxy macros to instantiate a guest class and wrap it inside a host proxy.
+	 * 
+	 * @param haxiom The scripting engine instance.
+	 * @param className The guest class name to instantiate.
+	 * @param factory A callback factory generating the host proxy instance.
+	 * @return The generated host proxy implementing the target interface.
+	 */
 	public static function constructHelper(haxiom:Haxiom, className:String, factory:(Haxiom, Dynamic) -> Dynamic):Dynamic {
 		var guestInst = haxiom.interpret("new " + className + "();");
 		return factory(haxiom, guestInst);
