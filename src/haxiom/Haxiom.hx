@@ -550,6 +550,7 @@ class Haxiom {
 	 * 
 	 * @param name The global variable name to declare (e.g. `container`).
 	 * @param value The host object reference or value.
+	 * @param isMutable If true, allows guest scripts to modify the global variable (defaults to false).
 	 */
 	public function setGlobal(name:String, value:Dynamic, ?isMutable:Bool = false):Void {
 		interp.globals.declare(name, value, null, !isMutable);
