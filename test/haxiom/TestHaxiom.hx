@@ -3116,6 +3116,33 @@ class TestHaxiom {
 			if (mutableEngine.getGlobal("myMutable") != 200) {
 				throw "FAIL: Mutable global reassignment failed to update value in VM=" + vmMode;
 			}
+
+			// Verify host reference member mutability vs top-level global constant protection
+			var myobj = {
+				x: 100,
+				name: "tamas"
+			};
+			var nestedobj = {
+				sub: myobj,
+				age: 33
+			};
+			var mutEngine = new haxiom.Haxiom();
+			mutEngine.useVM = vmMode;
+			mutEngine.setGlobal("myobj", myobj);       // Immutable binding by default
+			mutEngine.setGlobal("nestedobj", nestedobj); // Immutable binding by default
+
+			// Assert field mutations on native host references succeed
+			mutEngine.interpret("
+				nestedobj.age = 44;
+				nestedobj.sub.name = 'jack';
+				myobj.name = 'john';
+			");
+			if (nestedobj.age != 44) throw "FAIL: nestedobj.age field mutation failed in VM=" + vmMode;
+			if (myobj.name != "john") throw "FAIL: myobj.name field mutation failed in VM=" + vmMode;
+
+			// Assert top-level global re-assignments to immutable globals are blocked
+			expectError(mutEngine, "myobj = {};", "Cannot reassign final variable", "immutable myobj re-assignment block in VM=" + vmMode);
+			expectError(mutEngine, "nestedobj = {};", "Cannot reassign final variable", "immutable nestedobj re-assignment block in VM=" + vmMode);
 		}
 
 		trace("SUCCESS: Bytecode Verification & Safety Checks verified.");
