@@ -3154,6 +3154,63 @@ class TestHaxiom {
 			expectError(mutEngine, "nestedobj = {};", "Cannot reassign final variable", "immutable nestedobj re-assignment block in VM=" + vmMode);
 		}
 
+		// 71. Reflection API Sandbox Verification (Json, Serializer, Type, Dynamic Casting)
+		for (vmMode in [false, true]) {
+			var reflectionEngine = new haxiom.Haxiom();
+			reflectionEngine.useVM = vmMode;
+			var nonWhitelistedObj = new FFIClassHelper(42);
+			reflectionEngine.setGlobal("helper", nonWhitelistedObj);
+			reflectionEngine.setGlobal("HelperClass", FFIClassHelper);
+
+			// A. haxe.Json.stringify security checks
+			expectError(reflectionEngine, "
+				import haxe.Json;
+				Json.stringify(helper);
+			", "Security Error: Cannot serialize non-whitelisted class instance", "Json.stringify on non-whitelisted object in VM=" + vmMode);
+
+			expectError(reflectionEngine, "
+				import haxe.Json;
+				Json.stringify({ nested: [ helper ] });
+			", "Security Error: Cannot serialize non-whitelisted class instance", "Json.stringify on nested non-whitelisted object in VM=" + vmMode);
+
+			// B. haxe.Serializer security checks
+			reflectionEngine.importWhitelist.push("haxe.Serializer");
+			expectError(reflectionEngine, "
+				import haxe.Serializer;
+				Serializer.run(helper);
+			", "Security Error: Cannot serialize non-whitelisted class instance", "Serializer.run on non-whitelisted object in VM=" + vmMode);
+
+			expectError(reflectionEngine, "
+				import haxe.Serializer;
+				var s = new Serializer();
+				s.serialize(helper);
+			", "Security Error: Cannot serialize non-whitelisted class instance", "Serializer.serialize on non-whitelisted object in VM=" + vmMode);
+
+			// C. Type module checks (resolve, instantiation, field inspection)
+			reflectionEngine.importWhitelist.push("Type");
+			expectError(reflectionEngine, "
+				import Type;
+				Type.createInstance(HelperClass, [10]);
+			", "Security Error: Type.createInstance is not allowed", "Type.createInstance on non-whitelisted class in VM=" + vmMode);
+
+			expectError(reflectionEngine, "
+				import Type;
+				Type.getInstanceFields(HelperClass);
+			", "Security Error: Type.getInstanceFields is not allowed", "Type.getInstanceFields on non-whitelisted class in VM=" + vmMode);
+
+			expectError(reflectionEngine, "
+				import Type;
+				Type.getClassFields(HelperClass);
+			", "Security Error: Type.getClassFields is not allowed", "Type.getClassFields on non-whitelisted class in VM=" + vmMode);
+
+			// D. Dynamic casting sandboxing checks
+			expectError(reflectionEngine, "
+				var d:Dynamic = helper;
+				d.factor;
+			", "Security Error: Access to field", "Dynamic casting field access bypass check in VM=" + vmMode);
+		}
+
+		trace("SUCCESS: Reflection API Sandbox Verification verified.");
 		trace("SUCCESS: Bytecode Verification & Safety Checks verified.");
 	}
 

@@ -1207,6 +1207,33 @@ class Interp {
 		if (obj == null)
 			throw 'Cannot read field "$field" of null';
 
+		if (importWhitelist != null) {
+			var name = getClassNameOf(obj);
+			if (name != null && !isInternalHaxiomClass(name) && !isImportWhitelisted(name)) {
+				throw 'Security Error: Access to field "$field" is not allowed on class $name';
+			}
+		}
+
+		if (obj == haxe.Json && field == "stringify") {
+			return (cast function(value:Dynamic, ?replacer:Dynamic, ?space:String):String {
+				checkSafeToSerialize(value);
+				return haxe.Json.stringify(value, replacer, space);
+			} : Dynamic);
+		}
+		if (obj == haxe.Serializer && field == "run") {
+			return (cast function(v:Dynamic) {
+				checkSafeToSerialize(v);
+				return haxe.Serializer.run(v);
+			} : Dynamic);
+		}
+		if (Std.isOfType(obj, haxe.Serializer) && field == "serialize") {
+			return (cast function(v:Dynamic) {
+				checkSafeToSerialize(v);
+				var serializer:haxe.Serializer = cast obj;
+				serializer.serialize(v);
+			} : Dynamic);
+		}
+
 		if (Reflect.isFunction(obj) && field == "bind") {
 			return Reflect.makeVarArgs(function(boundArgs:Array<Dynamic>) {
 				return Reflect.makeVarArgs(function(remainingArgs:Array<Dynamic>) {
@@ -1953,6 +1980,13 @@ class Interp {
 	function assignField(obj:Dynamic, field:String, val:Dynamic, scope:Scope, ?pos:Pos):Dynamic {
 		if (obj == null)
 			throw 'Cannot set field "$field" of null';
+
+		if (importWhitelist != null) {
+			var name = getClassNameOf(obj);
+			if (name != null && !isInternalHaxiomClass(name) && !isImportWhitelisted(name)) {
+				throw 'Security Error: Access to field "$field" is not allowed on class $name';
+			}
+		}
 		if (Std.isOfType(obj, HaxiomAbstractInstance)) {
 			var inst:HaxiomAbstractInstance = cast obj;
 			var abs = inst.abstractType;
@@ -2969,9 +3003,34 @@ class Interp {
 								default:
 							}
 						}
+						if (importWhitelist != null) {
+							var name = getClassNameOf(obj);
+							if (name != null && !isInternalHaxiomClass(name) && !isImportWhitelisted(name)) {
+								throw 'Security Error: Access to field "$field" is not allowed on class $name';
+							}
+						}
 						var method = Reflect.field(obj, field);
 						if (method == null) {
 							method = Reflect.getProperty(obj, field);
+						}
+						if (obj == haxe.Json && field == "stringify") {
+							method = (cast function(value:Dynamic, ?replacer:Dynamic, ?space:String):String {
+								checkSafeToSerialize(value);
+								return haxe.Json.stringify(value, replacer, space);
+							} : Dynamic);
+						}
+						if (obj == haxe.Serializer && field == "run") {
+							method = (cast function(v:Dynamic) {
+								checkSafeToSerialize(v);
+								return haxe.Serializer.run(v);
+							} : Dynamic);
+						}
+						if (Std.isOfType(obj, haxe.Serializer) && field == "serialize") {
+							method = (cast function(v:Dynamic) {
+								checkSafeToSerialize(v);
+								var serializer:haxe.Serializer = cast obj;
+								serializer.serialize(v);
+							} : Dynamic);
 						}
 						if (method != null && Reflect.isFunction(method)) {
 							var args:Array<Dynamic> = [for (a in argsExprs) eval(a, scope)];
@@ -5301,7 +5360,20 @@ class Interp {
 					if (current == null) {
 						return {success: true, value: null};
 					}
-					current = safeField(current, field);
+					var next = safeField(current, field);
+					if (current == haxe.Json && field == "stringify") {
+						next = (cast function(value:Dynamic, ?replacer:Dynamic, ?space:String):String {
+							checkSafeToSerialize(value);
+							return haxe.Json.stringify(value, replacer, space);
+						} : Dynamic);
+					}
+					if (current == haxe.Serializer && field == "run") {
+						next = (cast function(v:Dynamic) {
+							checkSafeToSerialize(v);
+							return haxe.Serializer.run(v);
+						} : Dynamic);
+					}
+					current = next;
 				}
 				return {success: true, value: current};
 			}
@@ -5495,6 +5567,13 @@ class Interp {
 		return false;
 	}
 
+	inline function isInternalHaxiomClass(name:String):Bool {
+		return (StringTools.startsWith(name, "haxiom.Haxiom") && name != "haxiom.Haxiom") ||
+			name == "haxiom.DynamicMap" ||
+			name == "haxiom.Scope" ||
+			name == "haxiom.VMFiber";
+	}
+
 	function isImportWhitelisted(fqName:String):Bool {
 		var auto = isAutoWhitelisted(fqName);
 		if (auto)
@@ -5544,6 +5623,51 @@ class Interp {
 		return null;
 	}
 
+	public function checkSafeToSerialize(v:Dynamic) {
+		var visited = new haxe.ds.ObjectMap<Dynamic, Bool>();
+		_checkSafeToSerialize(v, visited);
+	}
+
+	function _checkSafeToSerialize(v:Dynamic, visited:haxe.ds.ObjectMap<Dynamic, Bool>) {
+		if (v == null) return;
+		switch (Type.typeof(v)) {
+			case TObject | TClass(_):
+				if (visited.exists(v)) return;
+				visited.set(v, true);
+			default:
+		}
+
+		switch (Type.typeof(v)) {
+			case TObject:
+				for (field in Reflect.fields(v)) {
+					_checkSafeToSerialize(Reflect.field(v, field), visited);
+				}
+			case TClass(c):
+				if (c == Array) {
+					var arr:Array<Dynamic> = cast v;
+					for (item in arr) {
+						_checkSafeToSerialize(item, visited);
+					}
+				} else {
+					var className = Type.getClassName(c);
+					if (importWhitelist != null && className != null && !isInternalHaxiomClass(className) && !isImportWhitelisted(className)) {
+						throw "Security Error: Cannot serialize non-whitelisted class instance of " + className;
+					}
+					if (Std.isOfType(v, haxe.Constraints.IMap)) {
+						var map:haxe.Constraints.IMap<Dynamic, Dynamic> = cast v;
+						for (key in map.keys()) {
+							_checkSafeToSerialize(map.get(key), visited);
+						}
+					} else {
+						for (field in Reflect.fields(v)) {
+							_checkSafeToSerialize(Reflect.field(v, field), visited);
+						}
+					}
+				}
+			default:
+		}
+	}
+
 	function getSafeTypeProxy():Dynamic {
 		return {
 			resolveClass: function(name:String) {
@@ -5559,7 +5683,7 @@ class Interp {
 			createInstance: function(cl:Dynamic, args:Array<Dynamic>) {
 				if (cl != null && importWhitelist != null) {
 					var className = getClassNameOf(cl);
-					if (className != null && !isImportWhitelisted(className)) {
+					if (className != null && !isInternalHaxiomClass(className) && !isImportWhitelisted(className)) {
 						throw "Security Error: Type.createInstance is not allowed for class " + className;
 					}
 				}
@@ -5568,7 +5692,7 @@ class Interp {
 			createEmptyInstance: function(cl:Dynamic) {
 				if (cl != null && importWhitelist != null) {
 					var className = getClassNameOf(cl);
-					if (className != null && !isImportWhitelisted(className)) {
+					if (className != null && !isInternalHaxiomClass(className) && !isImportWhitelisted(className)) {
 						throw "Security Error: Type.createEmptyInstance is not allowed for class " + className;
 					}
 				}
@@ -5577,8 +5701,24 @@ class Interp {
 			getClass: Type.getClass,
 			getSuperClass: Type.getSuperClass,
 			getClassName: Type.getClassName,
-			getClassFields: Type.getClassFields,
-			getInstanceFields: Type.getInstanceFields,
+			getClassFields: function(c:Dynamic) {
+				if (c != null && importWhitelist != null) {
+					var name = getClassNameOf(c);
+					if (name != null && !isInternalHaxiomClass(name) && !isImportWhitelisted(name)) {
+						throw "Security Error: Type.getClassFields is not allowed for class " + name;
+					}
+				}
+				return Type.getClassFields(c);
+			},
+			getInstanceFields: function(c:Dynamic) {
+				if (c != null && importWhitelist != null) {
+					var name = getClassNameOf(c);
+					if (name != null && !isInternalHaxiomClass(name) && !isImportWhitelisted(name)) {
+						throw "Security Error: Type.getInstanceFields is not allowed for class " + name;
+					}
+				}
+				return Type.getInstanceFields(c);
+			},
 			typeof: Type.typeof,
 			enumEq: Type.enumEq,
 			getEnumName: Type.getEnumName,
@@ -5592,16 +5732,28 @@ class Interp {
 			field: function(o:Dynamic, field:String) {
 				if (o != null && importWhitelist != null) {
 					var name = getClassNameOf(o);
-					if (name != null && !isImportWhitelisted(name)) {
+					if (name != null && !isInternalHaxiomClass(name) && !isImportWhitelisted(name)) {
 						throw "Security Error: Reflect.field is not allowed for class " + name;
 					}
+				}
+				if (o == haxe.Json && field == "stringify") {
+					return (cast function(value:Dynamic, ?replacer:Dynamic, ?space:String):String {
+						checkSafeToSerialize(value);
+						return haxe.Json.stringify(value, replacer, space);
+					} : Dynamic);
+				}
+				if (o == haxe.Serializer && field == "run") {
+					return (cast function(v:Dynamic) {
+						checkSafeToSerialize(v);
+						return haxe.Serializer.run(v);
+					} : Dynamic);
 				}
 				return Reflect.field(o, field);
 			},
 			setField: function(o:Dynamic, field:String, value:Dynamic) {
 				if (o != null && importWhitelist != null) {
 					var name = getClassNameOf(o);
-					if (name != null && !isImportWhitelisted(name)) {
+					if (name != null && !isInternalHaxiomClass(name) && !isImportWhitelisted(name)) {
 						throw "Security Error: Reflect.setField is not allowed for class " + name;
 					}
 				}
@@ -5622,16 +5774,28 @@ class Interp {
 			getProperty: function(o:Dynamic, field:String) {
 				if (o != null && importWhitelist != null) {
 					var name = getClassNameOf(o);
-					if (name != null && !isImportWhitelisted(name)) {
+					if (name != null && !isInternalHaxiomClass(name) && !isImportWhitelisted(name)) {
 						throw "Security Error: Reflect.getProperty is not allowed for class " + name;
 					}
+				}
+				if (o == haxe.Json && field == "stringify") {
+					return (cast function(value:Dynamic, ?replacer:Dynamic, ?space:String):String {
+						checkSafeToSerialize(value);
+						return haxe.Json.stringify(value, replacer, space);
+					} : Dynamic);
+				}
+				if (o == haxe.Serializer && field == "run") {
+					return (cast function(v:Dynamic) {
+						checkSafeToSerialize(v);
+						return haxe.Serializer.run(v);
+					} : Dynamic);
 				}
 				return Reflect.getProperty(o, field);
 			},
 			setProperty: function(o:Dynamic, field:String, value:Dynamic) {
 				if (o != null && importWhitelist != null) {
 					var name = getClassNameOf(o);
-					if (name != null && !isImportWhitelisted(name)) {
+					if (name != null && !isInternalHaxiomClass(name) && !isImportWhitelisted(name)) {
 						throw "Security Error: Reflect.setProperty is not allowed for class " + name;
 					}
 				}
@@ -5652,7 +5816,7 @@ class Interp {
 			callMethod: function(o:Dynamic, func:Dynamic, args:Array<Dynamic>) {
 				if (o != null && importWhitelist != null) {
 					var name = getClassNameOf(o);
-					if (name != null && !isImportWhitelisted(name)) {
+					if (name != null && !isInternalHaxiomClass(name) && !isImportWhitelisted(name)) {
 						throw "Security Error: Reflect.callMethod is not allowed for class " + name;
 					}
 				}
