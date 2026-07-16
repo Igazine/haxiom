@@ -1956,6 +1956,17 @@ class TestHaxiom {
 		testStdHaxiom.interpret(script62_success);
 		trace("SUCCESS: Manually imported standard library classes work correctly");
 
+		// Test inline fully qualified class reference without import
+		try {
+			testStdHaxiom.interpret("
+				var parsed = haxe.Json.parse('{\"value\": 200}');
+				if (parsed.value != 200) throw 'Json FQN value mismatch';
+			");
+			trace("SUCCESS: Inline fully qualified class access works without import");
+		} catch (e:Dynamic) {
+			throw "FAIL: Inline fully qualified class access failed: " + e;
+		}
+
 		// Verify varargs trace
 		var loggedString:String = null;
 		var oldTrace = haxe.Log.trace;
@@ -2175,19 +2186,15 @@ class TestHaxiom {
         ";
 		haxiom.interpret(script67_wildcard);
 
-		var accessNoImportFailed = false;
 		try {
 			var freshHaxiom = new haxiom.Haxiom();
 			freshHaxiom.interpret("
                 var md5 = haxe.crypto.Md5.encode('test');
             ");
+			trace("SUCCESS: Accessing native class by fully qualified name inline works without explicit import");
 		} catch (e:Dynamic) {
-			accessNoImportFailed = true;
-			trace("SUCCESS: Blocked access to haxe.crypto.Md5 without explicit import: " + e);
+			throw "FAIL: Accessing native class by FQN inline failed: " + e;
 		}
-		if (!accessNoImportFailed)
-			throw "FAIL: Accessing native class without import was not blocked";
-		trace("SUCCESS: Cross-platform stdlib packages with explicit/wildcard imports work correctly.");
 
 		// 68. Advanced Switch Pattern Matching
 		var script68 = "

@@ -5475,6 +5475,9 @@ class Interp {
 	}
 
 	function isManualImportRequired(fqName:String):Bool {
+		if (fqName.indexOf(".") != -1) {
+			return false;
+		}
 		if (fqName == "Math" || fqName == "Std" || fqName == "Reflect" || fqName == "Type" || fqName == "Lambda") {
 			return false;
 		}
