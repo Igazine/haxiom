@@ -538,7 +538,7 @@ class Interp {
 	public var activeUsings:Array<Dynamic> = [];
 
 	public var callStack:Array<{method:String, pos:Pos}> = [];
-	public var errorHandler:Null<ScriptException->Void> = null;
+	public var onRuntimeError:Null<ScriptException->Void> = null;
 	public var haltedNamespaces:Map<String, Bool> = new Map();
 
 	public function isNamespaceHalted(name:String):Bool {
@@ -1077,8 +1077,8 @@ class Interp {
 				finalException = new haxiom.ScriptException(e, callStack.copy(), formatted, lineVal, colVal, fileInfo);
 			}
 
-			if (errorHandler != null) {
-				errorHandler(finalException);
+			if (onRuntimeError != null) {
+				onRuntimeError(finalException);
 				return null;
 			}
 			throw finalException;
@@ -1141,8 +1141,8 @@ class Interp {
 				lastActiveLocals = null;
 			}
 
-			if (errorHandler != null) {
-				errorHandler(finalException);
+			if (onRuntimeError != null) {
+				onRuntimeError(finalException);
 				return null;
 			}
 			throw finalException;
@@ -4649,8 +4649,8 @@ class Interp {
 
 				haltNamespace(className);
 
-				if (errorHandler != null) {
-					errorHandler(se);
+				if (onRuntimeError != null) {
+					onRuntimeError(se);
 					return null;
 				}
 				throw se;

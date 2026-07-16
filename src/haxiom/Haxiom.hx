@@ -71,7 +71,6 @@ class Haxiom {
 
 	var _onCompilerError:Null<ScriptException->Void> = null;
 	var _onRuntimeError:Null<ScriptException->Void> = null;
-	var _errorHandler:Null<ScriptException->Void> = null;
 
 	/**
 	 * Optional callback triggered when a compilation error occurs.
@@ -101,37 +100,17 @@ class Haxiom {
 		return v;
 	}
 
-	/**
-	 * Optional callback triggered when a runtime or compile error occurs during script execution. Deprecated.
-	 */
-	@:deprecated
-	public var errorHandler(get, set):Null<ScriptException->Void>;
-
-	inline function get_errorHandler()
-		return _errorHandler;
-
-	inline function set_errorHandler(v) {
-		_errorHandler = v;
-		updateInterpErrorHandler();
-		return v;
-	}
-
 	function updateInterpErrorHandler() {
-		if (_onRuntimeError != null || _errorHandler != null) {
-			interp.errorHandler = (err:ScriptException) -> {
+		if (_onRuntimeError != null) {
+			interp.onRuntimeError = (err:ScriptException) -> {
 				var ns = getActiveNamespace();
 				if (ns != null) {
 					interp.haltNamespace(ns);
 				}
-				if (_onRuntimeError != null) {
-					_onRuntimeError(err);
-				}
-				if (_errorHandler != null) {
-					_errorHandler(err);
-				}
+				_onRuntimeError(err);
 			};
 		} else {
-			interp.errorHandler = null;
+			interp.onRuntimeError = null;
 		}
 	}
 
@@ -342,10 +321,6 @@ class Haxiom {
 				onCompilerError(e);
 				return null;
 			}
-			if (errorHandler != null) {
-				errorHandler(e);
-				return null;
-			}
 			throw e;
 		} catch (e:CompileException) {
 			var codeFrame = ScriptException.makeCodeFrame(source, e.line, e.col, e.file);
@@ -358,19 +333,11 @@ class Haxiom {
 				onCompilerError(se);
 				return null;
 			}
-			if (errorHandler != null) {
-				errorHandler(se);
-				return null;
-			}
 			throw se;
 		} catch (err:Dynamic) {
 			var se = new ScriptException(Std.string(err), [], "Compile Error: " + Std.string(err), 1, 1, fileInfo);
 			if (onCompilerError != null) {
 				onCompilerError(se);
-				return null;
-			}
-			if (errorHandler != null) {
-				errorHandler(se);
 				return null;
 			}
 			throw se;

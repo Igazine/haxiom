@@ -1785,12 +1785,12 @@ class VM {
 				}
 			}
 
-			if (interp.errorHandler != null) {
-				interp.errorHandler(se);
+			if (interp.onRuntimeError != null) {
+				interp.onRuntimeError(se);
 			}
 
 			if (fiber == null) {
-				if (interp.errorHandler != null) {
+				if (interp.onRuntimeError != null) {
 					return null;
 				}
 				throw se;

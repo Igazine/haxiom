@@ -578,18 +578,18 @@ class TestHaxiom {
 			trace("Raw value: " + e.rawValue);
 		}
 
-		// Assert errorHandler callback intercepting exception silently
+		// Assert onRuntimeError callback intercepting exception silently
 		var intercepted:haxiom.ScriptException = null;
-		haxiom.errorHandler = (err) -> {
+		haxiom.onRuntimeError = (err) -> {
 			intercepted = err;
 		};
 		var result = haxiom.interpret(script27_err);
-		haxiom.errorHandler = null; // Clean up
+		haxiom.onRuntimeError = null; // Clean up
 
 		if (result == null && intercepted != null) {
-			trace("SUCCESS: Captured script error via errorHandler silently: " + intercepted.rawValue);
+			trace("SUCCESS: Captured script error via onRuntimeError silently: " + intercepted.rawValue);
 		} else {
-			trace("FAILURE: errorHandler did not capture exception silently");
+			trace("FAILURE: onRuntimeError did not capture exception silently");
 		}
 
 		// 28. Caching Compiler (compile once, execute multiple times)
