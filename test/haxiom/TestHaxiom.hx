@@ -457,6 +457,23 @@ class TestHaxiom {
         ';
 		haxiom.interpret(script23);
 
+		// 23b. Block Comment parsing support (/**/, /* ... */, /** ... */, and nested)
+		var hComments = new Haxiom();
+		var script23b = '
+            var x = 10;
+            /**/
+            var y = 20;
+            /* standard block comment */
+            var z = 30;
+            /** JSDoc/HaxeDoc comment */
+            var w = 40;
+            /* nested /* comments */ depth check */
+            var sum = x + y + z + w;
+            if (sum != 100) throw "Block comments parsing failed";
+        ';
+		hComments.interpret(script23b);
+		trace("SUCCESS: Block comments parsing verified.");
+
 		// 24. Call Stack & Stack Trace Diagnostics
 		try {
 			var script24 = '
