@@ -19,7 +19,7 @@ class Million {
 	}
 }
 
-#if !haxiom
+#if !haxiom_script
 // Definitions for error-free local compilation, and Language Server Protocol in IDEs
 // This block is ignored in Haxiom
 class ScriptContext {

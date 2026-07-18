@@ -31,21 +31,10 @@ class TestCompilationFeatures {
         var engine = new Haxiom();
         engine.useVM = true;
 
-        // Verify default flags
-        #if js
-        if (!engine.preprocessorFlags.exists("js")) throw "Expected preprocessor flag 'js' to be active on JS target";
-        #elseif eval
-        if (!engine.preprocessorFlags.exists("eval")) throw "Expected preprocessor flag 'eval' to be active on Eval target";
-        #end
-
-        // Define a custom flag
-        engine.preprocessorFlags.set("my_feature", true);
-        engine.preprocessorFlags.set("debug_mode", false);
-
-        // Test basic #if/#else
+        // Test basic #if/#else with haxiom_script
         var script = '
             var x = 0;
-            #if my_feature
+            #if haxiom_script
             x = 100;
             #else
             x = 200;
@@ -55,10 +44,23 @@ class TestCompilationFeatures {
         var res:Int = engine.interpret(script);
         if (res != 100) throw "testPreprocessor basic #if failed: expected 100, got " + res;
 
-        // Test basic #else branch
+        // Test haxiom.script backward compatibility
+        var scriptDot = '
+            var x = 0;
+            #if haxiom.script
+            x = 150;
+            #else
+            x = 250;
+            #end
+            x;
+        ';
+        var resDot:Int = engine.interpret(scriptDot);
+        if (resDot != 150) throw "testPreprocessor haxiom.script compatibility failed: expected 150, got " + resDot;
+
+        // Test basic #else branch using negated condition
         var script2 = '
             var x = 0;
-            #if debug_mode
+            #if !haxiom_script
             x = 100;
             #else
             x = 200;
@@ -71,9 +73,9 @@ class TestCompilationFeatures {
         // Test #elseif branch
         var script3 = '
             var x = 0;
-            #if debug_mode
+            #if !haxiom_script
             x = 10;
-            #elseif my_feature
+            #elseif haxiom.script
             x = 20;
             #else
             x = 30;
@@ -86,8 +88,8 @@ class TestCompilationFeatures {
         // Test nested #if directives
         var script4 = '
             var x = 0;
-            #if my_feature
-                #if debug_mode
+            #if haxiom_script
+                #if !haxiom.script
                 x = 1;
                 #else
                 x = 2;
@@ -103,7 +105,7 @@ class TestCompilationFeatures {
         // Test preprocessor expression evaluation with &&, ||, !
         var script5 = '
             var x = 0;
-            #if (my_feature && !debug_mode)
+            #if (haxiom_script && !haxiom.script)
             x = 500;
             #else
             x = 600;
@@ -111,13 +113,13 @@ class TestCompilationFeatures {
             x;
         ';
         var res5:Int = engine.interpret(script5);
-        if (res5 != 500) throw "testPreprocessor expression && ! failed: expected 500, got " + res5;
+        if (res5 != 600) throw "testPreprocessor expression && ! failed: expected 600, got " + res5;
 
-        // Test #error compilation failure
+        // Test #error compilation failure in active branch
         var caughtError = false;
         try {
             var scriptErr = '
-                #if my_feature
+                #if haxiom_script
                 #error "This is an expected compilation error!"
                 #end
             ';
@@ -131,7 +133,7 @@ class TestCompilationFeatures {
 
         // Test #error inside inactive branch is ignored
         var scriptErrIgnore = '
-            #if debug_mode
+            #if !haxiom_script
             #error "Should not throw!"
             #end
             var success = 42;
@@ -139,6 +141,23 @@ class TestCompilationFeatures {
         ';
         var resErr:Int = engine.interpret(scriptErrIgnore);
         if (resErr != 42) throw "testPreprocessor inactive #error failed: expected 42, got " + resErr;
+
+        // Test that using an unknown/unsupported conditional throws a compilation error
+        var caughtForbidden = false;
+        try {
+            var scriptForbidden = '
+                #if openfl
+                var x = 1;
+                #end
+            ';
+            engine.interpret(scriptForbidden);
+        } catch (e:Dynamic) {
+            var errStr = Std.string(e);
+            if (errStr.indexOf("Only the \"haxiom_script\" and \"haxiom.script\" preprocessor conditionals are allowed") != -1) {
+                caughtForbidden = true;
+            }
+        }
+        if (!caughtForbidden) throw "Expected compilation error for forbidden preprocessor conditional 'openfl'";
 
         trace("SUCCESS: Preprocessor tests passed.");
     }
@@ -759,7 +778,7 @@ class TestCompilationFeatures {
             
             class Helper {
                 public static function helpMe():Int {
-                    #if haxiom
+                    #if haxiom_script
                     return 42;
                     #else
                     return 999;

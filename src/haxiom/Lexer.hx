@@ -36,7 +36,11 @@ class Lexer {
 			case "if":
 				var condVal = false;
 				if (parentActive) {
-					condVal = Preprocessor.evaluate(arg, flags);
+					try {
+						condVal = Preprocessor.evaluate(arg, flags);
+					} catch (e:Dynamic) {
+						throw new CompileException(Std.string(e), startLine, startCol, file);
+					}
 				}
 				preprocessorStack.push({
 					active: parentActive && condVal,
@@ -50,7 +54,11 @@ class Lexer {
 				var top = preprocessorStack[preprocessorStack.length - 1];
 				var condVal = false;
 				if (top.parentActive && !top.matchedAny) {
-					condVal = Preprocessor.evaluate(arg, flags);
+					try {
+						condVal = Preprocessor.evaluate(arg, flags);
+					} catch (e:Dynamic) {
+						throw new CompileException(Std.string(e), startLine, startCol, file);
+					}
 				}
 				top.active = top.parentActive && !top.matchedAny && condVal;
 				if (condVal) {
