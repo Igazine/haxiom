@@ -330,12 +330,82 @@ class Optimizer {
 	 * Runs after foldConstants so constant-folded branches are already resolved.
 	 */
 	static var globalUsages:Map<String, Int>;
+	static var keepSubClassNames:Map<String, Bool> = new Map();
+
+	static function getTypeName(t:TypeDecl):Null<String> {
+		if (t == null) return null;
+		switch (t) {
+			case TPath(path, _):
+				return path[path.length - 1];
+			default:
+				return null;
+		}
+	}
+
+	static function collectClasses(expr:Expr, classes:Array<Expr>):Void {
+		if (expr == null) return;
+		switch (expr.def) {
+			case EClass(_, _, _, _, _, _, _):
+				classes.push(expr);
+			case EBlock(exprs):
+				for (e in exprs) collectClasses(e, classes);
+			default:
+		}
+	}
+
+	static function processKeepSub(expr:Expr):Void {
+		var classesList = [];
+		collectClasses(expr, classesList);
+
+		var parentToChildren = new Map<String, Array<String>>();
+		var keepSubClasses = new Map<String, Bool>();
+
+		for (cExpr in classesList) {
+			switch (cExpr.def) {
+				case EClass(name, _, _, parent, _, _, meta):
+					var parentName = getTypeName(parent);
+					if (parentName != null) {
+						if (!parentToChildren.exists(parentName)) {
+							parentToChildren.set(parentName, []);
+						}
+						parentToChildren.get(parentName).push(name);
+					}
+					if (meta != null) {
+						for (m in meta) {
+							if (m.name == ":keepSub" || m.name == "keepSub") {
+								keepSubClasses.set(name, true);
+								break;
+							}
+						}
+					}
+				default:
+			}
+		}
+
+		keepSubClassNames = new Map();
+		function propagateKeepSub(clsName:String) {
+			keepSubClassNames.set(clsName, true);
+			var children = parentToChildren.get(clsName);
+			if (children != null) {
+				for (child in children) {
+					if (!keepSubClassNames.exists(child)) {
+						propagateKeepSub(child);
+					}
+				}
+			}
+		}
+
+		for (k in keepSubClasses.keys()) {
+			propagateKeepSub(k);
+		}
+	}
 
 	static function eliminateDeadCode(expr:Expr):Expr {
 		if (expr == null)
 			return null;
 		globalUsages = new Map();
 		collectUsages(expr, globalUsages);
+		processKeepSub(expr);
 		return dceExpr(expr);
 	}
 
@@ -361,18 +431,32 @@ class Optimizer {
 				return modified ? {def: EBlock(mapped), pos: expr.pos} : expr;
 
 			case EClass(name, fields, methods, parent, interfaces, params, meta):
-				// Keep a method if: public, or named "new", or its name appears in globalUsages
+				// Keep a method if: public, or named "new", or has @:keep, or its name appears in globalUsages
 				var prunedMethods = methods.filter(m -> {
 					if (m.isPublic)
 						return true;
 					if (m.name == "new")
 						return true;
+					if (m.meta != null) {
+						for (meta in m.meta) {
+							if (meta.name == ":keep" || meta.name == "keep") {
+								return true;
+							}
+						}
+					}
 					return globalUsages.exists(m.name);
 				});
-				// Keep a field if: public, or its name appears in globalUsages (read/written anywhere)
+				// Keep a field if: public, or has @:keep, or its name appears in globalUsages (read/written anywhere)
 				var prunedFields = fields.filter(f -> {
 					if (f.isPublic)
 						return true;
+					if (f.meta != null) {
+						for (meta in f.meta) {
+							if (meta.name == ":keep" || meta.name == "keep") {
+								return true;
+							}
+						}
+					}
 					return globalUsages.exists(f.name);
 				});
 				var modified = prunedMethods.length != methods.length || prunedFields.length != fields.length;
@@ -865,9 +949,12 @@ class Optimizer {
 					var keep = false;
 					if (interfaces != null && interfaces.length > 0)
 						keep = true;
+					if (keepSubClassNames != null && keepSubClassNames.exists(name)) {
+						keep = true;
+					}
 					if (meta != null) {
 						for (m in meta) {
-							if (m.name == ":keep" || m.name == "keep") {
+							if (m.name == ":keep" || m.name == "keep" || m.name == ":keepSub" || m.name == "keepSub") {
 								keep = true;
 								break;
 							}

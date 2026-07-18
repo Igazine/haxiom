@@ -55,6 +55,7 @@ class StaticTypeChecker {
 			case EClass(name, fields, methods, parent, interfaces, params, meta):
 				var info = new ClassInfo(name, params != null ? params : []);
 				info.isAbstract = hasMeta(meta, ":abstract");
+				info.meta = meta;
 				if (parent != null) {
 					switch (parent) {
 						case TPath(path, _):
@@ -102,7 +103,8 @@ class StaticTypeChecker {
 							isStatic: m.isStatic,
 							isPublic: m.isPublic,
 							isOverride: m.isOverride,
-							isAbstract: m.isAbstract
+							isAbstract: m.isAbstract,
+							meta: m.meta
 						};
 						info.methods.set(m.name, mCopy);
 					}
@@ -111,7 +113,8 @@ class StaticTypeChecker {
 					info.fields.set(f.name, {
 						type: f.type,
 						isStatic: f.isStatic,
-						isPublic: f.isPublic
+						isPublic: f.isPublic,
+						meta: f.meta
 					});
 				}
 				classes.set(name, info);
@@ -300,6 +303,7 @@ class StaticTypeChecker {
 						continue; // Abstract methods have no body to check
 					var childEnv = new LocalEnv(env);
 					childEnv.currentClass = className;
+					childEnv.currentMethod = m.name;
 					for (a in m.args) {
 						if (a.type != null)
 							childEnv.set(a.name, a.type);
@@ -1136,8 +1140,34 @@ class StaticTypeChecker {
 
 				// 2. Private visibility validation
 				if (!isPublic) {
-					if (env.currentClass == null || (!isSubclassOfName(env.currentClass, typeName) && !isSubclassOfName(typeName, env.currentClass))) {
-						addError('Cannot access private member ${field} of class ${typeName}', pos);
+					var hasBypass = false;
+					if (env.currentClass != null) {
+						var activeCls = classes.get(env.currentClass);
+						if (activeCls != null) {
+							// Check active class metadata
+							if (checkPrivateAccessBypass(activeCls.meta, typeName, field, true)) {
+								hasBypass = true;
+							}
+							// Check active method metadata
+							if (env.currentMethod != null) {
+								var activeM = activeCls.methods.get(env.currentMethod);
+								if (activeM != null && checkPrivateAccessBypass(activeM.meta, typeName, field, true)) {
+									hasBypass = true;
+								}
+							}
+						}
+						// Check target class @:allow metadata
+						var targetCls = classes.get(typeName);
+						if (targetCls != null) {
+							if (checkPrivateAccessBypass(targetCls.meta, env.currentClass, env.currentMethod, false)) {
+								hasBypass = true;
+							}
+						}
+					}
+					if (!hasBypass) {
+						if (env.currentClass == null || (!isSubclassOfName(env.currentClass, typeName) && !isSubclassOfName(typeName, env.currentClass))) {
+							addError('Cannot access private member ${field} of class ${typeName}', pos);
+						}
 					}
 				}
 			}
@@ -1198,6 +1228,45 @@ class StaticTypeChecker {
 		}
 
 		return unimplemented;
+	}
+
+	function getExprPath(e:Expr):Null<Array<String>> {
+		if (e == null)
+			return null;
+		switch (e.def) {
+			case EIdent(name):
+				return [name];
+			case EField(objExpr, field):
+				var sub = getExprPath(objExpr);
+				if (sub != null) {
+					return sub.concat([field]);
+				}
+			default:
+		}
+		return null;
+	}
+
+	function checkPrivateAccessBypass(metaList:Null<Array<{name:String, params:Array<Expr>}>>, targetTypeName:String, fieldName:String, isAccessMode:Bool):Bool {
+		if (metaList == null)
+			return false;
+		for (m in metaList) {
+			var isBypassMeta = (isAccessMode && (m.name == ":access" || m.name == "access")) ||
+			                   (!isAccessMode && (m.name == ":allow" || m.name == "allow"));
+			if (isBypassMeta) {
+				if (m.params != null && m.params.length > 0) {
+					var path = getExprPath(m.params[0]);
+					if (path != null) {
+						var pathStr = path.join(".");
+						if (pathStr == targetTypeName || pathStr == targetTypeName + "." + fieldName) {
+							return true;
+						}
+					}
+				}
+			} else if (m.name == ":noPrivateAccess" || m.name == "noPrivateAccess") {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	function hasMeta(meta:Null<Array<{name:String, params:Array<Expr>}>>, name:String):Bool {
@@ -1281,11 +1350,13 @@ class LocalEnv {
 	var parent:LocalEnv;
 	var vars:Map<String, TypeDecl> = new Map();
 	public var currentClass:Null<String> = null;
+	public var currentMethod:Null<String> = null;
 
 	function new(?parent:LocalEnv) {
 		this.parent = parent;
 		if (parent != null) {
 			this.currentClass = parent.currentClass;
+			this.currentMethod = parent.currentMethod;
 		}
 	}
 
@@ -1330,9 +1401,11 @@ class ClassInfo {
 		isStatic:Bool,
 		isPublic:Bool,
 		?isOverride:Bool,
-		?isAbstract:Bool
+		?isAbstract:Bool,
+		?meta:Array<{name:String, params:Array<Expr>}>
 	}> = new Map();
-	var fields:Map<String, {type:TypeDecl, isStatic:Bool, isPublic:Bool}> = new Map();
+	var fields:Map<String, {type:TypeDecl, isStatic:Bool, isPublic:Bool, ?meta:Array<{name:String, params:Array<Expr>}>}> = new Map();
+	var meta:Null<Array<{name:String, params:Array<Expr>}>> = null;
 
 	function new(name:String, params:Array<String>) {
 		this.name = name;

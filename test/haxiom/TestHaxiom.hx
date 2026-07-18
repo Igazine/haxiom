@@ -561,6 +561,70 @@ class TestHaxiom {
 			trace("SUCCESS: Caught expected private constructor access error: " + e);
 		}
 
+		// 26b. Private Access Bypass Metadata (@:access, @:allow, @:noPrivateAccess)
+		var script26b = '
+            class Account {
+                var balance:Float = 100.0;
+                public function new() {}
+                function internalAccess():Void {
+                    trace("internalAccess called");
+                }
+            }
+
+            @:access(Account)
+            class Auditor {
+                public function new() {}
+                public function check(acc:Account):Float {
+                    return acc.balance; // Allowed by @:access(Account)
+                }
+            }
+
+            class SpecificAuditor {
+                public function new() {}
+                @:access(Account.internalAccess)
+                public function run(acc:Account):Void {
+                    acc.internalAccess(); // Allowed by @:access(Account.internalAccess)
+                }
+            }
+
+            @:allow(Friend)
+            class AccessGiver {
+                private var secret:Int = 42;
+                public function new() {}
+            }
+
+            class Friend {
+                public function new() {}
+                public function getSecret(giver:AccessGiver):Int {
+                    return giver.secret; // Allowed because AccessGiver allows Friend
+                }
+            }
+
+            @:noPrivateAccess
+            class Shadow {
+                public function new() {}
+                public function steal(acc:Account):Float {
+                    return acc.balance; // Allowed by @:noPrivateAccess
+                }
+            }
+
+            var acc = new Account();
+            var auditor = new Auditor();
+            if (auditor.check(acc) != 100.0) throw "Failed @:access(Account) check";
+
+            var specAuditor = new SpecificAuditor();
+            specAuditor.run(acc);
+
+            var giver = new AccessGiver();
+            var friend = new Friend();
+            if (friend.getSecret(giver) != 42) throw "Failed @:allow check";
+
+            var shadow = new Shadow();
+            if (shadow.steal(acc) != 100.0) throw "Failed @:noPrivateAccess check";
+        ';
+		haxiom.interpret(script26b);
+		trace("SUCCESS: Private access bypass metadata (@:access, @:allow, @:noPrivateAccess) verified.");
+
 		// 27. Custom ScriptException and configurable errorHandler
 		var script27_err = '
             function fail():Void {

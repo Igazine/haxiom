@@ -416,6 +416,75 @@ class TestDCE {
         else fail("17. Unused private field eliminated", '$fieldCount17 fields remain, expected 1');
 
         // ---------------------------------------------------------------
+        // Test 18: Private method and field @:keep preservation
+        // ---------------------------------------------------------------
+        var h18 = new Haxiom(); h18.enableDCE = true;
+        var src18 = '
+            class Keeper {
+                @:keep var keptField:Int = 10;
+                var deadField:Int = 20;
+
+                @:keep private function keptPrivate() { return 100; }
+                private function deadPrivate() { return 200; }
+
+                static public function main() {}
+            }
+        ';
+        var ast18 = h18.compile(src18, "Keeper");
+        var fieldCount18 = -1;
+        var methodCount18 = -1;
+        switch (ast18.def) {
+            case EBlock(exprs):
+                for (e in exprs) switch (e.def) {
+                    case EClass(_, fields, methods, _, _, _, _):
+                        fieldCount18 = fields.length;
+                        methodCount18 = methods.length;
+                    default:
+                }
+            default:
+        }
+        // keptField remains, deadField eliminated (1 field)
+        // keptPrivate + main remains, deadPrivate eliminated (2 methods)
+        if (fieldCount18 == 1 && methodCount18 == 2) ok("18. Private field/method @:keep preserved");
+        else fail("18. Private field/method @:keep preserved", 'fields=$fieldCount18 methods=$methodCount18, expected fields=1 methods=2');
+
+        // ---------------------------------------------------------------
+        // Test 19: Class @:keepSub transitive subclass preservation
+        // ---------------------------------------------------------------
+        var h19 = new Haxiom(); h19.enableDCE = true;
+        var src19 = '
+            @:keepSub
+            class Base {
+                public function new() {}
+            }
+            class Sub extends Base {
+                public function new() {}
+            }
+            class DeadClass {
+                public function new() {}
+            }
+            class Main {
+                static public function main() {}
+            }
+        ';
+        var ast19 = h19.compile(src19, "t19");
+        var classes19 = [];
+        switch (ast19.def) {
+            case EBlock(exprs):
+                for (e in exprs) switch (e.def) {
+                    case EClass(name, _, _, _, _, _, _): classes19.push(name);
+                    default:
+                }
+            default:
+        }
+        // Base (keepSub) and Sub (its child) and Main should remain; DeadClass should be eliminated.
+        if (classes19.indexOf("Base") != -1 && classes19.indexOf("Sub") != -1 && classes19.indexOf("Main") != -1 && classes19.indexOf("DeadClass") == -1) {
+            ok("19. Class @:keepSub transitive preservation verified");
+        } else {
+            fail("19. Class @:keepSub transitive preservation verified", 'remaining classes=$classes19');
+        }
+
+        // ---------------------------------------------------------------
         // Summary
         // ---------------------------------------------------------------
         trace("----------------------");

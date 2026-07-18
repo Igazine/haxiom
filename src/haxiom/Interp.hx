@@ -906,7 +906,7 @@ class Interp {
 
 					var constr = findMethod(cls, "new");
 					if (constr != null) {
-						checkMemberAccess(cls, constr.isPublic, pos);
+						checkMemberAccess(cls, constr.isPublic, pos, "new");
 						var cScope = Scope.create(scope);
 						cScope.declare("this", inst);
 						for (i in 0...constr.args.length) {
@@ -1809,7 +1809,7 @@ class Interp {
 			var inst:HaxiomInstance = cast obj;
 			var fDef = findFieldDef(inst.cls, field);
 			if (fDef != null) {
-				checkMemberAccess(inst.cls, fDef.isPublic, pos);
+				checkMemberAccess(inst.cls, fDef.isPublic, pos, field);
 				if (fDef.property != null && !isInsideAccessor(field)) {
 					var getAccessor = fDef.property.get;
 					if (getAccessor == "get") {
@@ -1828,7 +1828,7 @@ class Interp {
 
 			var m = findMethod(inst.cls, field);
 			if (m != null) {
-				checkMemberAccess(inst.cls, m.isPublic, pos);
+				checkMemberAccess(inst.cls, m.isPublic, pos, field);
 				return bindMethod(obj, m);
 			}
 			var usingRes = resolveUsing(obj, field);
@@ -1841,14 +1841,14 @@ class Interp {
 			var cls:HaxiomClass = cast obj;
 			var fDef = findFieldDef(cls, field);
 			if (fDef != null) {
-				checkMemberAccess(cls, fDef.isPublic, pos);
+				checkMemberAccess(cls, fDef.isPublic, pos, field);
 			}
 			if (cls.staticFields.exists(field))
 				return cls.staticFields.get(field);
 
 			var m = findStaticMethod(cls, field);
 			if (m != null) {
-				checkMemberAccess(cls, m.isPublic, pos);
+				checkMemberAccess(cls, m.isPublic, pos, field);
 				return bindMethod(obj, m);
 			}
 			var usingRes = resolveUsing(obj, field);
@@ -2013,7 +2013,7 @@ class Interp {
 			var inst:HaxiomInstance = cast obj;
 			var fDef = findFieldDef(inst.cls, field);
 			if (fDef != null) {
-				checkMemberAccess(inst.cls, fDef.isPublic, pos);
+				checkMemberAccess(inst.cls, fDef.isPublic, pos, field);
 				if (fDef.property != null && !isInsideAccessor(field)) {
 					var setAccessor = fDef.property.set;
 					if (setAccessor == "set") {
@@ -2044,7 +2044,7 @@ class Interp {
 				var cls:HaxiomClass = cast obj;
 				var fDef = findFieldDef(cls, field);
 				if (fDef != null) {
-					checkMemberAccess(cls, fDef.isPublic, pos);
+					checkMemberAccess(cls, fDef.isPublic, pos, field);
 					if (fDef.isFinal) {
 						throw 'Cannot reassign static final field $field';
 					}
@@ -3093,7 +3093,7 @@ class Interp {
 					// Run constructor 'new'
 					var constr = findMethod(cls, "new");
 					if (constr != null) {
-						checkMemberAccess(cls, constr.isPublic, e.pos);
+						checkMemberAccess(cls, constr.isPublic, e.pos, "new");
 						var cScope = Scope.create(scope);
 						cScope.declare("this", inst);
 						for (i in 0...constr.args.length) {
@@ -4302,11 +4302,82 @@ class Interp {
 		return false;
 	}
 
-	function checkMemberAccess(targetCls:HaxiomClass, isPublic:Bool, ?pos:Pos):Void {
+	function getMetaPath(v:Dynamic):Null<String> {
+		if (v == null)
+			return null;
+		if (Std.isOfType(v, String)) {
+			return v;
+		}
+		if (Std.isOfType(v, HaxiomClass)) {
+			return (cast v:HaxiomClass).name;
+		}
+		if (Reflect.hasField(v, "def")) {
+			var exprPath = extractPath(cast v);
+			if (exprPath != null) {
+				return exprPath.join(".");
+			}
+		}
+		return null;
+	}
+
+	function checkPrivateAccessBypass(metaList:Array<{name:String, params:Array<Dynamic>}>, targetClassName:String, fieldName:String, isAccessMode:Bool):Bool {
+		if (metaList == null)
+			return false;
+		for (m in metaList) {
+			var isBypassMeta = (isAccessMode && (m.name == ":access" || m.name == "access")) ||
+			                   (!isAccessMode && (m.name == ":allow" || m.name == "allow"));
+			if (isBypassMeta) {
+				if (m.params != null && m.params.length > 0) {
+					var pathStr = getMetaPath(m.params[0]);
+					if (pathStr != null) {
+						if (pathStr == targetClassName || pathStr == targetClassName + "." + fieldName) {
+							return true;
+						}
+					}
+				}
+			} else if (m.name == ":noPrivateAccess" || m.name == "noPrivateAccess") {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	function checkMemberAccess(targetCls:HaxiomClass, isPublic:Bool, ?pos:Pos, ?fieldName:String):Void {
 		if (isPublic)
 			return;
 		if (pos != null && pos.file == "host")
 			return;
+
+		var activeClassName:Null<String> = null;
+		var activeMethodName:Null<String> = null;
+		if (callStack.length > 0) {
+			var lastFrame = callStack[callStack.length - 1];
+			var parts = lastFrame.method.split(".");
+			if (parts.length >= 2) {
+				activeMethodName = parts[parts.length - 1];
+				activeClassName = parts.slice(0, parts.length - 1).join(".");
+			}
+		}
+
+		if (activeClassName != null) {
+			var activeCls:Dynamic = resolveTypePath(activeClassName.split("."), globals);
+			if (activeCls != null && Std.isOfType(activeCls, HaxiomClass)) {
+				var hCls:HaxiomClass = cast activeCls;
+				if (checkPrivateAccessBypass(hCls.meta, targetCls.name, fieldName, true)) {
+					return;
+				}
+				if (activeMethodName != null) {
+					var activeM = hCls.methods.get(activeMethodName);
+					if (activeM != null && checkPrivateAccessBypass(activeM.meta, targetCls.name, fieldName, true)) {
+						return;
+					}
+				}
+			}
+			if (checkPrivateAccessBypass(targetCls.meta, activeClassName, activeMethodName, false)) {
+				return;
+			}
+		}
+
 		if (currentThis != null) {
 			if (Std.isOfType(currentThis, HaxiomInstance)) {
 				var inst:HaxiomInstance = cast currentThis;
