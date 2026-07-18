@@ -60,6 +60,9 @@ class Parser {
 			case TMacro:
 				next();
 				throw new CompileException("Haxe macros are not supported in Haxiom guest scripts", t.pos.line, t.pos.col, file);
+			case TExtern:
+				next();
+				throw new CompileException("Haxe externs are not supported in Haxiom guest scripts", t.pos.line, t.pos.col, file);
 			case TPackage:
 				if (meta != null)
 					throw new CompileException("Metadata cannot be attached to a package declaration", t.pos.line, t.pos.col, file);
@@ -368,6 +371,10 @@ class Parser {
 			if (is(TMacro)) {
 				var t = peek();
 				throw new CompileException("Haxe macros are not supported in Haxiom guest scripts", t.pos.line, t.pos.col, file);
+			}
+			if (is(TExtern)) {
+				var t = peek();
+				throw new CompileException("Haxe externs are not supported in Haxiom guest scripts", t.pos.line, t.pos.col, file);
 			}
 
 			while (true) {
@@ -979,6 +986,9 @@ class Parser {
 			case TMacro:
 				next();
 				throw new CompileException("Haxe macros are not supported in Haxiom guest scripts", t.pos.line, t.pos.col, file);
+			case TExtern:
+				next();
+				throw new CompileException("Haxe externs are not supported in Haxiom guest scripts", t.pos.line, t.pos.col, file);
 			case TCast:
 				next();
 				if (match(TParenOpen)) {

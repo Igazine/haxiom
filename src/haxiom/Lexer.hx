@@ -246,6 +246,7 @@ class Lexer {
 					case "typedef": TTypedef;
 					case "inline": TInline;
 					case "macro": TMacro;
+					case "extern": TExtern;
 					default: TIdent(id);
 				};
 				tokens.push({def: def, pos: {line: startLine, col: startCol, file: file}});

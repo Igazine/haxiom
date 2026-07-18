@@ -159,6 +159,46 @@ class TestCompilationFeatures {
         }
         if (!caughtForbidden) throw "Expected compilation error for forbidden preprocessor conditional 'openfl'";
 
+        // Test that using the 'extern' keyword throws a compile-time exception (top-level)
+        var caughtExternTop = false;
+        try {
+            engine.interpret("extern class MockClass {}");
+        } catch (e:Dynamic) {
+            var errStr = Std.string(e);
+            if (errStr.indexOf("Haxe externs are not supported in Haxiom guest scripts") != -1) {
+                caughtExternTop = true;
+            }
+        }
+        if (!caughtExternTop) throw "Expected compile-time error for top-level 'extern' keyword usage";
+
+        // Test that using the 'extern' keyword throws a compile-time exception (class-member)
+        var caughtExternMember = false;
+        try {
+            engine.interpret("
+                class MockClass {
+                    extern function foo():Void;
+                }
+            ");
+        } catch (e:Dynamic) {
+            var errStr = Std.string(e);
+            if (errStr.indexOf("Haxe externs are not supported in Haxiom guest scripts") != -1) {
+                caughtExternMember = true;
+            }
+        }
+        if (!caughtExternMember) throw "Expected compile-time error for class-member 'extern' keyword usage";
+
+        // Test that using the 'extern' keyword throws a compile-time exception (expression-level)
+        var caughtExternExpr = false;
+        try {
+            engine.interpret("var x = extern;");
+        } catch (e:Dynamic) {
+            var errStr = Std.string(e);
+            if (errStr.indexOf("Haxe externs are not supported in Haxiom guest scripts") != -1) {
+                caughtExternExpr = true;
+            }
+        }
+        if (!caughtExternExpr) throw "Expected compile-time error for expression-level 'extern' keyword usage";
+
         trace("SUCCESS: Preprocessor tests passed.");
     }
 

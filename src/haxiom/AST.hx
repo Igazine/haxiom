@@ -57,6 +57,7 @@ enum TokenDef {
     TTypedef;
     TInline;
     TMacro;
+    TExtern;
     
     // Operators
     TPlus;
