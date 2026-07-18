@@ -918,7 +918,63 @@ class TestCompilationFeatures {
             deleteDirRecursive(tempDir);
             throw "Failed to detect circular dependency between circ.A and circ.B";
         }
-        
+        // Test 4: Inline fully qualified package/module name reference bundling
+        sys.FileSystem.createDirectory(tempDir + "/fq");
+        sys.io.File.saveContent(tempDir + "/fq/Helper.hx", "
+            package fq;
+            class Helper {
+                public static function getValue():Int {
+                    return 100;
+                }
+            }
+        ");
+
+        sys.io.File.saveContent(tempDir + "/MainFQ.hx", "
+            class MainFQ {
+                public static var result:Int = 0;
+                public static function main() {
+                    result = fq.Helper.getValue();
+                }
+            }
+        ");
+
+        try {
+            haxiom.LibRun.bytecodeCompile(tempDir + "/", "MainFQ.hx");
+        } catch (e:Dynamic) {
+            deleteDirRecursive(tempDir);
+            throw "Failed to compile/bundle MainFQ script: " + e;
+        }
+
+        var bcPathFQ = tempDir + "/MainFQ.hxbc";
+        if (!sys.FileSystem.exists(bcPathFQ)) {
+            deleteDirRecursive(tempDir);
+            throw "Compiled .hxbc file for MainFQ was not created at " + bcPathFQ;
+        }
+
+        var bytesFQ = sys.io.File.getBytes(bcPathFQ);
+        var engineFQ = new Haxiom();
+        engineFQ.useVM = true;
+        engineFQ.importWhitelist = null;
+
+        try {
+            engineFQ.executeBytes(bytesFQ);
+        } catch (e:Dynamic) {
+            deleteDirRecursive(tempDir);
+            throw "Execution of MainFQ bytecode failed: " + e;
+        }
+
+        var mainFQClass = engineFQ.getGlobal("MainFQ");
+        if (mainFQClass == null) {
+            deleteDirRecursive(tempDir);
+            throw "MainFQ class was not registered in engine globals";
+        }
+
+        var resultFQ = engineFQ.resolveField(mainFQClass, "result");
+        if (resultFQ != 100) {
+            deleteDirRecursive(tempDir);
+            throw "Expected resultFQ to be 100, but got: " + resultFQ;
+        }
+
         // Clean up temporary workspace
         deleteDirRecursive(tempDir);
         

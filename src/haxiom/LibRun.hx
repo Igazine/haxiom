@@ -49,32 +49,347 @@ class LibRun {
 		}
 	}
 
+	static function collectTypeImports(t:TypeDecl, imports:Array<String>) {
+		if (t == null)
+			return;
+		switch (t) {
+			case TPath(path, params):
+				imports.push(path.join("."));
+				for (p in params) {
+					collectTypeImports(p, imports);
+				}
+			case TFun(args, ret):
+				for (a in args) {
+					collectTypeImports(a, imports);
+				}
+				collectTypeImports(ret, imports);
+			case TAnonymous(fields):
+				for (f in fields) {
+					collectTypeImports(f.type, imports);
+				}
+		}
+	}
+
+	static function getExprPath(e:Expr):Array<String> {
+		if (e == null)
+			return null;
+		switch (e.def) {
+			case EIdent(name):
+				return [name];
+			case EField(objExpr, field):
+				var sub = getExprPath(objExpr);
+				if (sub != null) {
+					return sub.concat([field]);
+				}
+			case ESafeField(objExpr, field):
+				var sub = getExprPath(objExpr);
+				if (sub != null) {
+					return sub.concat([field]);
+				}
+			default:
+		}
+		return null;
+	}
+
 	static function collectImports(e:Expr, imports:Array<String>) {
 		if (e == null)
 			return;
+
+		var path = getExprPath(e);
+		if (path != null) {
+			var current = "";
+			for (part in path) {
+				if (current == "") {
+					current = part;
+				} else {
+					current += "." + part;
+				}
+				imports.push(current);
+			}
+		}
+
 		switch (e.def) {
 			case EImport(path, _):
 				imports.push(path.join("."));
-			case EBlock(exprs):
-				for (expr in exprs)
+			case EUsing(path):
+				imports.push(path.join("."));
+			case ENew(type, args):
+				collectTypeImports(type, imports);
+				for (arg in args) {
+					collectImports(arg, imports);
+				}
+			case EVar(_, type, expr, _, meta):
+				if (type != null) {
+					collectTypeImports(type, imports);
+				}
+				if (expr != null) {
 					collectImports(expr, imports);
-			case EIf(_, e1, e2):
+				}
+				if (meta != null) {
+					for (m in meta) {
+						for (p in m.params) {
+							collectImports(p, imports);
+						}
+					}
+				}
+			case EAssign(target, expr):
+				collectImports(target, imports);
+				collectImports(expr, imports);
+			case EBinop(_, e1, e2):
 				collectImports(e1, imports);
 				collectImports(e2, imports);
-			case EWhile(_, body):
+			case EUnop(_, expr):
+				collectImports(expr, imports);
+			case EField(objExpr, _):
+				if (path == null) {
+					collectImports(objExpr, imports);
+				}
+			case ESafeField(objExpr, _):
+				if (path == null) {
+					collectImports(objExpr, imports);
+				}
+			case ECall(callExpr, args):
+				collectImports(callExpr, imports);
+				for (arg in args) {
+					collectImports(arg, imports);
+				}
+			case EArrayDecl(values):
+				for (v in values) {
+					collectImports(v, imports);
+				}
+			case EObjectDecl(fields):
+				for (f in fields) {
+					collectImports(f.expr, imports);
+				}
+			case EMapDecl(values):
+				for (pair in values) {
+					collectImports(pair.key, imports);
+					collectImports(pair.value, imports);
+				}
+			case EBlock(exprs):
+				for (expr in exprs) {
+					collectImports(expr, imports);
+				}
+			case EFunction(_, args, retType, body):
+				for (arg in args) {
+					if (arg.type != null) {
+						collectTypeImports(arg.type, imports);
+					}
+				}
+				if (retType != null) {
+					collectTypeImports(retType, imports);
+				}
 				collectImports(body, imports);
-			case EDoWhile(_, body):
+			case EIf(cond, e1, e2):
+				collectImports(cond, imports);
+				collectImports(e1, imports);
+				if (e2 != null) {
+					collectImports(e2, imports);
+				}
+			case EWhile(cond, body):
+				collectImports(cond, imports);
 				collectImports(body, imports);
-			case EFor(_, _, body):
+			case EDoWhile(cond, body):
+				collectImports(cond, imports);
 				collectImports(body, imports);
-			case ESwitch(_, cases, defExpr):
-				for (c in cases)
+			case EFor(_, it, body):
+				collectImports(it, imports);
+				collectImports(body, imports);
+			case ESwitch(expr, cases, defExpr):
+				collectImports(expr, imports);
+				for (c in cases) {
+					for (v in c.values) {
+						collectImports(v, imports);
+					}
+					if (c.guard != null) {
+						collectImports(c.guard, imports);
+					}
 					collectImports(c.expr, imports);
-				collectImports(defExpr, imports);
+				}
+				if (defExpr != null) {
+					collectImports(defExpr, imports);
+				}
+			case EReturn(expr):
+				if (expr != null) {
+					collectImports(expr, imports);
+				}
+			case EThrow(expr):
+				collectImports(expr, imports);
 			case ETry(tryExpr, catches):
 				collectImports(tryExpr, imports);
-				for (c in catches)
+				for (c in catches) {
+					if (c.type != null) {
+						collectTypeImports(c.type, imports);
+					}
+					if (c.guard != null) {
+						collectImports(c.guard, imports);
+					}
 					collectImports(c.body, imports);
+				}
+			case ECast(expr, type):
+				collectImports(expr, imports);
+				if (type != null) {
+					collectTypeImports(type, imports);
+				}
+			case EClass(_, fields, methods, parent, interfaces, _, meta):
+				if (parent != null) {
+					collectTypeImports(parent, imports);
+				}
+				if (interfaces != null) {
+					for (inf in interfaces) {
+						collectTypeImports(inf, imports);
+					}
+				}
+				if (meta != null) {
+					for (m in meta) {
+						for (p in m.params) {
+							collectImports(p, imports);
+						}
+					}
+				}
+				for (f in fields) {
+					if (f.type != null) {
+						collectTypeImports(f.type, imports);
+					}
+					if (f.expr != null) {
+						collectImports(f.expr, imports);
+					}
+					if (f.meta != null) {
+						for (m in f.meta) {
+							for (p in m.params) {
+								collectImports(p, imports);
+							}
+						}
+					}
+				}
+				for (m in methods) {
+					for (arg in m.args) {
+						if (arg.type != null) {
+							collectTypeImports(arg.type, imports);
+						}
+					}
+					if (m.retType != null) {
+						collectTypeImports(m.retType, imports);
+					}
+					if (m.body != null) {
+						collectImports(m.body, imports);
+					}
+					if (m.meta != null) {
+						for (mt in m.meta) {
+							for (p in mt.params) {
+								collectImports(p, imports);
+							}
+						}
+					}
+				}
+			case EInterface(_, fields, methods, parents, _, meta):
+				if (parents != null) {
+					for (p in parents) {
+						collectTypeImports(p, imports);
+					}
+				}
+				if (meta != null) {
+					for (m in meta) {
+						for (p in m.params) {
+							collectImports(p, imports);
+						}
+					}
+				}
+				for (f in fields) {
+					if (f.type != null) {
+						collectTypeImports(f.type, imports);
+					}
+					if (f.meta != null) {
+						for (m in f.meta) {
+							for (p in m.params) {
+								collectImports(p, imports);
+							}
+						}
+					}
+				}
+				for (m in methods) {
+					for (arg in m.args) {
+						if (arg.type != null) {
+							collectTypeImports(arg.type, imports);
+						}
+					}
+					if (m.retType != null) {
+						collectTypeImports(m.retType, imports);
+					}
+					if (m.body != null) {
+						collectImports(m.body, imports);
+					}
+					if (m.meta != null) {
+						for (mt in m.meta) {
+							for (p in mt.params) {
+								collectImports(p, imports);
+							}
+						}
+					}
+				}
+			case EEnum(_, constructors, _):
+				for (c in constructors) {
+					if (c.args != null) {
+						for (arg in c.args) {
+							if (arg.type != null) {
+								collectTypeImports(arg.type, imports);
+							}
+						}
+					}
+				}
+			case EAbstract(_, underlyingType, fields, methods, _, meta):
+				collectTypeImports(underlyingType, imports);
+				if (meta != null) {
+					for (m in meta) {
+						for (p in m.params) {
+							collectImports(p, imports);
+						}
+					}
+				}
+				for (f in fields) {
+					if (f.type != null) {
+						collectTypeImports(f.type, imports);
+					}
+					if (f.expr != null) {
+						collectImports(f.expr, imports);
+					}
+					if (f.meta != null) {
+						for (m in f.meta) {
+							for (p in m.params) {
+								collectImports(p, imports);
+							}
+						}
+					}
+				}
+				for (m in methods) {
+					for (arg in m.args) {
+						if (arg.type != null) {
+							collectTypeImports(arg.type, imports);
+						}
+					}
+					if (m.retType != null) {
+						collectTypeImports(m.retType, imports);
+					}
+					if (m.body != null) {
+						collectImports(m.body, imports);
+					}
+					if (m.meta != null) {
+						for (mt in m.meta) {
+							for (p in mt.params) {
+								collectImports(p, imports);
+							}
+						}
+					}
+				}
+			case ETypedef(_, type, _):
+				collectTypeImports(type, imports);
+			case EMeta(meta, expr):
+				for (m in meta) {
+					for (p in m.params) {
+						collectImports(p, imports);
+					}
+				}
+				collectImports(expr, imports);
 			default:
 		}
 	}
