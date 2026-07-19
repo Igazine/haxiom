@@ -665,276 +665,77 @@ class LibRun {
 		}
 
 		var bytes = File.getBytes(fullPath);
-		if (bytes.length < 18) {
-			if (isJson) {
-				Sys.println(haxe.Json.stringify({filePath: inputFile, error: 'File is not a valid HXBC file (too short)', status: "ERROR"}, "  "));
-			} else {
-				Sys.println('Error: File is not a valid HXBC file (too short)');
-			}
-			Sys.exit(1);
-		}
-
-		var input = new haxe.io.BytesInput(bytes);
-		input.bigEndian = false;
-		var magic = input.readString(4);
-		if (magic != "HXBC") {
-			if (isJson) {
-				Sys.println(haxe.Json.stringify({filePath: inputFile, error: 'Invalid magic header: ${magic}', status: "ERROR"}, "  "));
-			} else {
-				Sys.println('Error: File is not a valid HXBC file (invalid magic: ' + magic + ')');
-			}
-			Sys.exit(1);
-		}
-
-		var version = input.readByte();
-		var flags = input.readByte();
-		var isAsync = (flags & 1) == 1;
-		var isEncrypted = (flags & 2) == 2;
-		var isCompressed = (flags & 4) == 4;
-		var maxSlots = input.readInt32();
-		var uncompressedSize = input.readInt32();
-		var checksum = input.readInt32();
-		var checksumHex = '0x' + StringTools.hex(checksum, 8);
-		var payloadCompressedSize = bytes.length - 18;
-		var savingPct = (isCompressed && uncompressedSize > 0) ? Math.round((1.0 - (payloadCompressedSize / uncompressedSize)) * 1000) / 10.0 : 0.0;
-
 		var key:HXBCKey = keyStr != null ? new HXBCKey(keyStr) : null;
-		if (isEncrypted && (key == null || !key.isValid())) {
-			if (isJson) {
-				Sys.println(haxe.Json.stringify({
-					filePath: inputFile,
-					fileSize: bytes.length,
-					uncompressedPayloadSize: uncompressedSize,
-					compressionRatio: isCompressed ? '${savingPct}%' : '0%',
-					version: version,
-					maxSlots: maxSlots,
-					isAsync: isAsync,
-					isEncrypted: true,
-					isCompressed: isCompressed,
-					checksum: checksumHex,
-					error: "Payload is encrypted. Provide decryption key to inspect internal payload details.",
-					status: "ENCRYPTED"
-				}, "  "));
-			} else {
-				Sys.println("==================================================");
-				Sys.println("              HAXIOM HXBC INSPECTOR               ");
-				Sys.println("==================================================");
-				Sys.println(' File Path:                 ${inputFile}');
-				Sys.println(' Total File Size (Disk):    ${bytes.length} bytes');
-				Sys.println(' Uncompressed Payload Size: ${uncompressedSize} bytes');
-				if (isCompressed) {
-					Sys.println(' LZ4 Compression Ratio:     ${savingPct}% saved');
-				}
-				Sys.println(' HXBC Version:              ${version}');
-				Sys.println(' Max Slots Required:        ${maxSlots}');
-				Sys.println(' Asynchronous:             ${isAsync ? "YES" : "NO"}');
-				Sys.println(' Encrypted:                 YES');
-				Sys.println(' LZ4 Compressed:            ${isCompressed ? "YES" : "NO"}');
-				Sys.println(' Checksum:                  ${checksumHex}');
-				Sys.println("--------------------------------------------------");
+		var info = Haxiom.inspectBytecode(bytes, key);
+
+		if (isJson) {
+			var jsonObj:Dynamic = Reflect.copy(info);
+			jsonObj.filePath = inputFile;
+			jsonObj.compressionRatio = info.isCompressed ? '${info.compressionRatioPct}%' : '0%';
+			Sys.println(haxe.Json.stringify(jsonObj, "  "));
+		} else {
+			Sys.println("==================================================");
+			Sys.println("              HAXIOM HXBC INSPECTOR               ");
+			Sys.println("==================================================");
+			Sys.println(' File Path:                 ${inputFile}');
+			Sys.println(' Total File Size (Disk):    ${info.fileSize} bytes');
+			Sys.println(' Uncompressed Payload Size: ${info.uncompressedPayloadSize} bytes');
+			if (info.isCompressed) {
+				Sys.println(' LZ4 Compression Ratio:     ${info.compressionRatioPct}% saved');
+			}
+			Sys.println(' HXBC Version:              ${info.version}');
+			Sys.println(' Max Slots Required:        ${info.maxSlots}');
+			Sys.println(' Asynchronous:             ${info.isAsync ? "YES" : "NO"}');
+			Sys.println(' Encrypted:                 ${info.isEncrypted ? "YES" : "NO"}');
+			Sys.println(' LZ4 Compressed:            ${info.isCompressed ? "YES" : "NO"}');
+			Sys.println(' Checksum:                  ${info.checksum}');
+			Sys.println("--------------------------------------------------");
+
+			if (info.status == "ENCRYPTED") {
 				Sys.println(" [!] Payload is encrypted. Provide decryption key to inspect internal payload details.");
 				Sys.println(" Usage: haxelib run haxiom inspect <hxbc_file> <key>");
+				return;
+			} else if (info.status != "VALID") {
+				Sys.println(' [!] Error inspecting payload: ${info.error}');
+				return;
 			}
-			return;
-		}
 
-		try {
-			var chunk = Serializer.deserializeBytecode(bytes, key);
-			var instCount = chunk.instructions != null ? chunk.instructions.length : 0;
-			var posCount = chunk.positions != null ? chunk.positions.length : 0;
-			var debugCount = chunk.debugSymbols != null ? chunk.debugSymbols.length : 0;
-			var constCount = chunk.constants != null ? chunk.constants.length : 0;
+			Sys.println(' Instruction Count:         ${info.instructionCount}');
+			Sys.println(' Constant Pool Size:        ${info.constantPoolSize}');
+			Sys.println(' Debug Symbols:             ${info.debugSymbolCount}');
+			Sys.println(' Position Mapping:          ${info.positionMappingCount} entries');
+			Sys.println("--------------------------------------------------");
 
-			// Extract source files and type declarations
-			var extractedData = extractChunkMetadata(chunk);
-
-			if (isJson) {
-				var jsonResult:Dynamic = {
-					filePath: inputFile,
-					fileSize: bytes.length,
-					uncompressedPayloadSize: uncompressedSize,
-					compressionRatio: isCompressed ? '${savingPct}%' : '0%',
-					version: version,
-					maxSlots: maxSlots,
-					isAsync: isAsync,
-					isEncrypted: isEncrypted,
-					isCompressed: isCompressed,
-					checksum: checksumHex,
-					instructionCount: instCount,
-					constantPoolSize: constCount,
-					debugSymbolCount: debugCount,
-					positionMappingCount: posCount,
-					debugSymbols: chunk.debugSymbols != null ? chunk.debugSymbols.map(s -> {slot: s.slot, name: s.name, startIp: s.startIp, endIp: s.endIp}) : [],
-					sourceFiles: extractedData.sourceFiles,
-					compiledTypes: extractedData.compiledTypes,
-					status: "VALID"
-				};
-				Sys.println(haxe.Json.stringify(jsonResult, "  "));
-			} else {
-				Sys.println("==================================================");
-				Sys.println("              HAXIOM HXBC INSPECTOR               ");
-				Sys.println("==================================================");
-				Sys.println(' File Path:                 ${inputFile}');
-				Sys.println(' Total File Size (Disk):    ${bytes.length} bytes');
-				Sys.println(' Uncompressed Payload Size: ${uncompressedSize} bytes');
-				if (isCompressed) {
-					Sys.println(' LZ4 Compression Ratio:     ${savingPct}% saved');
+			if (info.debugSymbols != null && info.debugSymbols.length > 0) {
+				Sys.println(" Debug Symbols & Local Variables:");
+				for (sym in info.debugSymbols) {
+					Sys.println('   - Slot ${sym.slot}: "${sym.name}" (start PC: ${sym.startIp}, end PC: ${sym.endIp})');
 				}
-				Sys.println(' HXBC Version:              ${version}');
-				Sys.println(' Max Slots Required:        ${maxSlots}');
-				Sys.println(' Asynchronous:             ${isAsync ? "YES" : "NO"}');
-				Sys.println(' Encrypted:                 ${isEncrypted ? "YES" : "NO"}');
-				Sys.println(' LZ4 Compressed:            ${isCompressed ? "YES" : "NO"}');
-				Sys.println(' Checksum:                  ${checksumHex}');
 				Sys.println("--------------------------------------------------");
-				Sys.println(' Instruction Count:         ${instCount}');
-				Sys.println(' Constant Pool Size:        ${constCount}');
-				Sys.println(' Debug Symbols:             ${debugCount}');
-				Sys.println(' Position Mapping:          ${posCount} entries');
+			}
+
+			if (info.sourceFiles != null && info.sourceFiles.length > 0) {
+				Sys.println(' Included Source Files (${info.sourceFiles.length}):');
+				for (f in info.sourceFiles) {
+					Sys.println('   * ${f}');
+				}
 				Sys.println("--------------------------------------------------");
-
-				if (chunk.debugSymbols != null && chunk.debugSymbols.length > 0) {
-					Sys.println(" Debug Symbols & Local Variables:");
-					for (sym in chunk.debugSymbols) {
-						Sys.println('   - Slot ${sym.slot}: "${sym.name}" (start PC: ${sym.startIp}, end PC: ${sym.endIp})');
-					}
-					Sys.println("--------------------------------------------------");
-				}
-
-				if (extractedData.sourceFiles.length > 0) {
-					Sys.println(' Included Source Files (${extractedData.sourceFiles.length}):');
-					for (f in extractedData.sourceFiles) {
-						Sys.println('   * ${f}');
-					}
-					Sys.println("--------------------------------------------------");
-				}
-
-				if (extractedData.typeSummaries.length > 0) {
-					Sys.println(' Compiled Script Types & Declarations (${extractedData.typeSummaries.length}):');
-					for (t in extractedData.typeSummaries) {
-						Sys.println('   + ${t}');
-					}
-					Sys.println("--------------------------------------------------");
-				}
-
-				Sys.println(" Bytecode Status:    VALID & SUITABLE FOR HOST RUNTIME");
-				Sys.println("==================================================");
 			}
-		} catch (e:Dynamic) {
-			if (isJson) {
-				Sys.println(haxe.Json.stringify({filePath: inputFile, error: 'Error inspecting payload: ${e}', status: "ERROR"}, "  "));
-			} else {
-				Sys.println(' [!] Error inspecting payload: ${e}');
+
+			if (info.compiledTypes != null && info.compiledTypes.length > 0) {
+				Sys.println(' Compiled Script Types & Declarations (${info.compiledTypes.length}):');
+				for (t in info.compiledTypes) {
+					var desc = t.kind + " " + t.name;
+					if (t.parent != null) desc += " extends " + t.parent;
+					if (t.interfaces != null && t.interfaces.length > 0) desc += " implements " + t.interfaces.join(", ");
+					if (t.methods != null) desc += ' [${t.fieldCount != null ? t.fieldCount : 0} fields, ${t.methodCount} methods: ${t.methods.join(", ")}]';
+					Sys.println('   + ${desc}');
+				}
+				Sys.println("--------------------------------------------------");
 			}
+
+			Sys.println(" Bytecode Status:    VALID & SUITABLE FOR HOST RUNTIME");
+			Sys.println("==================================================");
 		}
-	}
-
-	static function extractChunkMetadata(chunk:haxiom.VM.BytecodeChunk):{sourceFiles:Array<String>, typeSummaries:Array<String>, compiledTypes:Array<Dynamic>} {
-		var filesMap = new Map<String, Bool>();
-		var sourceFiles = [];
-		if (chunk.positions != null) {
-			for (p in chunk.positions) {
-				if (p != null && p.file != null && p.file.length > 0) {
-					if (!filesMap.exists(p.file)) {
-						filesMap.set(p.file, true);
-						sourceFiles.push(p.file);
-					}
-				}
-			}
-		}
-
-		var typeSummaries = [];
-		var compiledTypes:Array<Dynamic> = [];
-		if (chunk.constants != null) {
-			for (c in chunk.constants) {
-				if (c != null && Reflect.hasField(c, "def")) {
-					var e:Expr = cast c;
-					switch (e.def) {
-						case EPackage(path):
-							var pkgName = path.join(".");
-							typeSummaries.push('package ${pkgName}');
-							compiledTypes.push({kind: "package", name: pkgName});
-
-						case EClass(name, fields, methods, parent, interfaces, params, meta):
-							var parentName:String = null;
-							if (parent != null) {
-								switch (parent) {
-									case TPath(pPath, _): parentName = pPath.join(".");
-									default:
-								}
-							}
-							var itfNames = [];
-							if (interfaces != null && interfaces.length > 0) {
-								for (itf in interfaces) {
-									switch (itf) {
-										case TPath(iPath, _): itfNames.push(iPath.join("."));
-										default:
-									}
-								}
-							}
-							var mNames = [for (m in methods) m.name];
-							var details = 'class ${name}';
-							if (parentName != null) details += ' extends ${parentName}';
-							if (itfNames.length > 0) details += ' implements ${itfNames.join(", ")}';
-							details += ' [${fields.length} fields, ${methods.length} methods: ${mNames.join(", ")}]';
-
-							typeSummaries.push(details);
-							compiledTypes.push({
-								kind: "class",
-								name: name,
-								parent: parentName,
-								interfaces: itfNames,
-								fieldCount: fields.length,
-								methodCount: methods.length,
-								methods: mNames
-							});
-
-						case EInterface(name, fields, methods, parents, params, meta):
-							var mNames = [for (m in methods) m.name];
-							typeSummaries.push('interface ${name} [${methods.length} methods: ${mNames.join(", ")}]');
-							compiledTypes.push({
-								kind: "interface",
-								name: name,
-								methodCount: methods.length,
-								methods: mNames
-							});
-
-						case EEnum(name, constructors, params):
-							var ctorNames = [for (ctor in constructors) ctor.name];
-							typeSummaries.push('enum ${name} [${constructors.length} ctors: ${ctorNames.join(", ")}]');
-							compiledTypes.push({
-								kind: "enum",
-								name: name,
-								constructorCount: constructors.length,
-								constructors: ctorNames
-							});
-
-						case EAbstract(name, underlyingType, fields, methods, params, meta):
-							typeSummaries.push('abstract ${name} [${fields.length} fields, ${methods.length} methods]');
-							compiledTypes.push({
-								kind: "abstract",
-								name: name,
-								fieldCount: fields.length,
-								methodCount: methods.length
-							});
-
-						case ETypedef(name, type, params):
-							typeSummaries.push('typedef ${name}');
-							compiledTypes.push({
-								kind: "typedef",
-								name: name
-							});
-
-						default:
-					}
-				}
-			}
-		}
-
-		return {
-			sourceFiles: sourceFiles,
-			typeSummaries: typeSummaries,
-			compiledTypes: compiledTypes
-		};
 	}
 }

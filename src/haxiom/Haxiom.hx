@@ -3,6 +3,7 @@ package haxiom;
 import haxiom.Lexer;
 import haxiom.Parser;
 import haxiom.Interp;
+import haxiom.HXBCInfo;
 #if macro
 import haxe.macro.Context;
 import haxe.macro.Expr;
@@ -512,6 +513,195 @@ class Haxiom {
 		}
 		var chunk = Serializer.deserializeBytecode(bytes, key);
 		return cast interp.executeChunk(chunk);
+	}
+
+	/**
+	 * Inspects compiled HXBC bytecode bytes before execution.
+	 * Extracts binary metadata, compression ratio, RAM slot requirements,
+	 * included source files, and declared classes/methods without running code.
+	 * 
+	 * @param bytes Serialized HXBC bytecode bytes.
+	 * @param key Optional decryption key if bytecode payload is encrypted.
+	 * @return Strongly-typed HXBCInfo structure containing metadata and analysis.
+	 */
+	public static function inspectBytecode(bytes:haxe.io.Bytes, ?key:HXBCKey):HXBCInfo {
+		if (bytes == null || bytes.length < 18) {
+			return {
+				fileSize: bytes != null ? bytes.length : 0,
+				uncompressedPayloadSize: 0,
+				compressionRatioPct: 0.0,
+				version: 0,
+				maxSlots: 0,
+				isAsync: false,
+				isEncrypted: false,
+				isCompressed: false,
+				checksum: "0x0",
+				status: "TOO_SHORT",
+				error: "Invalid bytecode: data too short (minimum 18-byte header required)"
+			};
+		}
+
+		var input = new haxe.io.BytesInput(bytes);
+		input.bigEndian = false;
+		var magic = input.readString(4);
+		if (magic != "HXBC") {
+			return {
+				fileSize: bytes.length,
+				uncompressedPayloadSize: 0,
+				compressionRatioPct: 0.0,
+				version: 0,
+				maxSlots: 0,
+				isAsync: false,
+				isEncrypted: false,
+				isCompressed: false,
+				checksum: "0x0",
+				status: "INVALID_MAGIC",
+				error: 'Invalid magic header: ${magic} (expected "HXBC")'
+			};
+		}
+
+		var version = input.readByte();
+		var flags = input.readByte();
+		var isAsync = (flags & 1) == 1;
+		var isEncrypted = (flags & 2) == 2;
+		var isCompressed = (flags & 4) == 4;
+		var maxSlots = input.readInt32();
+		var uncompressedSize = input.readInt32();
+		var checksum = input.readInt32();
+		var checksumHex = '0x' + StringTools.hex(checksum, 8);
+
+		var payloadCompressedSize = bytes.length - 18;
+		var savingPct = (isCompressed && uncompressedSize > 0) ? Math.round((1.0 - (payloadCompressedSize / uncompressedSize)) * 1000) / 10.0 : 0.0;
+
+		var info:HXBCInfo = {
+			fileSize: bytes.length,
+			uncompressedPayloadSize: uncompressedSize,
+			compressionRatioPct: savingPct,
+			version: version,
+			maxSlots: maxSlots,
+			isAsync: isAsync,
+			isEncrypted: isEncrypted,
+			isCompressed: isCompressed,
+			checksum: checksumHex,
+			status: "VALID"
+		};
+
+		if (isEncrypted && (key == null || !key.isValid())) {
+			info.status = "ENCRYPTED";
+			info.error = "Payload is encrypted. Provide decryption key to inspect internal payload details.";
+			return info;
+		}
+
+		try {
+			var chunk = Serializer.deserializeBytecode(bytes, key);
+			info.instructionCount = chunk.instructions != null ? chunk.instructions.length : 0;
+			info.constantPoolSize = chunk.constants != null ? chunk.constants.length : 0;
+			info.debugSymbolCount = chunk.debugSymbols != null ? chunk.debugSymbols.length : 0;
+			info.positionMappingCount = chunk.positions != null ? chunk.positions.length : 0;
+			info.debugSymbols = chunk.debugSymbols != null ? chunk.debugSymbols.map(s -> {slot: s.slot, name: s.name, startIp: s.startIp, endIp: s.endIp}) : [];
+
+			// Source files extraction
+			var filesMap = new Map<String, Bool>();
+			var sourceFiles = [];
+			if (chunk.positions != null) {
+				for (p in chunk.positions) {
+					if (p != null && p.file != null && p.file.length > 0) {
+						if (!filesMap.exists(p.file)) {
+							filesMap.set(p.file, true);
+							sourceFiles.push(p.file);
+						}
+					}
+				}
+			}
+			info.sourceFiles = sourceFiles;
+
+			// Compiled types extraction
+			var compiledTypes:Array<HXBCCompiledType> = [];
+			if (chunk.constants != null) {
+				for (c in chunk.constants) {
+					if (c != null && Reflect.hasField(c, "def")) {
+						var e:AST.Expr = cast c;
+						switch (e.def) {
+							case EPackage(path):
+								compiledTypes.push({kind: "package", name: path.join(".")});
+
+							case EClass(name, fields, methods, parent, interfaces, params, meta):
+								var parentName:String = null;
+								if (parent != null) {
+									switch (parent) {
+										case TPath(pPath, _): parentName = pPath.join(".");
+										default:
+									}
+								}
+								var itfNames = [];
+								if (interfaces != null && interfaces.length > 0) {
+									for (itf in interfaces) {
+										switch (itf) {
+											case TPath(iPath, _): itfNames.push(iPath.join("."));
+											default:
+										}
+									}
+								}
+								var mNames = [for (m in methods) m.name];
+								compiledTypes.push({
+									kind: "class",
+									name: name,
+									parent: parentName,
+									interfaces: itfNames,
+									fieldCount: fields.length,
+									methodCount: methods.length,
+									methods: mNames
+								});
+
+							case EInterface(name, fields, methods, parents, params, meta):
+								compiledTypes.push({
+									kind: "interface",
+									name: name,
+									methodCount: methods.length,
+									methods: [for (m in methods) m.name]
+								});
+
+							case EEnum(name, constructors, params):
+								compiledTypes.push({
+									kind: "enum",
+									name: name,
+									constructorCount: constructors.length,
+									constructors: [for (ctor in constructors) ctor.name]
+								});
+
+							case EAbstract(name, underlyingType, fields, methods, params, meta):
+								compiledTypes.push({
+									kind: "abstract",
+									name: name,
+									fieldCount: fields.length,
+									methodCount: methods.length
+								});
+
+							case ETypedef(name, type, params):
+								compiledTypes.push({
+									kind: "typedef",
+									name: name
+								});
+
+							default:
+						}
+					}
+				}
+			}
+			info.compiledTypes = compiledTypes;
+		} catch (e:Dynamic) {
+			info.status = "CORRUPTED";
+			info.error = 'Error deserializing payload: ${e}';
+		}
+
+		return info;
+	}
+
+	/**
+	 * Instance helper to inspect compiled HXBC bytecode bytes before execution.
+	 */
+	public inline function inspect(bytes:haxe.io.Bytes, ?key:HXBCKey):HXBCInfo {
+		return inspectBytecode(bytes, key);
 	}
 
 	/**

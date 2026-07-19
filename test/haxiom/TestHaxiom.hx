@@ -616,6 +616,55 @@ class TestHaxiom {
 		}
 		trace('SUCCESS: LZ4 Bytecode Compression & Execution verified (${rawBytes.length} bytes -> ${compressedBytes.length} bytes).');
 
+		// 23h. Engine Inspection API (Haxiom.inspectBytecode & haxiom.inspect)
+		var hInspect = new Haxiom();
+		var script23h = '
+            package my.game;
+            interface IRenderable {
+                function render():Void;
+            }
+            class Player implements IRenderable {
+                public var name:String;
+                public function new(name:String) {
+                    this.name = name;
+                }
+                public function render():Void {}
+            }
+            var p = new Player("Hero");
+        ';
+		var inspectBytes = hInspect.compileToBytecodeBytes(script23h, "TestInspect.hx", null, true, true);
+		var info = Haxiom.inspectBytecode(inspectBytes);
+		if (info.status != "VALID") {
+			throw "inspectBytecode status failed: " + info.status + " - " + info.error;
+		}
+		if (!info.isCompressed) {
+			throw "inspectBytecode failed to detect LZ4 compression flag";
+		}
+		if (info.fileSize != inspectBytes.length) {
+			throw "inspectBytecode reported wrong fileSize";
+		}
+		if (info.uncompressedPayloadSize <= info.fileSize) {
+			throw "inspectBytecode reported invalid uncompressedPayloadSize";
+		}
+		if (info.sourceFiles == null || info.sourceFiles.indexOf("TestInspect.hx") == -1) {
+			throw "inspectBytecode failed to list source file TestInspect.hx";
+		}
+		var foundClass = false;
+		if (info.compiledTypes != null) {
+			for (t in info.compiledTypes) {
+				if (t.kind == "class" && t.name == "Player") {
+					foundClass = true;
+					if (t.methods == null || t.methods.indexOf("render") == -1) {
+						throw "inspectBytecode failed to list methods for class Player";
+					}
+				}
+			}
+		}
+		if (!foundClass) {
+			throw "inspectBytecode failed to find compiled class Player";
+		}
+		trace("SUCCESS: Engine Inspection API (Haxiom.inspectBytecode & haxiom.inspect) verified.");
+
 		// 24. Call Stack & Stack Trace Diagnostics
 		try {
 			var script24 = '
