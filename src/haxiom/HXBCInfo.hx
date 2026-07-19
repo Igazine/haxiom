@@ -36,6 +36,7 @@ typedef HXBCInfo = {
 	var ?debugSymbols:Array<HXBCDebugSymbol>;
 	var ?sourceFiles:Array<String>;
 	var ?compiledTypes:Array<HXBCCompiledType>;
+	var ?embeddedResources:Array<{path:String, size:Int}>;
 	var status:String; // "VALID", "ENCRYPTED", "CORRUPTED", "INVALID_MAGIC", "TOO_SHORT"
 	var ?error:String;
 }

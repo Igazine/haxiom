@@ -665,6 +665,86 @@ class TestHaxiom {
 		}
 		trace("SUCCESS: Engine Inspection API (Haxiom.inspectBytecode & haxiom.inspect) verified.");
 
+		// 23i. Embedded Script Resources (@:haxiom.resource)
+		var tmpResTextPath = "./test_tmp_resource.txt";
+		var tmpResBinPath = "./test_tmp_resource.bin";
+		sys.io.File.saveContent(tmpResTextPath, "Haxiom Embedded Resource Content Hello World!");
+		var testBinBytes = haxe.io.Bytes.alloc(8);
+		for (i in 0...8) testBinBytes.set(i, i * 10);
+		sys.io.File.saveBytes(tmpResBinPath, testBinBytes);
+
+		try {
+			var hRes = new Haxiom();
+			var script23i = '
+                import haxe.io.Bytes;
+                class ResourceDemo {
+                    @:haxiom.resource("./test_tmp_resource.txt")
+                    public var textAsset:String;
+
+                    @:haxiom.resource("./test_tmp_resource.bin")
+                    public var binAsset:Bytes;
+
+                    public function new() {}
+                }
+                var demo = new ResourceDemo();
+                demo.textAsset + "|" + demo.binAsset.length;
+            ';
+			trace("23i Step 1: compileToBytecodeBytes");
+			var compiledResBytes = hRes.compileToBytecodeBytes(script23i, "TestResource.hx", null, true, true);
+			trace("23i Step 2: inspectBytecode");
+			var resInfo = Haxiom.inspectBytecode(compiledResBytes);
+			if (resInfo.embeddedResources == null || resInfo.embeddedResources.length != 2) {
+				throw "inspectBytecode failed to list embedded resources count";
+			}
+
+			trace("23i Step 3: executeBytecodeBytes");
+			var resResult:String = hRes.executeBytecodeBytes(compiledResBytes);
+			if (resResult != "Haxiom Embedded Resource Content Hello World!|8") {
+				throw "Embedded resource execution yielded incorrect result: " + resResult;
+			}
+
+			trace("23i Step 4: interpret");
+			var astResResult:String = hRes.interpret(script23i);
+			if (astResResult != "Haxiom Embedded Resource Content Hello World!|8") {
+				throw "AST mode embedded resource execution yielded incorrect result: " + astResResult;
+			}
+
+			// Validation 1: Explicit initializer check
+			try {
+				var badScript1 = '@:haxiom.resource("./test_tmp_resource.txt") var pic:String = "hello";';
+				hRes.compileToBytecodeBytes(badScript1, "Bad1.hx");
+				throw "FAILURE: Explicit initializer on @:haxiom.resource should have thrown compile error";
+			} catch (e:Dynamic) {
+				var errStr = Std.string(e);
+				if (errStr.indexOf("explicit initializer") == -1) {
+					throw "Unexpected error for explicit initializer: " + errStr;
+				}
+			}
+
+			// Validation 2: Missing resource file check
+			try {
+				var badScript2 = '@:haxiom.resource("./non_existent_file_xyz_9999.png") var pic:String;';
+				hRes.compileToBytecodeBytes(badScript2, "Bad2.hx");
+				throw "FAILURE: Missing resource file should have thrown compile error";
+			} catch (e:Dynamic) {
+				var errStr = Std.string(e);
+				if (errStr.indexOf("Resource file not found") == -1) {
+					throw "Unexpected error for missing file: " + errStr;
+				}
+			}
+
+			// Cleanup tmp files
+			if (sys.FileSystem.exists(tmpResTextPath)) sys.FileSystem.deleteFile(tmpResTextPath);
+			if (sys.FileSystem.exists(tmpResBinPath)) sys.FileSystem.deleteFile(tmpResBinPath);
+
+			trace("SUCCESS: Embedded Script Resources (@:haxiom.resource) verified.");
+		} catch (e:Dynamic) {
+			trace("ERROR IN 23i: " + Std.string(e) + "\n" + haxe.CallStack.toString(haxe.CallStack.exceptionStack()));
+			if (sys.FileSystem.exists(tmpResTextPath)) sys.FileSystem.deleteFile(tmpResTextPath);
+			if (sys.FileSystem.exists(tmpResBinPath)) sys.FileSystem.deleteFile(tmpResBinPath);
+			throw e;
+		}
+
 		// 24. Call Stack & Stack Trace Diagnostics
 		try {
 			var script24 = '

@@ -71,7 +71,7 @@ class Serializer {
 	}
 
 	static function shouldWrap(val:Dynamic):Bool {
-		if (val == null)
+		if (val == null || Std.isOfType(val, haxe.io.Bytes) || Std.isOfType(val, BinaryBytesHolder))
 			return false;
 		if (Std.isOfType(val, BinaryExprHolder))
 			return false;
@@ -109,6 +109,13 @@ class Serializer {
 		for (sym in debugSymbols) {
 			if (sym != null && sym.name != null) {
 				addToStringPool(sym.name);
+			}
+		}
+		if (chunk.resources != null) {
+			for (k in chunk.resources.keys()) {
+				if (k != null) {
+					addToStringPool(k);
+				}
 			}
 		}
 
@@ -172,12 +179,15 @@ class Serializer {
 		}
 
 		// 4. Write constants via Serializer
-		var wrappedConstants = [];
+		var wrappedConstants:Array<Dynamic> = [];
 		if (chunk.constants != null) {
 			for (c in chunk.constants) {
 				if (shouldWrap(c)) {
 					var serializedBytes = BinaryASTSerializer.serialize(c);
 					wrappedConstants.push(new BinaryExprHolder(serializedBytes));
+				} else if (c != null && Std.isOfType(c, haxe.io.Bytes)) {
+					var bytesVal:haxe.io.Bytes = cast c;
+					wrappedConstants.push(new BinaryBytesHolder(bytesVal.toHex()));
 				} else {
 					wrappedConstants.push(c);
 				}
@@ -196,6 +206,19 @@ class Serializer {
 			writeVarInt(payloadOut, sym.slot);
 			writeVarInt(payloadOut, sym.startIp);
 			writeVarInt(payloadOut, sym.endIp);
+		}
+
+		// 6. Write embedded resources
+		var resCount = chunk.resources != null ? [for (k in chunk.resources.keys()) k].length : 0;
+		writeVarInt(payloadOut, resCount);
+		if (chunk.resources != null && resCount > 0) {
+			for (k => v in chunk.resources) {
+				var keyIdx = stringPoolMap.get(k);
+				writeVarInt(payloadOut, keyIdx);
+				var resBytes = v != null ? v : Bytes.alloc(0);
+				writeVarInt(payloadOut, resBytes.length);
+				payloadOut.write(resBytes);
+			}
 		}
 
 		// Compute Adler32 checksum of the unencrypted payload bytes
@@ -321,9 +344,15 @@ class Serializer {
 		var constants:Array<Dynamic> = haxe.Unserializer.run(constsStr);
 		for (i in 0...constants.length) {
 			var c = constants[i];
+			#if haxiom_debug
+			trace("CONSTANT READ [" + i + "]: " + Std.string(c) + " typeof=" + Std.string(Type.typeof(c)));
+			#end
 			if (c != null && Std.isOfType(c, BinaryExprHolder)) {
 				var holder:BinaryExprHolder = cast c;
 				constants[i] = BinaryASTSerializer.deserialize(holder.bytes);
+			} else if (c != null && (Std.isOfType(c, BinaryBytesHolder) || Reflect.hasField(c, "hex"))) {
+				var hexVal:String = Reflect.field(c, "hex");
+				constants[i] = Bytes.ofHex(hexVal);
 			}
 		}
 
@@ -349,7 +378,23 @@ class Serializer {
 			];
 		}
 
-		var chunk = new BytecodeChunk(instructions, constants, positions, maxSlots, isAsync, debugSymbols);
+		// 6. Read embedded resources
+		var resources:Map<String, Bytes> = null;
+		if (payloadInput.position < payloadInput.length) {
+			var resCount = readVarInt(payloadInput);
+			if (resCount > 0) {
+				resources = new Map<String, Bytes>();
+				for (i in 0...resCount) {
+					var keyIdx = readVarInt(payloadInput);
+					var resKey = (keyIdx >= 0 && keyIdx < stringPool.length) ? stringPool[keyIdx] : "";
+					var resLen = readVarInt(payloadInput);
+					var resBytes = payloadInput.read(resLen);
+					resources.set(resKey, resBytes);
+				}
+			}
+		}
+
+		var chunk = new BytecodeChunk(instructions, constants, positions, maxSlots, isAsync, debugSymbols, resources);
 		BytecodeVerifier.verify(chunk);
 		return chunk;
 	}

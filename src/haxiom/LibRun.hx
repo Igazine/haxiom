@@ -734,6 +734,14 @@ class LibRun {
 				Sys.println("--------------------------------------------------");
 			}
 
+			if (info.embeddedResources != null && info.embeddedResources.length > 0) {
+				Sys.println(' Embedded Resources (${info.embeddedResources.length}):');
+				for (res in info.embeddedResources) {
+					Sys.println('   # ${res.path} (${res.size} bytes)');
+				}
+				Sys.println("--------------------------------------------------");
+			}
+
 			Sys.println(" Bytecode Status:    VALID & SUITABLE FOR HOST RUNTIME");
 			Sys.println("==================================================");
 		}

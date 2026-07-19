@@ -38,6 +38,7 @@ class BytecodeCompiler {
 	var activeLocals:Array<{name:String, slot:Int, startIp:Int}> = [];
 	var functionName:Null<String> = null;
 	var args:Null<Array<FunctionArg>> = null;
+	var resources:Map<String, haxe.io.Bytes> = new Map();
 
 	function new(?args:Array<FunctionArg>, ?isTopLevel:Bool = true, ?isAsync:Bool = false, ?debugMode:Bool = false, ?functionName:String) {
 		this.args = args;
@@ -63,8 +64,9 @@ class BytecodeCompiler {
 		if (compiler.debugMode) {
 			compiler.closeAllActiveLocals();
 		}
+		var resMap = [for (k in compiler.resources.keys()) k].length > 0 ? compiler.resources : null;
 		var chunk = new BytecodeChunk(compiler.instructions, compiler.constants, compiler.debugMode ? compiler.positions : [], compiler.maxSlots,
-			compiler.isAsync, compiler.debugMode ? compiler.debugSymbols : null);
+			compiler.isAsync, compiler.debugMode ? compiler.debugSymbols : null, resMap);
 		optimizeChunk(chunk);
 		if (!debugMode) {
 			stripPositionsFromChunk(chunk);
@@ -350,8 +352,9 @@ class BytecodeCompiler {
 				}
 
 			case EVar(name, type, expr, isFinal, meta):
-				if (expr != null) {
-					compileExpr(expr);
+				var processedExpr = ResourceCompiler.processResource(meta, type, expr, e.pos, this.resources);
+				if (processedExpr != null) {
+					compileExpr(processedExpr);
 				} else {
 					emit(OP_LOAD_CONST, e.pos);
 					emitInt(addConst(null), e.pos);
@@ -1005,6 +1008,11 @@ class BytecodeCompiler {
 				emitInt(type != null ? addConst(type) : -1, e.pos);
 
 			case EClass(name, fields, methods, parent, interfaces, params, meta):
+				for (f in fields) {
+					if (f.meta != null) {
+						f.expr = ResourceCompiler.processResource(f.meta, f.type, f.expr, e.pos, this.resources);
+					}
+				}
 				for (m in methods) {
 					if (m.body != null) {
 						var isMethodAsync = false;
@@ -1035,6 +1043,11 @@ class BytecodeCompiler {
 				emitInt(addConst(e), e.pos);
 
 			case EAbstract(name, underlyingType, fields, methods, params, meta):
+				for (f in fields) {
+					if (f.meta != null) {
+						f.expr = ResourceCompiler.processResource(f.meta, f.type, f.expr, e.pos, this.resources);
+					}
+				}
 				for (m in methods) {
 					if (m.body != null) {
 						var isMethodAsync = false;
@@ -1320,7 +1333,7 @@ class BytecodeCompiler {
 		if (chunk == null || chunk.constants == null)
 			return;
 		for (c in chunk.constants) {
-			if (c == null)
+			if (c == null || Std.isOfType(c, haxe.io.Bytes))
 				continue;
 			if (Reflect.hasField(c, "def") && Reflect.hasField(c, "pos")) {
 				stripPositions(cast c);
@@ -1339,7 +1352,7 @@ class BytecodeCompiler {
 		optimizeBytecode(chunk.instructions, chunk.constants, chunk.positions, chunk.debugSymbols);
 		if (chunk.constants != null) {
 			for (c in chunk.constants) {
-				if (c == null)
+				if (c == null || Std.isOfType(c, haxe.io.Bytes))
 					continue;
 				if (Reflect.hasField(c, "bodyChunk")) {
 					var proto:Dynamic = c;

@@ -1346,6 +1346,27 @@ class Interp {
 				default:
 			}
 		}
+		if (Std.isOfType(obj, haxe.io.Bytes)) {
+			var b:haxe.io.Bytes = cast obj;
+			if (field == "length")
+				return b.length;
+			switch (field) {
+				case "get":
+					return (pos:Int) -> b.get(pos);
+				case "set":
+					return (pos:Int, v:Int) -> b.set(pos, v);
+				case "getString":
+					return (pos:Int, len:Int) -> b.getString(pos, len);
+				case "toHex":
+					return () -> b.toHex();
+				case "toString":
+					return () -> b.toString();
+				case "sub":
+					return (pos:Int, len:Int) -> b.sub(pos, len);
+				default:
+			}
+		}
+
 		if (Std.isOfType(obj, Array)) {
 			var arr:Array<Dynamic> = cast obj;
 			if (field == "length")
@@ -2205,7 +2226,8 @@ class Interp {
 				throw 'Identifier "$name" not found at ${pos.line}:${pos.col}';
 
 			case EVar(name, type, expr, isFinal, meta):
-				var val = expr != null ? eval(expr, scope) : null;
+				var processedExpr = ResourceCompiler.processResource(meta, type, expr, e.pos, null);
+				var val = processedExpr != null ? eval(processedExpr, scope) : null;
 				if (type != null) {
 					val = castOrCheckType(val, type, scope);
 				}
@@ -3255,18 +3277,22 @@ class Interp {
 				cls.isAbstract = hasAbstractMeta;
 
 				for (f in fields) {
+					var fieldExpr = f.expr;
+					if (f.meta != null) {
+						fieldExpr = ResourceCompiler.processResource(f.meta, f.type, f.expr, e.pos, null);
+					}
 					cls.fields.set(f.name, {
 						name: f.name,
 						type: f.type,
-						expr: f.expr,
+						expr: fieldExpr,
 						isStatic: f.isStatic,
 						isPublic: f.isPublic,
 						isFinal: f.isFinal,
 						property: f.property,
 						meta: evaluateMetadata(f.meta, scope)
 					});
-					if (f.isStatic && f.expr != null) {
-						cls.staticFields.set(f.name, eval(f.expr, scope));
+					if (f.isStatic && fieldExpr != null) {
+						cls.staticFields.set(f.name, eval(fieldExpr, scope));
 					}
 				}
 				for (m in methods) {
@@ -6192,26 +6218,12 @@ class Interp {
 		if (obj == null)
 			return null;
 		try {
-			var res = Reflect.field(obj, field);
-			#if haxiom_debug
-			if (field == "addEventListener") {
-				trace("DEBUG safeField: obj="
-					+ Std.string(obj)
-					+ " typeof(obj)="
-					+ Std.string(Type.typeof(obj))
-					+ " field="
-					+ field
-					+ " res="
-					+ res);
+			var res = Reflect.getProperty(obj, field);
+			if (res == null) {
+				res = Reflect.field(obj, field);
 			}
-			#end
 			return res;
 		} catch (e:Dynamic) {
-			#if haxiom_debug
-			if (field == "addEventListener") {
-				trace("DEBUG safeField error: " + Std.string(e));
-			}
-			#end
 			return null;
 		}
 	}

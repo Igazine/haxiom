@@ -198,6 +198,14 @@ class BinaryASTSerializer {
             return;
         }
         
+        if (Std.isOfType(val, Bytes)) {
+            out.writeByte(9);
+            var bVal:Bytes = cast val;
+            writeVarInt(out, bVal.length);
+            out.write(bVal);
+            return;
+        }
+        
         if (Reflect.isObject(val)) {
             var cls = Type.getClass(val);
             if (cls != null && cls == haxiom.VM.BytecodeChunk) {
@@ -270,6 +278,9 @@ class BinaryASTSerializer {
                 var bcLen = readVarInt(input);
                 var bcBytes = input.read(bcLen);
                 return Serializer.deserializeBytecode(bcBytes);
+            case 9:
+                var bLen = readVarInt(input);
+                return input.read(bLen);
             default:
                 throw 'Unknown type tag $typeTag in binary AST deserialization';
         }

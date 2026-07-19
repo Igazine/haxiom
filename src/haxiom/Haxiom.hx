@@ -689,6 +689,15 @@ class Haxiom {
 				}
 			}
 			info.compiledTypes = compiledTypes;
+
+			// Embedded resources extraction
+			var embeddedRes:Array<{path:String, size:Int}> = [];
+			if (chunk.resources != null) {
+				for (k => v in chunk.resources) {
+					embeddedRes.push({path: k, size: v != null ? v.length : 0});
+				}
+			}
+			info.embeddedResources = embeddedRes;
 		} catch (e:Dynamic) {
 			info.status = "CORRUPTED";
 			info.error = 'Error deserializing payload: ${e}';

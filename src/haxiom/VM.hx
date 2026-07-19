@@ -128,15 +128,17 @@ class BytecodeChunk {
 	var maxSlots:Int;
 	var isAsync:Bool;
 	var debugSymbols:Null<Array<DebugSymbol>>;
+	var resources:Null<Map<String, haxe.io.Bytes>>;
 
 	function new(instructions:Array<Int>, constants:Array<Dynamic>, positions:Array<Pos>, ?maxSlots:Int = 0, ?isAsync:Bool = false,
-			?debugSymbols:Null<Array<DebugSymbol>> = null) {
+			?debugSymbols:Null<Array<DebugSymbol>> = null, ?resources:Null<Map<String, haxe.io.Bytes>> = null) {
 		this.instructions = instructions;
 		this.constants = constants;
 		this.positions = positions;
 		this.maxSlots = maxSlots;
 		this.isAsync = isAsync;
 		this.debugSymbols = debugSymbols;
+		this.resources = resources;
 	}
 
 	function getActiveLocalsAt(ip:Int):Map<Int, String> {
@@ -717,7 +719,7 @@ class VM {
 												if (Std.isOfType(obj, HaxiomInstance)) {
 													resolved = (cast obj : HaxiomInstance).fields.get(fieldName);
 												} else {
-													resolved = Reflect.field(obj, fieldName);
+													resolved = Reflect.getProperty(obj, fieldName);
 												}
 												cacheHit = true;
 											} else if (curr.isMethod) {
