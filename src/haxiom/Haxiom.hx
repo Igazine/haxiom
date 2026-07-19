@@ -714,6 +714,20 @@ class Haxiom {
 	}
 
 	/**
+	 * Registers an in-memory virtual resource asset accessible to `@:haxiom.resource('./path')`.
+	 */
+	public function addResource(path:String, bytes:haxe.io.Bytes):Void {
+		ResourceCompiler.virtualResources.set(path, bytes);
+	}
+
+	/**
+	 * Sets a custom host resource provider function for resolving `@:haxiom.resource` items.
+	 */
+	public function setResourceProvider(provider:(path:String) -> haxe.io.Bytes):Void {
+		ResourceCompiler.resourceProvider = provider;
+	}
+
+	/**
 	 * Exposes a host object or value as a global variable accessible to guest scripts.
 	 * 
 	 * @param name The global variable name to declare (e.g. `container`).

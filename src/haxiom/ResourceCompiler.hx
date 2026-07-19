@@ -5,10 +5,72 @@ import haxe.io.Bytes;
 
 /**
  * Helper class for processing `@:haxiom.resource('./path')` metadata annotations.
- * Handles compile-time file disk resolution, missing file checks, explicit initializer checks,
- * UTF-8 String vs raw Bytes type conversion, and resource table bundling.
+ * Target-agnostic resource resolution with ZERO `#if sys` compiler directives.
+ * Supports disk loading (on sys environments), virtual resources map,
+ * custom host resource provider callbacks, and embedded `haxe.Resource` items.
  */
 class ResourceCompiler {
+	/** Global virtual resources map for host-injected memory assets */
+	public static var virtualResources:Map<String, Bytes> = new Map();
+
+	/** Custom host resource provider function */
+	public static var resourceProvider:Null<(path:String) -> Bytes> = null;
+
+	public static function loadResourceBytes(relPath:String, pos:Pos):Bytes {
+		var pStr = pos != null ? '${pos.file != null ? pos.file : "script"}:${pos.line}:${pos.col}' : "script";
+
+		// 1. Check virtual resources map
+		if (virtualResources.exists(relPath)) {
+			return virtualResources.get(relPath);
+		}
+
+		// 2. Check custom host resource provider
+		if (resourceProvider != null) {
+			var res = resourceProvider(relPath);
+			if (res != null)
+				return res;
+		}
+
+		// 3. Check haxe.Resource embedded items
+		try {
+			var hRes = haxe.Resource.getBytes(relPath);
+			if (hRes != null)
+				return hRes;
+		} catch (e:Dynamic) {}
+
+		// 4. Reflective Sys FileSystem / File loading (100% target agnostic, zero #if sys)
+		var fsCls = Type.resolveClass("sys.FileSystem");
+		var fileCls = Type.resolveClass("sys.io.File");
+
+		if (fsCls != null && fileCls != null) {
+			var existsFunc = Reflect.field(fsCls, "exists");
+			var getBytesFunc = Reflect.field(fileCls, "getBytes");
+
+			var fullPath = relPath;
+			if (pos != null && pos.file != null && pos.file.length > 0) {
+				var dir = haxe.io.Path.directory(pos.file);
+				if (dir != null && dir.length > 0) {
+					var resolved = haxe.io.Path.join([dir, relPath]);
+					if (Reflect.callMethod(fsCls, existsFunc, [resolved])) {
+						fullPath = resolved;
+					}
+				}
+			}
+
+			if (!Reflect.callMethod(fsCls, existsFunc, [fullPath])) {
+				if (Reflect.callMethod(fsCls, existsFunc, [relPath])) {
+					fullPath = relPath;
+				} else {
+					throw 'Compile Error: Resource file not found: \'${relPath}\' at ${pStr}';
+				}
+			}
+
+			return Reflect.callMethod(fileCls, getBytesFunc, [fullPath]);
+		}
+
+		throw 'Compile Error: Resource file not found: \'${relPath}\' at ${pStr}';
+	}
+
 	public static function processResource(
 		meta:Null<Array<{name:String, params:Array<Expr>}>>,
 		type:Null<TypeDecl>,
@@ -60,32 +122,8 @@ class ResourceCompiler {
 			}
 		}
 
-		// Resolve file bytes from disk (requires sys target or AOT compilation to .hxbc)
-		var fileBytes:Bytes = null;
-		#if sys
-		var fullPath = relPath;
-		if (pos != null && pos.file != null && pos.file.length > 0) {
-			var dir = haxe.io.Path.directory(pos.file);
-			if (dir != null && dir.length > 0) {
-				var resolved = haxe.io.Path.join([dir, relPath]);
-				if (sys.FileSystem.exists(resolved)) {
-					fullPath = resolved;
-				}
-			}
-		}
-
-		if (!sys.FileSystem.exists(fullPath)) {
-			if (sys.FileSystem.exists(relPath)) {
-				fullPath = relPath;
-			} else {
-				throw 'Compile Error: Resource file not found: \'${relPath}\' at ${pStr}';
-			}
-		}
-
-		fileBytes = sys.io.File.getBytes(fullPath);
-		#else
-		throw 'Compile Error: Direct disk resource loading via @:haxiom.resource is not supported on non-sys targets (e.g. Browser JS). Compile scripts ahead-of-time to .hxbc bytecode format using `haxelib run haxiom bc` at ${pStr}';
-		#end
+		// Load resource bytes via target-agnostic resolver
+		var fileBytes = loadResourceBytes(relPath, pos);
 
 		// Validation 2: Explicit initializer check (verify expr matches synthesized resource value)
 		if (expr != null) {
