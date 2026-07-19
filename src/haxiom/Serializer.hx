@@ -199,15 +199,12 @@ class Serializer {
 		}
 
 		// Compute Adler32 checksum of the unencrypted payload bytes
-		var payloadBytes = payloadOut.getBytes();
-		var checksum = Adler32.make(payloadBytes);
+		var rawPayload = payloadOut.getBytes();
+		var uncompressedSize = rawPayload.length;
+		var checksum = Adler32.make(rawPayload);
 
-		// Encrypt if key is provided
-		var encrypted = false;
-		if (key != null && key.isValid()) {
-			payloadBytes = crypt(payloadBytes, key);
-			encrypted = true;
-		}
+		var isEncrypted = key != null && key.isValid();
+		var payloadBytes = isEncrypted ? crypt(rawPayload, key) : rawPayload;
 
 		var isCompressed = compress == true;
 		if (isCompressed) {
@@ -221,10 +218,11 @@ class Serializer {
 		headerOut.writeByte(1); // Version 1
 
 		// Flags byte: bit 0 = isAsync, bit 1 = isEncrypted, bit 2 = isCompressed
-		var flags = (chunk.isAsync ? 1 : 0) | (encrypted ? 2 : 0) | (isCompressed ? 4 : 0);
+		var flags = (chunk.isAsync ? 1 : 0) | (isEncrypted ? 2 : 0) | (isCompressed ? 4 : 0);
 		headerOut.writeByte(flags);
 
 		headerOut.writeInt32(chunk.maxSlots);
+		headerOut.writeInt32(uncompressedSize);
 		headerOut.writeInt32(checksum);
 		headerOut.write(payloadBytes);
 
@@ -234,7 +232,7 @@ class Serializer {
 	static function deserializeBytecode(bytes:Bytes, ?key:HXBCKey):BytecodeChunk {
 		var input = new BytesInput(bytes);
 		input.bigEndian = false;
-		if (input.length < 14) {
+		if (input.length < 18) {
 			throw "Invalid bytecode: data too short";
 		}
 
@@ -253,6 +251,7 @@ class Serializer {
 		var isEncrypted = (flags & 2) == 2;
 		var isCompressed = (flags & 4) == 4;
 		var maxSlots = input.readInt32();
+		var uncompressedSize = input.readInt32();
 		var checksum = input.readInt32();
 
 		if (isEncrypted && (key == null || !key.isValid())) {
@@ -263,7 +262,7 @@ class Serializer {
 		}
 
 		// Read payload
-		var payloadBytes = input.read(input.length - 14);
+		var payloadBytes = input.read(input.length - 18);
 
 		// Decompress if compressed
 		if (isCompressed) {

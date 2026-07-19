@@ -665,7 +665,7 @@ class LibRun {
 		}
 
 		var bytes = File.getBytes(fullPath);
-		if (bytes.length < 14) {
+		if (bytes.length < 18) {
 			if (isJson) {
 				Sys.println(haxe.Json.stringify({filePath: inputFile, error: 'File is not a valid HXBC file (too short)', status: "ERROR"}, "  "));
 			} else {
@@ -692,8 +692,11 @@ class LibRun {
 		var isEncrypted = (flags & 2) == 2;
 		var isCompressed = (flags & 4) == 4;
 		var maxSlots = input.readInt32();
+		var uncompressedSize = input.readInt32();
 		var checksum = input.readInt32();
 		var checksumHex = '0x' + StringTools.hex(checksum, 8);
+		var payloadCompressedSize = bytes.length - 18;
+		var savingPct = (isCompressed && uncompressedSize > 0) ? Math.round((1.0 - (payloadCompressedSize / uncompressedSize)) * 1000) / 10.0 : 0.0;
 
 		var key:HXBCKey = keyStr != null ? new HXBCKey(keyStr) : null;
 		if (isEncrypted && (key == null || !key.isValid())) {
@@ -701,6 +704,8 @@ class LibRun {
 				Sys.println(haxe.Json.stringify({
 					filePath: inputFile,
 					fileSize: bytes.length,
+					uncompressedPayloadSize: uncompressedSize,
+					compressionRatio: isCompressed ? '${savingPct}%' : '0%',
 					version: version,
 					maxSlots: maxSlots,
 					isAsync: isAsync,
@@ -714,14 +719,18 @@ class LibRun {
 				Sys.println("==================================================");
 				Sys.println("              HAXIOM HXBC INSPECTOR               ");
 				Sys.println("==================================================");
-				Sys.println(' File Path:          ${inputFile}');
-				Sys.println(' Total File Size:    ${bytes.length} bytes');
-				Sys.println(' HXBC Version:       ${version}');
-				Sys.println(' Max Slots Required: ${maxSlots}');
-				Sys.println(' Asynchronous:      ${isAsync ? "YES" : "NO"}');
-				Sys.println(' Encrypted:          YES');
-				Sys.println(' LZ4 Compressed:     ${isCompressed ? "YES" : "NO"}');
-				Sys.println(' Checksum:           ${checksumHex}');
+				Sys.println(' File Path:                 ${inputFile}');
+				Sys.println(' Total File Size (Disk):    ${bytes.length} bytes');
+				Sys.println(' Uncompressed Payload Size: ${uncompressedSize} bytes');
+				if (isCompressed) {
+					Sys.println(' LZ4 Compression Ratio:     ${savingPct}% saved');
+				}
+				Sys.println(' HXBC Version:              ${version}');
+				Sys.println(' Max Slots Required:        ${maxSlots}');
+				Sys.println(' Asynchronous:             ${isAsync ? "YES" : "NO"}');
+				Sys.println(' Encrypted:                 YES');
+				Sys.println(' LZ4 Compressed:            ${isCompressed ? "YES" : "NO"}');
+				Sys.println(' Checksum:                  ${checksumHex}');
 				Sys.println("--------------------------------------------------");
 				Sys.println(" [!] Payload is encrypted. Provide decryption key to inspect internal payload details.");
 				Sys.println(" Usage: haxelib run haxiom inspect <hxbc_file> <key>");
@@ -743,6 +752,8 @@ class LibRun {
 				var jsonResult:Dynamic = {
 					filePath: inputFile,
 					fileSize: bytes.length,
+					uncompressedPayloadSize: uncompressedSize,
+					compressionRatio: isCompressed ? '${savingPct}%' : '0%',
 					version: version,
 					maxSlots: maxSlots,
 					isAsync: isAsync,
@@ -763,19 +774,23 @@ class LibRun {
 				Sys.println("==================================================");
 				Sys.println("              HAXIOM HXBC INSPECTOR               ");
 				Sys.println("==================================================");
-				Sys.println(' File Path:          ${inputFile}');
-				Sys.println(' Total File Size:    ${bytes.length} bytes');
-				Sys.println(' HXBC Version:       ${version}');
-				Sys.println(' Max Slots Required: ${maxSlots}');
-				Sys.println(' Asynchronous:      ${isAsync ? "YES" : "NO"}');
-				Sys.println(' Encrypted:          ${isEncrypted ? "YES" : "NO"}');
-				Sys.println(' LZ4 Compressed:     ${isCompressed ? "YES" : "NO"}');
-				Sys.println(' Checksum:           ${checksumHex}');
+				Sys.println(' File Path:                 ${inputFile}');
+				Sys.println(' Total File Size (Disk):    ${bytes.length} bytes');
+				Sys.println(' Uncompressed Payload Size: ${uncompressedSize} bytes');
+				if (isCompressed) {
+					Sys.println(' LZ4 Compression Ratio:     ${savingPct}% saved');
+				}
+				Sys.println(' HXBC Version:              ${version}');
+				Sys.println(' Max Slots Required:        ${maxSlots}');
+				Sys.println(' Asynchronous:             ${isAsync ? "YES" : "NO"}');
+				Sys.println(' Encrypted:                 ${isEncrypted ? "YES" : "NO"}');
+				Sys.println(' LZ4 Compressed:            ${isCompressed ? "YES" : "NO"}');
+				Sys.println(' Checksum:                  ${checksumHex}');
 				Sys.println("--------------------------------------------------");
-				Sys.println(' Instruction Count:  ${instCount}');
-				Sys.println(' Constant Pool Size: ${constCount}');
-				Sys.println(' Debug Symbols:      ${debugCount}');
-				Sys.println(' Position Mapping:   ${posCount} entries');
+				Sys.println(' Instruction Count:         ${instCount}');
+				Sys.println(' Constant Pool Size:        ${constCount}');
+				Sys.println(' Debug Symbols:             ${debugCount}');
+				Sys.println(' Position Mapping:          ${posCount} entries');
 				Sys.println("--------------------------------------------------");
 
 				if (chunk.debugSymbols != null && chunk.debugSymbols.length > 0) {
