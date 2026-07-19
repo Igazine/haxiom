@@ -1878,6 +1878,20 @@ class Interp {
 			throw 'Constructor "$field" not found on enum ${enm.name}';
 		}
 
+		if (Std.isOfType(obj, HaxiomAbstract)) {
+			var abs:HaxiomAbstract = cast obj;
+			if (abs.staticFields.exists(field)) {
+				return abs.staticFields.get(field);
+			}
+			if (abs.methods.exists(field)) {
+				var m = abs.methods.get(field);
+				if (m.isStatic) {
+					return bindMethod(obj, m);
+				}
+			}
+			throw 'Static method or field "$field" not found on abstract ${abs.name}';
+		}
+
 		// Custom FFI member resolution overrides
 		for (resolver in haxiom.FFI.memberResolvers) {
 			var res = resolver(obj, field);
@@ -4657,7 +4671,7 @@ class Interp {
 								}
 							}
 							return false;
-						} else if (Reflect.isObject(enumVal)) {
+						} else if (Type.getEnumConstructs(enumVal) != null) {
 							try {
 								if (Reflect.isEnumValue(val)) {
 									var valEnum = Type.getEnum(val);

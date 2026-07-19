@@ -177,7 +177,12 @@ class Parser {
 			case TInterface:
 				expr = parseInterface(meta);
 			case TEnum:
-				expr = parseEnum();
+				if (peek(1).def == TAbstract) {
+					next();
+					expr = parseEnumAbstract(meta);
+				} else {
+					expr = parseEnum();
+				}
 			case TVar:
 				expr = parseVar(meta);
 			case TIf:
@@ -578,6 +583,126 @@ class Parser {
 				});
 			} else {
 				throw new CompileException('Unexpected token inside abstract ${memberT.def}', memberT.pos.line, memberT.pos.col, file);
+			}
+			skipNewlines();
+		}
+		expect(TBraceClose);
+		return mk(EAbstract(name, underlyingType, fields, methods, params, meta), t.pos);
+	}
+
+	function parseEnumAbstract(?meta:Array<{name:String, params:Array<Expr>}>):Expr {
+		var t = expect(TAbstract);
+		var name = expectIdent();
+		var params = parseOptParams();
+		expect(TParenOpen);
+		var underlyingType = parseType();
+		expect(TParenClose);
+
+		var fromTypes:Array<TypeDecl> = [];
+		var toTypes:Array<TypeDecl> = [];
+		while (true) {
+			var pToken = peek();
+			switch (pToken.def) {
+				case TIdent("from"):
+					next();
+					fromTypes.push(parseType());
+				case TIdent("to"):
+					next();
+					toTypes.push(parseType());
+				default:
+					break;
+			}
+		}
+
+		if (meta == null)
+			meta = [];
+		meta.push({name: ":haxiom.enumAbstract", params: []});
+		for (fType in fromTypes) {
+			meta.push({name: ":haxiom.fromType", params: [{def: EValue(typeToString(fType)), pos: t.pos}]});
+		}
+		for (tType in toTypes) {
+			meta.push({name: ":haxiom.toType", params: [{def: EValue(typeToString(tType)), pos: t.pos}]});
+		}
+
+		expect(TBraceOpen);
+		skipNewlines();
+
+		var fields = [];
+		var methods = [];
+
+		var underlyingTypeName = typeToString(underlyingType);
+		var isStringUnderlying = underlyingTypeName == "String";
+		var nextAutoInt:Int = 0;
+
+		while (!is(TBraceClose) && !is(TEof)) {
+			var fMeta = parseMetadata();
+			var isStatic = true;
+			var isPublic = true;
+			var isFinal = true;
+
+			while (true) {
+				if (match(TStatic) || match(TPublic) || match(TPrivate) || match(TFinal) || match(TInline)) {
+					// Ignore modifier keywords inside enum abstract
+				} else {
+					break;
+				}
+			}
+
+			skipNewlines();
+			var memberT = peek();
+			if (memberT.def == TVar) {
+				next();
+				var fName = expectIdent();
+				var fType = parseOptType();
+				var fExpr:Expr = null;
+
+				if (match(TAssign)) {
+					fExpr = parseExpr();
+					switch (fExpr.def) {
+						case EValue(v):
+							var num = Std.parseInt(Std.string(v));
+							if (num != null) {
+								nextAutoInt = num + 1;
+							}
+						default:
+					}
+				} else {
+					if (isStringUnderlying) {
+						fExpr = {def: EValue(fName), pos: memberT.pos};
+					} else {
+						fExpr = {def: EValue(nextAutoInt), pos: memberT.pos};
+						nextAutoInt++;
+					}
+				}
+
+				expect(TSemicolon);
+				fields.push({
+					name: fName,
+					type: fType != null ? fType : underlyingType,
+					expr: fExpr,
+					isStatic: isStatic,
+					isPublic: isPublic,
+					isFinal: isFinal,
+					property: null,
+					meta: fMeta
+				});
+			} else if (memberT.def == TFunction) {
+				next();
+				var mName = match(TNew) ? "new" : expectIdent();
+				var mArgs = parseArgs();
+				var mRetType = parseOptType();
+				var mBody = parseBlock();
+				methods.push({
+					name: mName,
+					args: mArgs,
+					retType: mRetType,
+					body: mBody,
+					isStatic: isStatic,
+					isPublic: isPublic,
+					meta: fMeta
+				});
+			} else {
+				throw new CompileException('Unexpected token inside enum abstract ${memberT.def}', memberT.pos.line, memberT.pos.col, file);
 			}
 			skipNewlines();
 		}

@@ -493,6 +493,45 @@ class TestHaxiom {
 		hWildcard.interpret(script23c);
 		trace("SUCCESS: Wildcard package imports (import package.*;) verified.");
 
+		// 23d. Enum Abstract support (enum abstract Name(Type))
+		var hEnumAbs = new Haxiom();
+		var script23d = '
+            enum abstract Direction(Int) {
+                var UP = 10;
+                var DOWN;
+                var LEFT;
+                var RIGHT;
+            }
+
+            enum abstract Status(String) {
+                var OK = "success";
+                var Pending;
+                var Error;
+            }
+
+            if (Direction.UP != 10 || Direction.DOWN != 11 || Direction.LEFT != 12 || Direction.RIGHT != 13) {
+                throw "Int enum abstract auto-increment failed";
+            }
+
+            if (Status.OK != "success" || Status.Pending != "Pending" || Status.Error != "Error") {
+                throw "String enum abstract auto-assignment failed";
+            }
+
+            var dir = Direction.DOWN;
+            var matched = false;
+            switch (dir) {
+                case Direction.UP:
+                    throw "Switch matched wrong direction";
+                case Direction.DOWN:
+                    matched = true;
+                default:
+                    throw "Switch missed direction";
+            }
+            if (!matched) throw "Switch pattern matching on enum abstract failed";
+        ';
+		hEnumAbs.interpret(script23d);
+		trace("SUCCESS: Enum abstract syntax and value synthesis (enum abstract Name(Type)) verified.");
+
 		// 24. Call Stack & Stack Trace Diagnostics
 		try {
 			var script24 = '
