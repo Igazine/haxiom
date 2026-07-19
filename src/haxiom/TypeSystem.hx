@@ -275,9 +275,10 @@ class TypeSystem {
 						if (params != null && params.length > 0 && cls.params != null) {
 							for (i in 0...Std.int(Math.min(params.length, cls.params.length))) {
 								var expectedParam = params[i];
-								var actualParam = inst.genericBindings.get(cls.name + "." + cls.params[i]);
+								var pName = cls.params[i].name;
+								var actualParam = inst.genericBindings.get(cls.name + "." + pName);
 								if (actualParam != null && !interp.typesEqual(actualParam, expectedParam)) {
-									throw 'Type mismatch: expected type parameter ${cls.params[i]} to be ${interp.typeToString(expectedParam)} but got ${interp.typeToString(actualParam)}';
+									throw 'Type mismatch: expected type parameter ${pName} to be ${interp.typeToString(expectedParam)} but got ${interp.typeToString(actualParam)}';
 								}
 							}
 						}
@@ -315,9 +316,10 @@ class TypeSystem {
 						if (params != null && params.length > 0 && itf.params != null) {
 							for (i in 0...Std.int(Math.min(params.length, itf.params.length))) {
 								var expectedParam = params[i];
-								var actualParam = inst.genericBindings.get(itf.name + "." + itf.params[i]);
+								var pName = itf.params[i].name;
+								var actualParam = inst.genericBindings.get(itf.name + "." + pName);
 								if (actualParam != null && !interp.typesEqual(actualParam, expectedParam)) {
-									throw 'Type mismatch: expected interface type parameter ${itf.params[i]} to be ${interp.typeToString(expectedParam)} but got ${interp.typeToString(actualParam)}';
+									throw 'Type mismatch: expected interface type parameter ${pName} to be ${interp.typeToString(expectedParam)} but got ${interp.typeToString(actualParam)}';
 								}
 							}
 						}

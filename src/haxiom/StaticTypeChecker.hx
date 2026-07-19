@@ -488,7 +488,7 @@ class StaticTypeChecker {
 									if (cls.methods.exists(methodName)) {
 										var method = cls.methods.get(methodName);
 										// Build generic bindings from caller type params vs class params
-										var bindings = buildGenericBindings(cls.params, typeParams);
+										var bindings = buildGenericBindings(cls.params, typeParams, env, pos);
 										checkMethodArgs(method.args, args, env, bindings, methodName, pos);
 									}
 								}
@@ -537,8 +537,8 @@ class StaticTypeChecker {
 					if (cls.isAbstract) {
 						addError('Cannot instantiate abstract class ${typeName}', pos);
 					}
+					var bindings = buildGenericBindings(cls.params, typeParams, env, pos);
 					if (cls.ctorArgs != null && cls.ctorArgs.length > 0) {
-						var bindings = buildGenericBindings(cls.params, typeParams);
 						for (i in 0...cls.ctorArgs.length) {
 							if (i >= args.length)
 								break;
@@ -705,7 +705,7 @@ class StaticTypeChecker {
 								if (classes.exists(typeName)) {
 									var cls = classes.get(typeName);
 									if (cls.methods.exists(methodName)) {
-										var bindings = buildGenericBindings(cls.params, typeParams);
+										var bindings = buildGenericBindings(cls.params, typeParams, env);
 										var retType = cls.methods.get(methodName).retType;
 										if (retType != null)
 											return applyBindings(retType, bindings);
@@ -748,7 +748,7 @@ class StaticTypeChecker {
 				if (classes.exists(typeName)) {
 					var cls = classes.get(typeName);
 					if (cls.fields.exists(field)) {
-						var bindings = buildGenericBindings(cls.params, typeParams);
+						var bindings = buildGenericBindings(cls.params, typeParams, env);
 						return applyBindings(cls.fields.get(field).type, bindings);
 					}
 				}
@@ -884,7 +884,7 @@ class StaticTypeChecker {
 		if (!ei.constructors.exists(ctorName))
 			return;
 		var ctorArgs = ei.constructors.get(ctorName);
-		var bindings = buildGenericBindings(ei.params, typeParams);
+		var bindings = buildGenericBindings(ei.params, typeParams, env, pos);
 		for (i in 0...ctorArgs.length) {
 			if (i >= args.length)
 				break;
@@ -906,13 +906,20 @@ class StaticTypeChecker {
 		return applyBindings(tdef.type, bindings);
 	}
 
-	function buildGenericBindings(paramNames:Array<String>, typeArgs:Array<TypeDecl>):Map<String, TypeDecl> {
+	function buildGenericBindings(params:Array<TypeParamDef>, typeArgs:Array<TypeDecl>, env:LocalEnv = null, pos:Pos = null):Map<String, TypeDecl> {
 		var m = new Map<String, TypeDecl>();
-		if (paramNames == null || typeArgs == null)
+		if (params == null || typeArgs == null)
 			return m;
-		for (i in 0...paramNames.length) {
-			if (i < typeArgs.length)
-				m.set(paramNames[i], typeArgs[i]);
+		for (i in 0...params.length) {
+			if (i < typeArgs.length) {
+				var pDef = params[i];
+				var actualType = typeArgs[i];
+				m.set(pDef.name, actualType);
+				if (pDef.constraint != null && env != null) {
+					var expectedConstraint = applyBindings(pDef.constraint, m);
+					checkCompatibility(actualType, expectedConstraint, env, pos != null ? pos : {line: 0, col: 0}, 'Type parameter ${pDef.name} constraint');
+				}
+			}
 		}
 		return m;
 	}
@@ -1388,7 +1395,7 @@ class LocalEnv {
 @:allow(haxiom)
 class ClassInfo {
 	var name:String;
-	var params:Array<String>;
+	var params:Array<TypeParamDef>;
 	var isAbstract:Bool = false;
 	var parentName:Null<String> = null;
 	var interfaces:Array<String> = [];
@@ -1407,7 +1414,7 @@ class ClassInfo {
 	var fields:Map<String, {type:TypeDecl, isStatic:Bool, isPublic:Bool, ?meta:Array<{name:String, params:Array<Expr>}>}> = new Map();
 	var meta:Null<Array<{name:String, params:Array<Expr>}>> = null;
 
-	function new(name:String, params:Array<String>) {
+	function new(name:String, params:Array<TypeParamDef>) {
 		this.name = name;
 		this.params = params;
 	}
@@ -1416,10 +1423,10 @@ class ClassInfo {
 @:allow(haxiom)
 class EnumInfo {
 	var name:String;
-	var params:Array<String>;
+	var params:Array<TypeParamDef>;
 	var constructors:Map<String, Array<FunctionArg>> = new Map();
 
-	function new(name:String, params:Array<String>) {
+	function new(name:String, params:Array<TypeParamDef>) {
 		this.name = name;
 		this.params = params;
 	}
@@ -1429,9 +1436,9 @@ class EnumInfo {
 class TypedefInfo {
 	var name:String;
 	var type:TypeDecl;
-	var params:Array<String>;
+	var params:Array<TypeParamDef>;
 
-	function new(name:String, type:TypeDecl, params:Array<String>) {
+	function new(name:String, type:TypeDecl, params:Array<TypeParamDef>) {
 		this.name = name;
 		this.type = type;
 		this.params = params;

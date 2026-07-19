@@ -334,6 +334,16 @@ class TestStaticTypeChecker {
             '}'
         );
 
+        // 24. Generic constraint violation should fail static checking
+        // ---------------------------------------------------------------
+        expectTypeError("Generic constraint violation",
+            'class Base {}\n' +
+            'class Container<T:Base> {\n' +
+            '    public function new() {}\n' +
+            '}\n' +
+            'var c = new Container<String>();'
+        );
+
         // ---------------------------------------------------------------
         // 24. Static type checking is disabled by default
         // ---------------------------------------------------------------

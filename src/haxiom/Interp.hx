@@ -131,7 +131,7 @@ typedef ClassMethodInfo = {
 @:allow(haxiom)
 class HaxiomClass {
 	var name:String;
-	var params:Array<String> = [];
+	var params:Array<TypeParamDef> = [];
 	var parentType:TypeDecl;
 	var parent:HaxiomClass;
 	var isAbstract:Bool = false;
@@ -159,7 +159,7 @@ class HaxiomClass {
 @:allow(haxiom)
 class HaxiomInterface {
 	var name:String;
-	var params:Array<String> = [];
+	var params:Array<TypeParamDef> = [];
 	var fields:Map<String, {
 		name:String,
 		type:Null<TypeDecl>,
@@ -171,6 +171,7 @@ class HaxiomInterface {
 		args:Array<FunctionArg>,
 		retType:Null<TypeDecl>,
 		?body:Null<Expr>,
+		?params:Array<TypeParamDef>,
 		?meta:Array<{name:String, params:Array<Dynamic>}>
 	}> = new Map();
 	var parents:Array<TypeDecl> = [];
@@ -197,7 +198,7 @@ class HaxiomInstance {
 class HaxiomEnum {
 	var name:String;
 	var constructors:Map<String, Array<{name:String, type:Null<TypeDecl>}>> = new Map();
-	var params:Array<String> = [];
+	var params:Array<TypeParamDef> = [];
 
 	function new(name:String) {
 		this.name = name;
@@ -226,7 +227,7 @@ class HaxiomEnumInstance {
 @:allow(haxiom)
 class HaxiomAbstract {
 	var name:String;
-	var params:Array<String> = [];
+	var params:Array<TypeParamDef> = [];
 	var underlyingType:TypeDecl;
 	var fields:Map<String, {
 		name:String,
@@ -466,9 +467,9 @@ class HaxiomMeta {
 class HaxiomTypedef {
 	var name:String;
 	var type:TypeDecl;
-	var params:Array<String> = [];
+	var params:Array<TypeParamDef> = [];
 
-	function new(name:String, type:TypeDecl, ?params:Array<String>) {
+	function new(name:String, type:TypeDecl, ?params:Array<TypeParamDef>) {
 		this.name = name;
 		this.type = type;
 		this.params = params != null ? params : [];
@@ -3359,7 +3360,7 @@ class Interp {
 								var itfBindings = new Map<String, TypeDecl>();
 								if (itf.params != null) {
 									for (i in 0...itf.params.length) {
-										var paramName = itf.params[i];
+										var paramName = itf.params[i].name;
 										var boundType = (itfConcreteParams != null && i < itfConcreteParams.length) ? itfConcreteParams[i] : TPath(["Dynamic"],
 											[]);
 										itfBindings.set(itf.name + "." + paramName, boundType);
@@ -3404,7 +3405,7 @@ class Interp {
 													var pBindings = new Map<String, TypeDecl>();
 													if (pItf.params != null) {
 														for (i in 0...pItf.params.length) {
-															var paramName = pItf.params[i];
+															var paramName = pItf.params[i].name;
 															var boundType = (pConcreteParams != null && i < pConcreteParams.length) ? pConcreteParams[i] : TPath(["Dynamic"],
 																[]);
 															boundType = resolveGenericType(boundType, currentItfBindings, scope);
@@ -5126,7 +5127,7 @@ class Interp {
 						var tdef:HaxiomTypedef = cast cls;
 						var nextBindings = new Map<String, TypeDecl>();
 						for (i in 0...tdef.params.length) {
-							var paramName = tdef.params[i];
+							var paramName = tdef.params[i].name;
 							if (params != null && i < params.length) {
 								nextBindings.set(paramName, resolveType(params[i], scope));
 							}
@@ -5235,10 +5236,17 @@ class Interp {
 			childBindings:Map<String, TypeDecl> = null, scope:Scope = null) {
 		if (cls.params != null) {
 			for (i in 0...cls.params.length) {
-				var paramName = cls.params[i];
+				var paramDef = cls.params[i];
+				var paramName = paramDef.name;
 				var boundType = (concreteParams != null && i < concreteParams.length) ? concreteParams[i] : TPath(["Dynamic"], []);
 				if (childClassName != null && childBindings != null) {
 					boundType = resolveGenericTypeInBindings(boundType, childClassName, childBindings);
+				}
+				if (paramDef.constraint != null && boundType != null) {
+					var expectedConstraint = resolveGenericType(paramDef.constraint, inst.genericBindings, scope);
+					if (!checkTypeCompatibility(boundType, expectedConstraint, scope)) {
+						throw 'Type mismatch: type parameter ${paramName} does not satisfy constraint ${typeToString(expectedConstraint)}';
+					}
 				}
 				inst.genericBindings.set(cls.name + "." + paramName, boundType);
 			}
@@ -5274,6 +5282,42 @@ class Interp {
 			}
 		}
 		return false;
+	}
+
+	public function checkTypeCompatibility(typeA:TypeDecl, typeB:TypeDecl, scope:Scope):Bool {
+		if (typeA == null || typeB == null)
+			return true;
+		if (typesEqual(typeA, typeB))
+			return true;
+		switch [typeA, typeB] {
+			case [TPath(pathA, _), TPath(pathB, _)]:
+				var nameA = pathA.join(".");
+				var nameB = pathB.join(".");
+				if (nameA == nameB || nameB == "Dynamic")
+					return true;
+				if (scope != null && scope.exists(nameA)) {
+					var clsA = scope.get(nameA);
+					if (Std.isOfType(clsA, HaxiomClass)) {
+						var curr:HaxiomClass = cast clsA;
+						while (curr != null) {
+							if (curr.name == nameB)
+								return true;
+							for (itf in curr.interfaces) {
+								switch (itf) {
+									case TPath(itfPath, _):
+										if (isInterfaceCompatible(itfPath.join("."), nameB, scope))
+											return true;
+									default:
+								}
+							}
+							curr = curr.parent;
+						}
+					}
+				}
+				return false;
+			default:
+				return true;
+		}
 	}
 
 	public function checkType(val:Dynamic, type:TypeDecl, scope:Scope, ?genericBindings:Map<String, TypeDecl>):Void {

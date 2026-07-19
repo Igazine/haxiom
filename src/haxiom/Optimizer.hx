@@ -184,6 +184,7 @@ class Optimizer {
 					isPublic: m.isPublic,
 					isOverride: m.isOverride,
 					isAbstract: m.isAbstract,
+					params: m.params,
 					meta: m.meta
 				});
 				EClass(name, foldedFields, foldedMethods, parent, interfaces, params, meta);
@@ -191,8 +192,8 @@ class Optimizer {
 			case EBlock(exprs):
 				EBlock(exprs.map(foldConstants));
 
-			case EFunction(name, args, retType, body):
-				EFunction(name, args, retType, foldConstants(body));
+			case EFunction(name, args, retType, body, params):
+				EFunction(name, args, retType, foldConstants(body), params);
 
 			case EIf(cond, e1, e2):
 				var cond_f = foldConstants(cond);
@@ -274,6 +275,7 @@ class Optimizer {
 					args: m.args,
 					retType: m.retType,
 					body: m.body == null ? null : foldConstants(m.body),
+					params: m.params,
 					meta: m.meta
 				});
 				EInterface(name, foldedFields, foldedMethods, parents, params, meta);
@@ -305,6 +307,7 @@ class Optimizer {
 					body: foldConstants(m.body),
 					isStatic: m.isStatic,
 					isPublic: m.isPublic,
+					params: m.params,
 					meta: m.meta
 				});
 				EAbstract(name, underlyingType, foldedFields, foldedMethods, params, meta);
@@ -473,6 +476,7 @@ class Optimizer {
 							isPublic: m.isPublic,
 							isOverride: m.isOverride,
 							isAbstract: m.isAbstract,
+							params: m.params,
 							meta: m.meta
 						};
 					}
@@ -499,9 +503,9 @@ class Optimizer {
 				});
 				return modified ? {def: EClass(name, finalFieldsMapped, finalMethods, parent, interfaces, params, meta), pos: expr.pos} : expr;
 
-			case EFunction(name, args, retType, body):
+			case EFunction(name, args, retType, body, params):
 				var newBody = dceExpr(body);
-				return newBody != body ? {def: EFunction(name, args, retType, newBody), pos: expr.pos} : expr;
+				return newBody != body ? {def: EFunction(name, args, retType, newBody, params), pos: expr.pos} : expr;
 
 			case EIf(cond, e1, e2):
 				var nc = dceExpr(cond);
@@ -703,6 +707,7 @@ class Optimizer {
 							body: nb,
 							isStatic: m.isStatic,
 							isPublic: m.isPublic,
+							params: m.params,
 							meta: m.meta
 						};
 					}

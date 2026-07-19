@@ -268,17 +268,31 @@ class Parser {
 		}
 	}
 
-	function parseOptParams():Array<String> {
-		var params = [];
+	function parseOptParams():Array<TypeParamDef> {
+		var params:Array<TypeParamDef> = [];
 		if (match(TLess)) {
-			params.push(expectIdent());
+			params.push(parseTypeParamDef());
 			while (match(TComma)) {
-				params.push(expectIdent());
+				params.push(parseTypeParamDef());
 			}
 			checkAndSplitShiftRight();
 			expect(TGreater);
 		}
 		return params;
+	}
+
+	function parseTypeParamDef():TypeParamDef {
+		var name = expectIdent();
+		var constraint:TypeDecl = null;
+		if (match(TColon)) {
+			if (match(TParenOpen)) {
+				constraint = parseType();
+				expect(TParenClose);
+			} else {
+				constraint = parseType();
+			}
+		}
+		return {name: name, constraint: constraint};
 	}
 
 	function parsePropertyAccessor():String {
@@ -441,6 +455,7 @@ class Parser {
 				} else {
 					mName = expectIdent();
 				}
+				var mParams = parseOptParams();
 				var mArgs = parseArgs();
 				var mRetType = parseOptType();
 				var mBody = null;
@@ -458,6 +473,7 @@ class Parser {
 					isPublic: isPublic,
 					isOverride: isOverride,
 					isAbstract: isAbstractMethod,
+					params: mParams,
 					meta: fMeta
 				});
 			} else {
@@ -1214,10 +1230,11 @@ class Parser {
 				if (isIdent(peek())) {
 					name = expectIdent();
 				}
+				var fnParams = parseOptParams();
 				var args = parseArgs();
 				var retType = parseOptType();
 				var body = parseBlock();
-				return mk(EFunction(name, args, retType, body), t.pos);
+				return mk(EFunction(name, args, retType, body, fnParams), t.pos);
 			case TBracketOpen:
 				next();
 				skipNewlines();
@@ -1325,29 +1342,34 @@ class Parser {
 	function parseType(allowArrow:Bool = true):TypeDecl {
 		if (match(TBraceOpen)) {
 			var fields = [];
+			var extendsTypes = [];
 			skipNewlines();
-			if (! is(TBraceClose)) {
-				match(TVar);
-				var opt = match(TQuestion);
-				var fName = expectIdent();
-				expect(TColon);
-				var fType = parseType(allowArrow);
-				fields.push({name: fName, type: fType, opt: opt});
-				while (match(TComma) || match(TSemicolon)) {
+			while (!is(TBraceClose) && !is(TEof)) {
+				skipNewlines();
+				if (is(TBraceClose))
+					break;
+
+				if (match(TGreater)) {
 					skipNewlines();
-					if (is(TBraceClose))
-						break;
+					var parentType = parseType(false);
+					extendsTypes.push(parentType);
+				} else {
 					match(TVar);
-					var nextOpt = match(TQuestion);
-					var nextName = expectIdent();
+					var opt = match(TQuestion);
+					var fName = expectIdent();
 					expect(TColon);
-					var nextType = parseType(allowArrow);
-					fields.push({name: nextName, type: nextType, opt: nextOpt});
+					var fType = parseType(allowArrow);
+					fields.push({name: fName, type: fType, opt: opt});
+				}
+
+				skipNewlines();
+				if (match(TComma) || match(TSemicolon)) {
+					skipNewlines();
 				}
 			}
 			skipNewlines();
 			expect(TBraceClose);
-			var baseType = TAnonymous(fields);
+			var baseType = extendsTypes.length > 0 ? TAnonymous(fields, extendsTypes) : TAnonymous(fields);
 			if (allowArrow && match(TArrow)) {
 				var ret = parseType(allowArrow);
 				return TFun([baseType], ret);

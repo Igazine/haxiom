@@ -122,6 +122,7 @@ class MacroExpander {
                     body: m.body == null ? null : expand(m.body, interp),
                     isStatic: m.isStatic,
                     isPublic: m.isPublic,
+                    params: m.params,
                     isOverride: m.isOverride,
                     isAbstract: m.isAbstract,
                     meta: m.meta
@@ -141,8 +142,8 @@ class MacroExpander {
             case EBlock(exprs):
                 EBlock(exprs.map(e -> expand(e, interp)));
 
-            case EFunction(name, args, retType, body):
-                EFunction(name, args, retType, expand(body, interp));
+            case EFunction(name, args, retType, body, params):
+                EFunction(name, args, retType, expand(body, interp), params);
 
             case EIf(cond, e1, e2):
                 EIf(expand(cond, interp), expand(e1, interp), e2 == null ? null : expand(e2, interp));
@@ -220,6 +221,7 @@ class MacroExpander {
                     body: expand(m.body, interp),
                     isStatic: m.isStatic,
                     isPublic: m.isPublic,
+                    params: m.params,
                     meta: m.meta
                 });
                 var expandedFields = fields.map(f -> {

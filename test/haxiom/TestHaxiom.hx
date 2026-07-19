@@ -532,6 +532,56 @@ class TestHaxiom {
 		hEnumAbs.interpret(script23d);
 		trace("SUCCESS: Enum abstract syntax and value synthesis (enum abstract Name(Type)) verified.");
 
+		// 23e. Anonymous Structure Extension (> ParentTypedef)
+		var hStructExt = new Haxiom();
+		var script23e = '
+            typedef Point2D = {
+                var x:Int;
+                var y:Int;
+            }
+
+            typedef Point3D = {
+                > Point2D,
+                var z:Int;
+            }
+
+            var p:Point3D = { x: 10, y: 20, z: 30 };
+            if (p.x != 10 || p.y != 20 || p.z != 30) {
+                throw "Structure extension field reading failed";
+            }
+        ';
+		hStructExt.interpret(script23e);
+		trace("SUCCESS: Anonymous structure extension (> ParentTypedef) verified.");
+
+		// 23f. Generic Type Parameter Constraints (T:Constraint)
+		var hGenericConst = new Haxiom();
+		var script23f = '
+            class Measurable {
+                public var size:Int;
+                public function new(s:Int) {
+                    this.size = s;
+                }
+            }
+
+            class Container<T:Measurable> {
+                public var item:T;
+                public function new(item:T) {
+                    this.item = item;
+                }
+                public function getSize():Int {
+                    return this.item.size;
+                }
+            }
+
+            var m = new Measurable(42);
+            var box = new Container<Measurable>(m);
+            if (box.getSize() != 42) {
+                throw "Generic constraint method call failed";
+            }
+        ';
+		hGenericConst.interpret(script23f);
+		trace("SUCCESS: Generic type parameter constraints (T:Constraint) verified.");
+
 		// 24. Call Stack & Stack Trace Diagnostics
 		try {
 			var script24 = '
