@@ -3654,13 +3654,69 @@ class Interp {
 
 				if (shortName == "*") {
 					var parentPath = path.slice(0, path.length - 1).join(".");
+					var prefix = parentPath + ".";
+
+					// 1. Scan FFI exposed abstracts
+					for (fqName in haxiom.FFI.exposedAbstracts.keys()) {
+						if (StringTools.startsWith(fqName, prefix) && isImportWhitelisted(fqName)) {
+							var absInfo = haxiom.FFI.exposedAbstracts.get(fqName);
+							var implCls = resolveAbstractImpl(fqName, absInfo.implClass);
+							if (implCls != null) {
+								var parts = fqName.split(".");
+								var clsShort = parts[parts.length - 1];
+								scope.declare(clsShort, implCls);
+							}
+						}
+					}
+
+					// 2. Scan Host importWhitelist
+					if (importWhitelist != null) {
+						for (pattern in importWhitelist) {
+							if (StringTools.startsWith(pattern, prefix)) {
+								var parts = pattern.split(".");
+								var clsShort = parts[parts.length - 1];
+								var nativeClass = resolveNativeClass(pattern);
+								if (nativeClass != null) {
+									scope.declare(clsShort, nativeClass);
+									continue;
+								}
+								var nativeEnum = Type.resolveEnum(pattern);
+								if (nativeEnum != null) {
+									scope.declare(clsShort, nativeEnum);
+									continue;
+								}
+							}
+						}
+					}
+
+					// 3. Scan autoWhitelistedTypes
+					isAutoWhitelisted(""); // Ensure autoWhitelistedTypes is initialized
+					if (autoWhitelistedTypes != null) {
+						for (fq in autoWhitelistedTypes.keys()) {
+							if (StringTools.startsWith(fq, prefix) && isImportWhitelisted(fq)) {
+								var parts = fq.split(".");
+								var clsShort = parts[parts.length - 1];
+								var nativeClass = resolveNativeClass(fq);
+								if (nativeClass != null) {
+									scope.declare(clsShort, nativeClass);
+									continue;
+								}
+								var nativeEnum = Type.resolveEnum(fq);
+								if (nativeEnum != null) {
+									scope.declare(clsShort, nativeEnum);
+									continue;
+								}
+							}
+						}
+					}
+
+					// 4. Scan StdlibRegistry
 					var registryCls = Type.resolveClass("haxiom.macro.StdlibRegistry");
 					if (registryCls != null) {
 						var classes:Map<String, Dynamic> = Reflect.field(registryCls, "classes");
 						if (classes != null) {
-							var prefix = parentPath + ".";
 							for (fq in classes.keys()) {
-								if (StringTools.startsWith(fq, prefix)) {
+								if (StringTools.startsWith(fq, prefix) && isImportWhitelisted(fq)) {
 									var parts = fq.split(".");
 									var clsShort = parts[parts.length - 1];
 									scope.declare(clsShort, classes.get(fq));
@@ -3668,6 +3724,25 @@ class Interp {
 							}
 						}
 					}
+
+					// 5. Standard Haxe core packages check (e.g. haxe.ds.*, haxe.io.*)
+					var commonStdClasses = [
+						"haxe.ds.StringMap", "haxe.ds.IntMap", "haxe.ds.ObjectMap", "haxe.ds.Vector", "haxe.ds.List",
+						"haxe.ds.EnumValueMap", "haxe.ds.Option", "haxe.ds.Either", "haxe.io.Bytes", "haxe.io.BytesOutput",
+						"haxe.io.BytesInput", "haxe.io.Path"
+					];
+					for (fq in commonStdClasses) {
+						if (StringTools.startsWith(fq, prefix) && isImportWhitelisted(fq)) {
+							var parts = fq.split(".");
+							var clsShort = parts[parts.length - 1];
+							var nativeClass = resolveNativeClass(fq);
+							if (nativeClass != null) {
+								scope.declare(clsShort, nativeClass);
+							}
+						}
+					}
+
+					// 6. Module resolver
 					if (moduleResolver != null) {
 						var moduleScope = getOrLoadModule(parentPath);
 						if (moduleScope != null) {
@@ -3677,7 +3752,7 @@ class Interp {
 						}
 					}
 
-					// Check local package namespaces in globals
+					// 7. Check local package namespaces in globals/scope
 					var parts = parentPath.split(".");
 					var currentObj:Dynamic = null;
 					if (scope.exists(parts[0])) {

@@ -474,6 +474,25 @@ class TestHaxiom {
 		hComments.interpret(script23b);
 		trace("SUCCESS: Block comments parsing verified.");
 
+		// 23c. Wildcard Package Import support (import package.*;)
+		var hWildcard = new Haxiom();
+		var script23c = '
+            import haxe.ds.*;
+
+            var sm = new StringMap();
+            sm.set("key", 100);
+            var im = new IntMap();
+            im.set(42, "val");
+            var lst = new List();
+            lst.add("item");
+
+            if (sm.get("key") != 100 || im.get(42) != "val" || lst.first() != "item") {
+                throw "Wildcard package import resolution failed";
+            }
+        ';
+		hWildcard.interpret(script23c);
+		trace("SUCCESS: Wildcard package imports (import package.*;) verified.");
+
 		// 24. Call Stack & Stack Trace Diagnostics
 		try {
 			var script24 = '
