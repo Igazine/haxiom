@@ -713,10 +713,95 @@ class LibRun {
 				Sys.println("--------------------------------------------------");
 			}
 
+			inspectChunkContents(chunk);
+
 			Sys.println(" Bytecode Status:    VALID & SUITABLE FOR HOST RUNTIME");
 			Sys.println("==================================================");
 		} catch (e:Dynamic) {
 			Sys.println(' [!] Error inspecting payload: ${e}');
+		}
+	}
+
+	static function inspectChunkContents(chunk:haxiom.VM.BytecodeChunk):Void {
+		// 1. Source Files
+		var filesMap = new Map<String, Bool>();
+		var filesList = [];
+		if (chunk.positions != null) {
+			for (p in chunk.positions) {
+				if (p != null && p.file != null && p.file.length > 0) {
+					if (!filesMap.exists(p.file)) {
+						filesMap.set(p.file, true);
+						filesList.push(p.file);
+					}
+				}
+			}
+		}
+
+		if (filesList.length > 0) {
+			Sys.println(' Included Source Files (${filesList.length}):');
+			for (f in filesList) {
+				Sys.println('   * ${f}');
+			}
+			Sys.println("--------------------------------------------------");
+		}
+
+		// 2. Compiled Type Declarations
+		var compiledTypes:Array<String> = [];
+		if (chunk.constants != null) {
+			for (c in chunk.constants) {
+				if (c != null && Reflect.hasField(c, "def")) {
+					var e:Expr = cast c;
+					switch (e.def) {
+						case EPackage(path):
+							compiledTypes.push('package ${path.join(".")}');
+						case EClass(name, fields, methods, parent, interfaces, params, meta):
+							var details = 'class ${name}';
+							if (parent != null) {
+								switch (parent) {
+									case TPath(pPath, _): details += ' extends ${pPath.join(".")}';
+									default:
+								}
+							}
+							if (interfaces != null && interfaces.length > 0) {
+								var itfNames = [];
+								for (itf in interfaces) {
+									switch (itf) {
+										case TPath(iPath, _): itfNames.push(iPath.join("."));
+										default:
+									}
+								}
+								details += ' implements ${itfNames.join(", ")}';
+							}
+							var mNames = [for (m in methods) m.name];
+							details += ' [${fields.length} fields, ${methods.length} methods: ${mNames.join(", ")}]';
+							compiledTypes.push(details);
+
+						case EInterface(name, fields, methods, parents, params, meta):
+							var mNames = [for (m in methods) m.name];
+							compiledTypes.push('interface ${name} [${methods.length} methods: ${mNames.join(", ")}]');
+
+						case EEnum(name, constructors, params):
+							var ctorNames = [for (ctor in constructors) ctor.name];
+							compiledTypes.push('enum ${name} [${constructors.length} ctors: ${ctorNames.join(", ")}]');
+
+						case EAbstract(name, underlyingType, fields, methods, params, meta):
+							compiledTypes.push('abstract ${name} [${fields.length} fields, ${methods.length} methods]');
+
+						case ETypedef(name, type, params):
+							compiledTypes.push('typedef ${name}');
+
+						default:
+					}
+				}
+			}
+		}
+
+		if (compiledTypes.length > 0) {
+			Sys.println(' Compiled Script Types & Declarations (${compiledTypes.length}):');
+			for (t in compiledTypes) {
+				Sys.println('   + ${t}');
+			}
+			Sys.println("--------------------------------------------------");
 		}
 	}
 }
