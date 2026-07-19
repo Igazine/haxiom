@@ -440,7 +440,7 @@ class Haxiom {
 	 * @param debugMode If true, embeds debug symbols for local variables and positions.
 	 * @return Serialized HXBC VM bytecode bytes.
 	 */
-	public function compileToBytecodeBytes(source:String, ?filename:String, ?key:HXBCKey, ?debugMode:Bool = false):haxe.io.Bytes {
+	public function compileToBytecodeBytes(source:String, ?filename:String, ?key:HXBCKey, ?debugMode:Bool = false, ?compress:Bool = false):haxe.io.Bytes {
 		// In debug mode, disable DCE and the AST cache so all local variables are preserved
 		// for debug symbol capture. The DCE'd (release) AST must not bleed through the cache.
 		var prevDCE = enableDCE;
@@ -455,7 +455,7 @@ class Haxiom {
 		if (ast == null)
 			return null;
 		var chunk = BytecodeCompiler.compile(ast, null, true, false, debugMode);
-		return Serializer.serializeBytecode(chunk, key);
+		return Serializer.serializeBytecode(chunk, key, compress);
 	}
 
 	/**
@@ -464,13 +464,14 @@ class Haxiom {
 	 * @param ast The root AST node representation of the script.
 	 * @param key Optional encryption key to obfuscate/secure the bytecode payload.
 	 * @param debugMode If true, embeds debug symbols for local variables and positions.
+	 * @param compress If true, applies LZ4 compression to the serialized bytecode payload.
 	 * @return Serialized HXBC VM bytecode bytes.
 	 */
-	public function compileASTToBytecodeBytes(ast:haxiom.AST.Expr, ?key:HXBCKey, ?debugMode:Bool = false):haxe.io.Bytes {
+	public function compileASTToBytecodeBytes(ast:haxiom.AST.Expr, ?key:HXBCKey, ?debugMode:Bool = false, ?compress:Bool = false):haxe.io.Bytes {
 		if (ast == null)
 			return null;
 		var chunk = BytecodeCompiler.compile(ast, null, true, false, debugMode);
-		return Serializer.serializeBytecode(chunk, key);
+		return Serializer.serializeBytecode(chunk, key, compress);
 	}
 
 	/**

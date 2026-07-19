@@ -582,6 +582,40 @@ class TestHaxiom {
 		hGenericConst.interpret(script23f);
 		trace("SUCCESS: Generic type parameter constraints (T:Constraint) verified.");
 
+		// 23g. LZ4 Bytecode Compression & Execution
+		var hLz4 = new Haxiom();
+		var script23g = '
+            class BigData {
+                public var name:String;
+                public var description:String;
+                public var category:String;
+                public function new() {
+                    this.name = "Haxiom Bytecode Compiler and Virtual Machine Execution Engine";
+                    this.description = "Haxiom Bytecode Compiler and Virtual Machine Execution Engine providing cross-target sandboxed execution";
+                    this.category = "Haxiom Bytecode Compiler and Virtual Machine Execution Engine providing cross-target sandboxed execution";
+                }
+                public function computeSum():Int {
+                    var sum = 0;
+                    for (i in 0...1000) {
+                        sum += i;
+                    }
+                    return sum;
+                }
+            }
+            var b = new BigData();
+            b.computeSum();
+        ';
+		var rawBytes = hLz4.compileToBytecodeBytes(script23g, "test23g", null, false, false);
+		var compressedBytes = hLz4.compileToBytecodeBytes(script23g, "test23g", null, false, true);
+		if (compressedBytes.length >= rawBytes.length) {
+			throw 'LZ4 compression failed to reduce payload size (${compressedBytes.length} >= ${rawBytes.length})';
+		}
+		var result:Int = hLz4.executeBytecodeBytes(compressedBytes);
+		if (result != 499500) {
+			throw "LZ4 compressed bytecode execution yielded incorrect result: " + result;
+		}
+		trace('SUCCESS: LZ4 Bytecode Compression & Execution verified (${rawBytes.length} bytes -> ${compressedBytes.length} bytes).');
+
 		// 24. Call Stack & Stack Trace Diagnostics
 		try {
 			var script24 = '

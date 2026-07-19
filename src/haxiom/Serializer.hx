@@ -78,7 +78,7 @@ class Serializer {
 		return Reflect.hasField(val, "def") && Reflect.hasField(val, "pos");
 	}
 
-	static function serializeBytecode(chunk:BytecodeChunk, ?key:HXBCKey):Bytes {
+	static function serializeBytecode(chunk:BytecodeChunk, ?key:HXBCKey, ?compress:Bool = false):Bytes {
 		var payloadOut = new BytesOutput();
 		payloadOut.bigEndian = false;
 
@@ -209,14 +209,19 @@ class Serializer {
 			encrypted = true;
 		}
 
+		var isCompressed = compress == true;
+		if (isCompressed) {
+			payloadBytes = LZ4.compress(payloadBytes);
+		}
+
 		// Assemble final output
 		var headerOut = new BytesOutput();
 		headerOut.bigEndian = false;
 		headerOut.writeString("HXBC");
 		headerOut.writeByte(1); // Version 1
 
-		// Flags byte: bit 0 = isAsync, bit 1 = isEncrypted
-		var flags = (chunk.isAsync ? 1 : 0) | (encrypted ? 2 : 0);
+		// Flags byte: bit 0 = isAsync, bit 1 = isEncrypted, bit 2 = isCompressed
+		var flags = (chunk.isAsync ? 1 : 0) | (encrypted ? 2 : 0) | (isCompressed ? 4 : 0);
 		headerOut.writeByte(flags);
 
 		headerOut.writeInt32(chunk.maxSlots);
@@ -246,6 +251,7 @@ class Serializer {
 		var flags = input.readByte();
 		var isAsync = (flags & 1) == 1;
 		var isEncrypted = (flags & 2) == 2;
+		var isCompressed = (flags & 4) == 4;
 		var maxSlots = input.readInt32();
 		var checksum = input.readInt32();
 
@@ -258,6 +264,11 @@ class Serializer {
 
 		// Read payload
 		var payloadBytes = input.read(input.length - 14);
+
+		// Decompress if compressed
+		if (isCompressed) {
+			payloadBytes = LZ4.decompress(payloadBytes);
+		}
 
 		// Decrypt if encrypted
 		if (isEncrypted) {

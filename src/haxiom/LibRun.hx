@@ -15,10 +15,13 @@ class LibRun {
 	static public function main() {
 		var args = Sys.args();
 		var enableStatic = false;
+		var compress = false;
 		var cleanArgs = [];
 		for (arg in args) {
 			if (arg == "--static" || arg == "--static-types") {
 				enableStatic = true;
+			} else if (arg == "--compress" || arg == "-c") {
+				compress = true;
 			} else {
 				cleanArgs.push(arg);
 			}
@@ -26,25 +29,33 @@ class LibRun {
 		args = cleanArgs;
 
 		if (args.length < 1) {
-			Sys.println('Usage: haxelib run haxiom <command> <input> [--static]');
+			Sys.println('Usage: haxelib run haxiom <command> <input> [--static] [-c/--compress]');
+			Sys.println('Commands: bc (bytecode compile), inspect (bytecode inspector)');
 			Sys.exit(1);
 		}
 		var workingDir = args.pop();
 		var command = args.shift();
 		if (command == null) {
-			Sys.println('Usage: haxelib run haxiom <command> <input> [--static]');
+			Sys.println('Usage: haxelib run haxiom <command> <input> [--static] [-c/--compress]');
 			Sys.exit(1);
 		}
 		switch command.toLowerCase() {
 			case 'bc':
 				try {
-					bytecodeCompile(workingDir, args.shift(), args.shift(), enableStatic);
+					bytecodeCompile(workingDir, args.shift(), args.shift(), enableStatic, compress);
 				} catch (e:Dynamic) {
 					Sys.println('Compilation error: ${e}');
 					Sys.exit(1);
 				}
+			case 'inspect':
+				try {
+					bytecodeInspect(workingDir, args.shift(), args.shift());
+				} catch (e:Dynamic) {
+					Sys.println('Inspection error: ${e}');
+					Sys.exit(1);
+				}
 			default:
-				Sys.println('Unknown command\nUsage: haxelib run haxiom <command> <input> [--static]');
+				Sys.println('Unknown command: ${command}\nUsage: haxelib run haxiom <command> <input> [--static] [-c/--compress]');
 				Sys.exit(1);
 		}
 	}
@@ -394,9 +405,9 @@ class LibRun {
 		}
 	}
 
-	public static function bytecodeCompile(workingDir:String, input:String, ?key:String, ?staticTypes:Bool = false) {
+	public static function bytecodeCompile(workingDir:String, input:String, ?key:String, ?staticTypes:Bool = false, ?compress:Bool = false) {
 		if (input == null) {
-			throw 'Usage: haxelib run haxiom bc <input> <key> [--static]';
+			throw 'Usage: haxelib run haxiom bc <input> [key] [--static] [-c/--compress]';
 		}
 
 		// Normalize workingDir to ensure trailing slash
@@ -430,17 +441,17 @@ class LibRun {
 					relFilePath = file.substring(workingDir.length);
 				}
 				try {
-					compileSingleFile(workingDir, relFilePath, key, staticTypes);
+					compileSingleFile(workingDir, relFilePath, key, staticTypes, compress);
 				} catch (e:Dynamic) {
 					Sys.println('Failed to compile ${relFilePath}: ${e}');
 				}
 			}
 		} else {
-			compileSingleFile(workingDir, input, key, staticTypes);
+			compileSingleFile(workingDir, input, key, staticTypes, compress);
 		}
 	}
 
-	static function compileSingleFile(workingDir:String, input:String, ?key:String, ?staticTypes:Bool = false) {
+	static function compileSingleFile(workingDir:String, input:String, ?key:String, ?staticTypes:Bool = false, ?compress:Bool = false) {
 		var fullInputPath = workingDir + input;
 		final haxiom = new Haxiom();
 		haxiom.enableStaticTypes = staticTypes;
@@ -615,11 +626,97 @@ class LibRun {
 			StaticTypeChecker.check(optimizedAst, haxiom.interp);
 		}
 
-		final bytes = haxiom.compileASTToBytecodeBytes(optimizedAst, key != null ? new HXBCKey(key) : null);
+		final bytes = haxiom.compileASTToBytecodeBytes(optimizedAst, key != null ? new HXBCKey(key) : null, false, compress);
 
 		final output = haxe.io.Path.withoutExtension(input) + '.hxbc';
 		File.saveBytes(workingDir + output, bytes);
-		Sys.println('Successfully compiled and bundled ${input} to ${output} (${bytes.length} bytes)');
+		var compMsg = compress ? ' [LZ4 Compressed]' : '';
+		Sys.println('Successfully compiled and bundled ${input} to ${output} (${bytes.length} bytes)${compMsg}');
 		Sys.println('Bundled modules in dependency order: ' + sorted.join(', '));
+	}
+
+	public static function bytecodeInspect(workingDir:String, inputFile:String, ?keyStr:String) {
+		if (inputFile == null) {
+			Sys.println('Usage: haxelib run haxiom inspect <hxbc_file> [key]');
+			Sys.exit(1);
+		}
+
+		var fullPath = workingDir + inputFile;
+		if (!FileSystem.exists(fullPath)) {
+			fullPath = inputFile;
+			if (!FileSystem.exists(fullPath)) {
+				Sys.println('Error: File not found: ${inputFile}');
+				Sys.exit(1);
+			}
+		}
+
+		var bytes = File.getBytes(fullPath);
+		if (bytes.length < 14) {
+			Sys.println('Error: File is not a valid HXBC file (too short)');
+			Sys.exit(1);
+		}
+
+		var input = new haxe.io.BytesInput(bytes);
+		input.bigEndian = false;
+		var magic = input.readString(4);
+		if (magic != "HXBC") {
+			Sys.println('Error: File is not a valid HXBC file (invalid magic: ' + magic + ')');
+			Sys.exit(1);
+		}
+
+		var version = input.readByte();
+		var flags = input.readByte();
+		var isAsync = (flags & 1) == 1;
+		var isEncrypted = (flags & 2) == 2;
+		var isCompressed = (flags & 4) == 4;
+		var maxSlots = input.readInt32();
+		var checksum = input.readInt32();
+
+		Sys.println("==================================================");
+		Sys.println("              HAXIOM HXBC INSPECTOR               ");
+		Sys.println("==================================================");
+		Sys.println(' File Path:          ${inputFile}');
+		Sys.println(' Total File Size:    ${bytes.length} bytes');
+		Sys.println(' HXBC Version:       ${version}');
+		Sys.println(' Max Slots Required: ${maxSlots}');
+		Sys.println(' Asynchronous:      ${isAsync ? "YES" : "NO"}');
+		Sys.println(' Encrypted:          ${isEncrypted ? "YES" : "NO"}');
+		Sys.println(' LZ4 Compressed:     ${isCompressed ? "YES" : "NO"}');
+		Sys.println(' Checksum:           0x${StringTools.hex(checksum, 8)}');
+		Sys.println("--------------------------------------------------");
+
+		var key:HXBCKey = keyStr != null ? new HXBCKey(keyStr) : null;
+		if (isEncrypted && (key == null || !key.isValid())) {
+			Sys.println(" [!] Payload is encrypted. Provide decryption key to inspect internal payload details.");
+			Sys.println(" Usage: haxelib run haxiom inspect <hxbc_file> <key>");
+			return;
+		}
+
+		try {
+			var chunk = Serializer.deserializeBytecode(bytes, key);
+			var instCount = chunk.instructions != null ? chunk.instructions.length : 0;
+			var posCount = chunk.positions != null ? chunk.positions.length : 0;
+			var debugCount = chunk.debugSymbols != null ? chunk.debugSymbols.length : 0;
+			var constCount = chunk.constants != null ? chunk.constants.length : 0;
+
+			Sys.println(' Instruction Count:  ${instCount}');
+			Sys.println(' Constant Pool Size: ${constCount}');
+			Sys.println(' Debug Symbols:      ${debugCount}');
+			Sys.println(' Position Mapping:   ${posCount} entries');
+			Sys.println("--------------------------------------------------");
+
+			if (chunk.debugSymbols != null && chunk.debugSymbols.length > 0) {
+				Sys.println(" Debug Symbols & Local Variables:");
+				for (sym in chunk.debugSymbols) {
+					Sys.println('   - Slot ${sym.slot}: "${sym.name}" (start PC: ${sym.startIp}, end PC: ${sym.endIp})');
+				}
+				Sys.println("--------------------------------------------------");
+			}
+
+			Sys.println(" Bytecode Status:    VALID & SUITABLE FOR HOST RUNTIME");
+			Sys.println("==================================================");
+		} catch (e:Dynamic) {
+			Sys.println(' [!] Error inspecting payload: ${e}');
+		}
 	}
 }
