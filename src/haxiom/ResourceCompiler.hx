@@ -60,7 +60,9 @@ class ResourceCompiler {
 			}
 		}
 
-		// Resolve file bytes from disk
+		// Resolve file bytes from disk (requires sys target or AOT compilation to .hxbc)
+		var fileBytes:Bytes = null;
+		#if sys
 		var fullPath = relPath;
 		if (pos != null && pos.file != null && pos.file.length > 0) {
 			var dir = haxe.io.Path.directory(pos.file);
@@ -80,7 +82,10 @@ class ResourceCompiler {
 			}
 		}
 
-		var fileBytes = sys.io.File.getBytes(fullPath);
+		fileBytes = sys.io.File.getBytes(fullPath);
+		#else
+		throw 'Compile Error: Direct disk resource loading via @:haxiom.resource is not supported on non-sys targets (e.g. Browser JS). Compile scripts ahead-of-time to .hxbc bytecode format using `haxelib run haxiom bc` at ${pStr}';
+		#end
 
 		// Validation 2: Explicit initializer check (verify expr matches synthesized resource value)
 		if (expr != null) {
