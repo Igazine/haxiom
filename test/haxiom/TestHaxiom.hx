@@ -3610,6 +3610,53 @@ class TestHaxiom {
 			", "Security Error: Access to field", "Dynamic casting field access bypass check in VM=" + vmMode);
 		}
 
+		// 75. haxiom.HostRef Opaque Handle Verification
+		var hostRefEngine = new Haxiom();
+		var secretData = { secret: "SuperSecretHostData", value: 42 };
+		var handle = HostRef.wrap(secretData, hostRefEngine.interp);
+
+		// 1. Unwrap on Host side returns exact secretData object
+		var recovered:Dynamic = HostRef.unwrap(handle);
+		if (recovered == null || recovered.secret != "SuperSecretHostData") {
+			throw "FAIL: HostRef.unwrap failed to recover secretData!";
+		}
+
+		// 2. Pass handle to script and verify zero field exposure inside script
+		hostRefEngine.setGlobal("myHandle", handle);
+		var resField = hostRefEngine.interpret("myHandle.secret;");
+		if (resField != null) {
+			throw "FAIL: Guest script accessed internal HostRef field!";
+		}
+
+		// 3. Spoofed script object rejection
+		var spoofedObject = { secret: "SpoofedData" };
+		if (HostRef.unwrap(spoofedObject) != null) {
+			throw "FAIL: HostRef.unwrap accepted a spoofed script object!";
+		}
+
+		// 4. Memory safeguard tracking (maxMemory)
+		var memEngine = new Haxiom();
+		memEngine.maxMemory = 100; // Allow 100 units max memory
+		var h1 = HostRef.wrap("data1", memEngine.interp); // Uses 64 units -> 64/100
+		var memLimitCaught = false;
+		try {
+			var h2 = HostRef.wrap("data2", memEngine.interp); // Uses +64 units -> 128 > 100!
+		} catch (e:Dynamic) {
+			memLimitCaught = true;
+			trace("SUCCESS: Caught expected HostRef maxMemory safeguard limit breach: " + e);
+		}
+		if (!memLimitCaught) {
+			throw "FAIL: HostRef.wrap failed to trigger maxMemory safeguard limit!";
+		}
+
+		// 5. Free handle releases memory tracking
+		HostRef.free(h1);
+		if (HostRef.unwrap(h1) != null) {
+			throw "FAIL: HostRef.unwrap returned non-null for freed handle!";
+		}
+
+		trace("SUCCESS: haxiom.HostRef Opaque Handle Verification passed.");
+
 		trace("SUCCESS: Reflection API Sandbox Verification verified.");
 		trace("SUCCESS: Bytecode Verification & Safety Checks verified.");
 	}

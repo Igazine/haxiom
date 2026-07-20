@@ -520,7 +520,8 @@ class Interp {
 		"haxe.Exception",
 		"haxe.ValueException",
 		"haxe.IMap",
-		"haxe.DynamicAccess"
+		"haxe.DynamicAccess",
+		"haxiom.HostRef"
 	];
 
 	public var globals:Scope = new Scope();
