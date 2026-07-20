@@ -2129,6 +2129,29 @@ class TestHaxiom {
 			throw "FAIL: Disabling sandbox with importWhitelist = null threw error: " + e;
 		}
 
+		// F. Verify setFieldAccessFilter blocks unauthorized property walks (.stage / .parent.parent)
+		var caughtFilterError = false;
+		var hFilter = new Haxiom();
+		hFilter.setGlobal("mockNode", {
+			parent: {
+				stage: "SecretHostStage"
+			}
+		});
+		hFilter.setFieldAccessFilter(function(target:Dynamic, field:String):Bool {
+			if (field == "stage" || field == "root") return false;
+			return true;
+		});
+
+		try {
+			hFilter.interpret("mockNode.parent.stage;");
+		} catch (e:Dynamic) {
+			caughtFilterError = true;
+			trace("SUCCESS: Caught expected fieldAccessFilter security error: " + e);
+		}
+		if (!caughtFilterError) {
+			throw "FAIL: setFieldAccessFilter failed to block mockNode.parent.stage access!";
+		}
+
 		trace("SUCCESS: Sandbox and API exposure security checks passed.");
 
 		// 59. Typedef Declarations and Resolution

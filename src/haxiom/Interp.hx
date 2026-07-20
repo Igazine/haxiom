@@ -1204,9 +1204,16 @@ class Interp {
 		}
 	}
 
+	public var fieldAccessFilter:Null<(target:Dynamic, field:String) -> Bool> = null;
+
 	public function evalField(obj:Dynamic, field:String, scope:Scope, pos:Pos):Dynamic {
 		if (obj == null)
 			throw 'Cannot read field "$field" of null';
+
+		if (fieldAccessFilter != null && !fieldAccessFilter(obj, field)) {
+			var pStr = pos != null ? '${pos.file != null ? pos.file : "script"}:${pos.line}:${pos.col}' : "script";
+			throw 'Security Error: Access to field "$field" is forbidden at ${pStr}';
+		}
 
 		if (importWhitelist != null) {
 			var name = getClassNameOf(obj);

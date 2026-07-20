@@ -728,6 +728,14 @@ class Haxiom {
 	}
 
 	/**
+	 * Sets a custom security filter callback to intercept and block unauthorized property/field access on host objects.
+	 * Return false to deny access (throws Security Error), or true to allow.
+	 */
+	public function setFieldAccessFilter(filter:(target:Dynamic, field:String) -> Bool):Void {
+		interp.fieldAccessFilter = filter;
+	}
+
+	/**
 	 * Exposes a host object or value as a global variable accessible to guest scripts.
 	 * 
 	 * @param name The global variable name to declare (e.g. `container`).

@@ -716,6 +716,10 @@ class VM {
 									while (curr != null) {
 										if (curr.lastClass == classKey) {
 											if (curr.isNormalField) {
+												if (interp.fieldAccessFilter != null && !interp.fieldAccessFilter(obj, fieldName)) {
+													var pStr = currentPos() != null ? '${currentPos().file}:${currentPos().line}:${currentPos().col}' : "script";
+													throw 'Security Error: Access to field "$fieldName" is forbidden at ${pStr}';
+												}
 												if (Std.isOfType(obj, HaxiomInstance)) {
 													resolved = (cast obj : HaxiomInstance).fields.get(fieldName);
 												} else {
