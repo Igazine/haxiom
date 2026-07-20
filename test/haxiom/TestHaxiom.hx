@@ -3613,7 +3613,7 @@ class TestHaxiom {
 		// 75. haxiom.HostRef Opaque Handle Verification
 		var hostRefEngine = new Haxiom();
 		var secretData = { secret: "SuperSecretHostData", value: 42 };
-		var handle = HostRef.wrap(secretData, hostRefEngine.interp);
+		var handle = HostRef.wrap(secretData);
 
 		// 1. Unwrap on Host side returns exact secretData object
 		var recovered:Dynamic = HostRef.unwrap(handle);
@@ -3634,22 +3634,8 @@ class TestHaxiom {
 			throw "FAIL: HostRef.unwrap accepted a spoofed script object!";
 		}
 
-		// 4. Memory safeguard tracking (maxMemory)
-		var memEngine = new Haxiom();
-		memEngine.maxMemory = 100; // Allow 100 units max memory
-		var h1 = HostRef.wrap("data1", memEngine.interp); // Uses 64 units -> 64/100
-		var memLimitCaught = false;
-		try {
-			var h2 = HostRef.wrap("data2", memEngine.interp); // Uses +64 units -> 128 > 100!
-		} catch (e:Dynamic) {
-			memLimitCaught = true;
-			trace("SUCCESS: Caught expected HostRef maxMemory safeguard limit breach: " + e);
-		}
-		if (!memLimitCaught) {
-			throw "FAIL: HostRef.wrap failed to trigger maxMemory safeguard limit!";
-		}
-
-		// 5. Free handle releases memory tracking
+		// 4. Free handle invalidates handle from host memory
+		var h1 = HostRef.wrap("data1");
 		HostRef.free(h1);
 		if (HostRef.unwrap(h1) != null) {
 			throw "FAIL: HostRef.unwrap returned non-null for freed handle!";
