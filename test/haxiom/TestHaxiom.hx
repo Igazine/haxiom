@@ -2154,6 +2154,31 @@ class TestHaxiom {
 
 		trace("SUCCESS: Sandbox and API exposure security checks passed.");
 
+		// G. Verify manual script throw behavior (AST and VM modes)
+		var hThrow = new Haxiom();
+		hThrow.useVM = true;
+		var caughtManualThrow = false;
+		try {
+			hThrow.interpret("throw 'Custom manual script error';");
+		} catch (e:haxiom.ScriptException) {
+			caughtManualThrow = true;
+			if (e.rawValue != "Custom manual script error") throw "FAIL: ScriptException.rawValue mismatch!";
+			if (e.line != 1) throw "FAIL: ScriptException.line mismatch!";
+		}
+		if (!caughtManualThrow) throw "FAIL: Manual throw failed to throw ScriptException in VM mode!";
+
+		hThrow.useVM = false;
+		var caughtASTManualThrow = false;
+		try {
+			hThrow.interpret("throw { code: 404, msg: 'Not Found' };");
+		} catch (e:haxiom.ScriptException) {
+			caughtASTManualThrow = true;
+			var obj:Dynamic = e.rawValue;
+			if (obj.code != 404 || obj.msg != "Not Found") throw "FAIL: ScriptException.rawValue object mismatch!";
+		}
+		if (!caughtASTManualThrow) throw "FAIL: Manual throw failed to throw ScriptException in AST mode!";
+		trace("SUCCESS: Manual script throw verification passed.");
+
 		// 59. Typedef Declarations and Resolution
 		var script59 = "
             typedef Age = Int;
