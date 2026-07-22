@@ -1,5 +1,6 @@
 .ignored
 ignored/
+wiki/
 **/bin
 *.code-workspace
 .DS_Store
