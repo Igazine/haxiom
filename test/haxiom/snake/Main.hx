@@ -1,8 +1,7 @@
 package;
 
-import haxiom.FFI;
-import haxiom.guest.Future;
 import haxiom.Haxiom;
+import haxiom.guest.Future;
 import openfl.display.Sprite;
 import openfl.events.Event;
 import openfl.events.KeyboardEvent;
@@ -61,6 +60,11 @@ class Main extends Sprite {
 			return null;
 		};
 
+		// Add runtime error logging callback
+		engine.onRuntimeError = function(e) {
+			trace("Haxiom Snake Runtime Error: " + e);
+		};
+
 		// Register FFI classes
 		registerFFI(engine);
 
@@ -86,6 +90,7 @@ class Main extends Sprite {
 
 	function registerFFI(haxiom:Haxiom) {
 		haxiom.registerClass("openfl.display.Sprite", Sprite);
+		haxiom.registerClass("openfl.display.Graphics", openfl.display.Graphics);
 		haxiom.registerClass("openfl.display.Shape", openfl.display.Shape);
 		haxiom.registerClass("openfl.text.TextField", openfl.text.TextField);
 		haxiom.registerClass("openfl.text.TextFormat", openfl.text.TextFormat);
@@ -94,7 +99,8 @@ class Main extends Sprite {
 		haxiom.registerClass("openfl.ui.Keyboard", openfl.ui.Keyboard);
 
 		// Expose Actuate for visual tweening effects
-		haxiom.registerClass("motion.Actuate", motion.Actuate);
+		haxiom.exposeClass("motion.Actuate", motion.Actuate);
+		haxiom.exposePackage("motion.actuators.*");
 
 		// Expose a host Timer that maps haxe.Timer.delay to Haxiom Future resolutions
 		haxiom.registerClass("Timer", HaxiomTimer);

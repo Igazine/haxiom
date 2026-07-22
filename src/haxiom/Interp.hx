@@ -637,10 +637,20 @@ class Interp {
 
 	public function new() {
 		initDefaultFlags();
-		// Core standard print/trace redirection
+		// Core standard print/trace redirection with PosInfos
 		globals.declare("trace", Reflect.makeVarArgs((args:Array<Dynamic>) -> {
 			var str = [for (a in args) Std.string(a)].join(", ");
-			haxe.Log.trace(str, null);
+			var fileStr = lastEvalPos != null && lastEvalPos.file != null ? lastEvalPos.file : "script";
+			var lineVal = lastEvalPos != null ? lastEvalPos.line : 1;
+			var clsName = currentThis != null && Std.isOfType(currentThis, HaxiomClass) ? (cast currentThis : HaxiomClass).name : "script";
+			var mName = callStack.length > 0 ? callStack[callStack.length - 1].method : "toplevel";
+			var posInfos:haxe.PosInfos = {
+				fileName: fileStr,
+				lineNumber: lineVal,
+				className: clsName,
+				methodName: mName
+			};
+			haxe.Log.trace(str, posInfos);
 		}));
 
 		// Dynamic Math binding
@@ -1221,7 +1231,7 @@ class Interp {
 		if (importWhitelist != null) {
 			var name = getClassNameOf(obj);
 			if (name != null && !isInternalHaxiomClass(name) && !isImportWhitelisted(name)) {
-				throw 'Security Error: Access to field "$field" is not allowed on class $name';
+				throwSecurityErrorForUnwhitelistedClass(field, name);
 			}
 		}
 
@@ -2030,7 +2040,7 @@ class Interp {
 		if (importWhitelist != null) {
 			var name = getClassNameOf(obj);
 			if (name != null && !isInternalHaxiomClass(name) && !isImportWhitelisted(name)) {
-				throw 'Security Error: Access to field "$field" is not allowed on class $name';
+				throwSecurityErrorForUnwhitelistedClass(field, name);
 			}
 		}
 		if (Std.isOfType(obj, HaxiomAbstractInstance)) {
@@ -3058,7 +3068,7 @@ class Interp {
 						if (importWhitelist != null) {
 							var name = getClassNameOf(obj);
 							if (name != null && !isInternalHaxiomClass(name) && !isImportWhitelisted(name)) {
-								throw 'Security Error: Access to field "$field" is not allowed on class $name';
+								throwSecurityErrorForUnwhitelistedClass(field, name);
 							}
 						}
 						var method = Reflect.field(obj, field);
@@ -5840,6 +5850,12 @@ class Interp {
 			return true;
 		}
 		return false;
+	}
+
+	function throwSecurityErrorForUnwhitelistedClass(field:String, name:String):Void {
+		var parts = name.split(".");
+		var hint = parts.length > 1 ? 'haxiom.exposePackage("${parts[0]}.*") or haxiom.exposeClass("$name", $name)' : 'haxiom.exposeClass("$name", $name)';
+		throw 'Security Error: Access to field "$field" is not allowed on non-whitelisted class "$name".\nHint: To allow field access to this class in your host application, add:\n  $hint';
 	}
 
 	inline function isInternalHaxiomClass(name:String):Bool {

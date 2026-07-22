@@ -1000,6 +1000,28 @@ class Haxiom {
 		}
 	}
 
+	/** Unified API Aliases **/
+
+	/** Expose a host class to scripts (alias for registerClass) */
+	public inline function exposeClass(fqName:String, cls:Class<Dynamic>):Void {
+		registerClassRuntime(fqName, cls);
+	}
+
+	/** Expose a host enum to scripts (alias for registerEnum) */
+	public inline function exposeEnum(fqName:String, enm:Enum<Dynamic>):Void {
+		registerEnum(fqName, enm);
+	}
+
+	/** Expose a host value or global to scripts (alias for setGlobal / registerValue) */
+	public inline function exposeValue(fqName:String, value:Dynamic):Void {
+		setGlobal(fqName, value);
+	}
+
+	/** Expose / Whitelist an entire package pattern (e.g. "motion.*" or "openfl.*") */
+	public inline function exposePackage(packagePattern:String):Void {
+		allowPackage(packagePattern);
+	}
+
 	public function registerGenericInstantiation(signature:String, cls:Class<Dynamic>):Void {
 		interp.ffi.exposedGenerics.set(signature, Type.getClassName(cls));
 		interp.registerFullyQualified(signature, cls, interp.globals);
@@ -1029,6 +1051,15 @@ class Haxiom {
 		var shortName = parts[parts.length - 1];
 		if (!interp.globals.exists(shortName)) {
 			interp.globals.declare(shortName, value);
+		}
+	}
+
+	/**
+	 * Whitelists a package pattern (e.g. "motion.actuators.*") for script field access.
+	 */
+	public function allowPackage(packagePattern:String):Void {
+		if (interp.importWhitelist != null && interp.importWhitelist.indexOf(packagePattern) == -1) {
+			interp.importWhitelist.push(packagePattern);
 		}
 	}
 

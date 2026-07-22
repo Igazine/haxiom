@@ -19,7 +19,6 @@ import feathers.style.IDarkModeTheme;
 import feathers.style.Theme;
 import haxe.Timer;
 import haxe.io.Bytes;
-import haxiom.FFI;
 import haxiom.Haxiom;
 import openfl.events.Event;
 
