@@ -147,12 +147,13 @@ enum ExprDef {
     EMapDecl(values:Array<{key:Expr, value:Expr}>);
     
     EClass(name:String, 
-           fields:Array<{name:String, type:Null<TypeDecl>, expr:Expr, isStatic:Bool, isPublic:Bool, isFinal:Bool, ?property:{get:String, set:String}, ?meta:Array<{name:String, params:Array<Expr>}>}>, 
-           methods:Array<{name:String, args:Array<FunctionArg>, retType:Null<TypeDecl>, body:Null<Expr>, isStatic:Bool, isPublic:Bool, ?isOverride:Bool, ?isAbstract:Bool, ?params:Array<TypeParamDef>, ?meta:Array<{name:String, params:Array<Expr>}>}>, 
+           fields:Array<{name:String, type:Null<TypeDecl>, expr:Expr, isStatic:Bool, isPublic:Bool, isFinal:Bool, ?property:{get:String, set:String}, ?meta:Array<{name:String, params:Array<Expr>}>, ?isExtern:Bool}>, 
+           methods:Array<{name:String, args:Array<FunctionArg>, retType:Null<TypeDecl>, body:Null<Expr>, isStatic:Bool, isPublic:Bool, ?isOverride:Bool, ?isAbstract:Bool, ?params:Array<TypeParamDef>, ?meta:Array<{name:String, params:Array<Expr>}>, ?isExtern:Bool}>, 
            ?parent:TypeDecl,
            ?interfaces:Array<TypeDecl>,
            ?params:Array<TypeParamDef>,
-           ?meta:Array<{name:String, params:Array<Expr>}>);
+           ?meta:Array<{name:String, params:Array<Expr>}>,
+           ?isExtern:Bool);
 
     EBlock(exprs:Array<Expr>);
     EFunction(?name:String, args:Array<FunctionArg>, retType:Null<TypeDecl>, body:Expr, ?params:Array<TypeParamDef>);

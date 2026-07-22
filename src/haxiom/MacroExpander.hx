@@ -114,7 +114,7 @@ class MacroExpander {
             case EMapDecl(values):
                 EMapDecl(values.map(v -> {key: expand(v.key, interp), value: expand(v.value, interp)}));
 
-            case EClass(name, fields, methods, parent, interfaces, params, meta):
+            case EClass(name, fields, methods, parent, interfaces, params, meta, isExtern):
                 var expandedMethods = methods.map(m -> {
                     name: m.name,
                     args: m.args,
@@ -125,7 +125,8 @@ class MacroExpander {
                     params: m.params,
                     isOverride: m.isOverride,
                     isAbstract: m.isAbstract,
-                    meta: m.meta
+                    meta: m.meta,
+                    isExtern: m.isExtern
                 });
                 var expandedFields = fields.map(f -> {
                     name: f.name,
@@ -135,9 +136,10 @@ class MacroExpander {
                     isPublic: f.isPublic,
                     isFinal: f.isFinal,
                     property: f.property,
-                    meta: f.meta
+                    meta: f.meta,
+                    isExtern: f.isExtern
                 });
-                EClass(name, expandedFields, expandedMethods, parent, interfaces, params, meta);
+                EClass(name, expandedFields, expandedMethods, parent, interfaces, params, meta, isExtern);
 
             case EBlock(exprs):
                 EBlock(exprs.map(e -> expand(e, interp)));

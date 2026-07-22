@@ -52,7 +52,39 @@ class StaticTypeChecker {
 				for (e in exprs)
 					collectDeclarations(e);
 
-			case EClass(name, fields, methods, parent, interfaces, params, meta):
+			case EClass(name, fields, methods, parent, interfaces, params, meta, isExtern):
+				if (isExtern == true) {
+					// Register extern class info without checking bodies
+					var info = new ClassInfo(name, params != null ? params : []);
+					info.isExtern = true;
+					info.meta = meta;
+					for (m in methods) {
+						var mCopy = {
+							name: m.name,
+							args: m.args,
+							retType: m.retType,
+							body: null,
+							isStatic: m.isStatic,
+							isPublic: m.isPublic,
+							isOverride: m.isOverride,
+							isAbstract: m.isAbstract,
+							meta: m.meta,
+							isExtern: m.isExtern
+						};
+						info.methods.set(m.name, mCopy);
+					}
+					for (f in fields) {
+						info.fields.set(f.name, {
+							type: f.type,
+							isStatic: f.isStatic,
+							isPublic: f.isPublic,
+							meta: f.meta,
+							isExtern: f.isExtern
+						});
+					}
+					classes.set(name, info);
+					return;
+				}
 				var info = new ClassInfo(name, params != null ? params : []);
 				info.isAbstract = hasMeta(meta, ":abstract");
 				info.meta = meta;
@@ -251,9 +283,17 @@ class StaticTypeChecker {
 				}
 				checkExpr(body, childEnv);
 
-			case EClass(className, _, methods, _, _, _, _):
+			case EClass(className, _, methods, _, _, _, _, isExtern):
+				if (isExtern == true)
+					return;
 				var cls = classes.get(className);
 				if (cls != null) {
+					if (cls.parentName != null) {
+						var pInfo = classes.get(cls.parentName);
+						if (pInfo != null && pInfo.isExtern) {
+							addError('Cannot extend extern class \'${cls.parentName}\'', expr.pos);
+						}
+					}
 					// 1. Override validation
 					for (m in methods) {
 						var parentMethod = findParentMethod(cls.parentName, m.name);
@@ -1397,6 +1437,7 @@ class ClassInfo {
 	var name:String;
 	var params:Array<TypeParamDef>;
 	var isAbstract:Bool = false;
+	var isExtern:Bool = false;
 	var parentName:Null<String> = null;
 	var interfaces:Array<String> = [];
 	var ctorArgs:Array<FunctionArg>;
@@ -1409,9 +1450,10 @@ class ClassInfo {
 		isPublic:Bool,
 		?isOverride:Bool,
 		?isAbstract:Bool,
-		?meta:Array<{name:String, params:Array<Expr>}>
+		?meta:Array<{name:String, params:Array<Expr>}>,
+		?isExtern:Bool
 	}> = new Map();
-	var fields:Map<String, {type:TypeDecl, isStatic:Bool, isPublic:Bool, ?meta:Array<{name:String, params:Array<Expr>}>}> = new Map();
+	var fields:Map<String, {type:TypeDecl, isStatic:Bool, isPublic:Bool, ?meta:Array<{name:String, params:Array<Expr>}>, ?isExtern:Bool}> = new Map();
 	var meta:Null<Array<{name:String, params:Array<Expr>}>> = null;
 
 	function new(name:String, params:Array<TypeParamDef>) {

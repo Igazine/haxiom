@@ -24,6 +24,7 @@ class TestHaxiom {
 			TestInlineCache.main();
 			TestSafeguardsTCO.runTests();
 			TestNSConflict.main();
+			TestExterns.runTests();
 			trace("ALL TESTS COMPLETED SUCCESSFULLY!");
 		});
 	}

@@ -1007,7 +1007,9 @@ class BytecodeCompiler {
 				emit(OP_CAST, e.pos);
 				emitInt(type != null ? addConst(type) : -1, e.pos);
 
-			case EClass(name, fields, methods, parent, interfaces, params, meta):
+			case EClass(name, fields, methods, parent, interfaces, params, meta, isExtern):
+				if (isExtern == true)
+					return;
 				for (f in fields) {
 					if (f.meta != null) {
 						f.expr = ResourceCompiler.processResource(f.meta, f.type, f.expr, e.pos, this.resources);

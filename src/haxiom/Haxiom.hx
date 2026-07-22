@@ -986,6 +986,10 @@ class Haxiom {
 
 	public function registerClassRuntime(fqName:String, cls:Class<Dynamic>):Void {
 		interp.registerFullyQualified(fqName, cls, interp.globals);
+		var realClassName = Type.getClassName(cls);
+		if (realClassName != null && interp.importWhitelist != null && interp.importWhitelist.indexOf(realClassName) == -1) {
+			interp.importWhitelist.push(realClassName);
+		}
 		if (interp.importWhitelist != null && interp.importWhitelist.indexOf(fqName) == -1) {
 			interp.importWhitelist.push(fqName);
 		}

@@ -164,30 +164,36 @@ class Optimizer {
 			case EMapDecl(values):
 				EMapDecl(values.map(v -> {key: foldConstants(v.key), value: foldConstants(v.value)}));
 
-			case EClass(name, fields, methods, parent, interfaces, params, meta):
-				var foldedFields = fields.map(f -> {
-					name: f.name,
-					type: f.type,
-					expr: f.expr == null ? null : foldConstants(f.expr),
-					isStatic: f.isStatic,
-					isPublic: f.isPublic,
-					isFinal: f.isFinal,
-					property: f.property,
-					meta: f.meta
-				});
-				var foldedMethods = methods.map(m -> {
-					name: m.name,
-					args: m.args,
-					retType: m.retType,
-					body: m.body == null ? null : foldConstants(m.body),
-					isStatic: m.isStatic,
-					isPublic: m.isPublic,
-					isOverride: m.isOverride,
-					isAbstract: m.isAbstract,
-					params: m.params,
-					meta: m.meta
-				});
-				EClass(name, foldedFields, foldedMethods, parent, interfaces, params, meta);
+			case EClass(name, fields, methods, parent, interfaces, params, meta, isExtern):
+				if (isExtern == true) {
+					EClass(name, fields, methods, parent, interfaces, params, meta, isExtern);
+				} else {
+					var foldedFields = fields.map(f -> {
+						name: f.name,
+						type: f.type,
+						expr: f.expr == null ? null : foldConstants(f.expr),
+						isStatic: f.isStatic,
+						isPublic: f.isPublic,
+						isFinal: f.isFinal,
+						property: f.property,
+						meta: f.meta,
+						isExtern: f.isExtern
+					});
+					var foldedMethods = methods.map(m -> {
+						name: m.name,
+						args: m.args,
+						retType: m.retType,
+						body: m.body == null ? null : foldConstants(m.body),
+						isStatic: m.isStatic,
+						isPublic: m.isPublic,
+						isOverride: m.isOverride,
+						isAbstract: m.isAbstract,
+						params: m.params,
+						meta: m.meta,
+						isExtern: m.isExtern
+					});
+					EClass(name, foldedFields, foldedMethods, parent, interfaces, params, meta, isExtern);
+				}
 
 			case EBlock(exprs):
 				EBlock(exprs.map(foldConstants));
@@ -441,7 +447,9 @@ class Optimizer {
 				}
 				return modified ? {def: EBlock(mapped), pos: expr.pos} : expr;
 
-			case EClass(name, fields, methods, parent, interfaces, params, meta):
+			case EClass(name, fields, methods, parent, interfaces, params, meta, isExtern):
+				if (isExtern == true)
+					return expr;
 				// Keep a method if: public, or named "new", or has @:keep, or its name appears in globalUsages
 				var prunedMethods = methods.filter(m -> {
 					if (m.isPublic)
@@ -485,7 +493,8 @@ class Optimizer {
 							isOverride: m.isOverride,
 							isAbstract: m.isAbstract,
 							params: m.params,
-							meta: m.meta
+							meta: m.meta,
+							isExtern: m.isExtern
 						};
 					}
 					return m;
@@ -504,12 +513,13 @@ class Optimizer {
 							isPublic: f.isPublic,
 							isFinal: f.isFinal,
 							property: f.property,
-							meta: f.meta
+							meta: f.meta,
+							isExtern: f.isExtern
 						};
 					}
 					return f;
 				});
-				return modified ? {def: EClass(name, finalFieldsMapped, finalMethods, parent, interfaces, params, meta), pos: expr.pos} : expr;
+				return modified ? {def: EClass(name, finalFieldsMapped, finalMethods, parent, interfaces, params, meta, isExtern), pos: expr.pos} : expr;
 
 			case EFunction(name, args, retType, body, params):
 				var newBody = dceExpr(body);

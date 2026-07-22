@@ -159,33 +159,25 @@ class TestCompilationFeatures {
         }
         if (!caughtForbidden) throw "Expected compilation error for forbidden preprocessor conditional 'openfl'";
 
-        // Test that using the 'extern' keyword throws a compile-time exception (top-level)
+        // Test that root-level extern function/var throws compile-time exception
         var caughtExternTop = false;
         try {
-            engine.interpret("extern class MockClass {}");
+            engine.interpret("extern function foo():Void;");
         } catch (e:Dynamic) {
             var errStr = Std.string(e);
-            if (errStr.indexOf("Haxe externs are not supported in Haxiom guest scripts") != -1) {
+            if (errStr.indexOf("Extern variables and functions must be declared inside a class or must be extern classes") != -1) {
                 caughtExternTop = true;
             }
         }
-        if (!caughtExternTop) throw "Expected compile-time error for top-level 'extern' keyword usage";
+        if (!caughtExternTop) throw "Expected compile-time error for root-level 'extern' function usage";
 
-        // Test that using the 'extern' keyword throws a compile-time exception (class-member)
-        var caughtExternMember = false;
-        try {
-            engine.interpret("
-                class MockClass {
-                    extern function foo():Void;
-                }
-            ");
-        } catch (e:Dynamic) {
-            var errStr = Std.string(e);
-            if (errStr.indexOf("Haxe externs are not supported in Haxiom guest scripts") != -1) {
-                caughtExternMember = true;
+        // Test that extern class and extern class-member compile cleanly
+        engine.interpret("extern class MockClass {}");
+        engine.interpret("
+            class MockClass {
+                extern function foo():Void;
             }
-        }
-        if (!caughtExternMember) throw "Expected compile-time error for class-member 'extern' keyword usage";
+        ");
 
         // Test that using the 'extern' keyword throws a compile-time exception (expression-level)
         var caughtExternExpr = false;

@@ -526,6 +526,7 @@ class Interp {
 
 	public var globals:Scope = new Scope();
 	public var ffi:FFIRegistry = new FFIRegistry();
+	public var externClasses:Map<String, Bool> = new Map();
 
 	var currentThis:Dynamic = null;
 
@@ -2232,6 +2233,11 @@ class Interp {
 					}
 				}
 
+				if (externClasses.exists(name)) {
+					var pStr = pos != null ? '${pos.file != null ? pos.file : "script"}:${pos.line}:${pos.col}' : "script";
+					var errMsg = 'Runtime Error: Unbound Host Extern \'$name\' at $pStr';
+					throw new haxiom.ScriptException('Unbound Host Extern \'$name\'', callStack.copy(), errMsg, pos.line, pos.col, pos.file != null ? pos.file : "script");
+				}
 				throw 'Identifier "$name" not found at ${pos.line}:${pos.col}';
 
 			case EVar(name, type, expr, isFinal, meta):
@@ -3253,12 +3259,21 @@ class Interp {
 				trackNewAllocation(map, pos);
 				return map;
 
-			case EClass(name, fields, methods, parentType, interfaceTypes, params, meta):
+			case EClass(name, fields, methods, parentType, interfaceTypes, params, meta, isExternClass):
+				var fqName = currentPackage.length > 0 ? currentPackage.join(".") + "." + name : name;
+				if (isExternClass == true) {
+					externClasses.set(fqName, true);
+					externClasses.set(name, true);
+					return null;
+				}
 				var parentCls:HaxiomClass = null;
 				if (parentType != null) {
 					switch (parentType) {
 						case TPath(path, _):
 							var parentName = path.join(".");
+							if (externClasses.exists(parentName)) {
+								throw new haxiom.CompileException('Cannot extend extern class \'$parentName\'', e.pos.line, e.pos.col, e.pos.file != null ? e.pos.file : "script");
+							}
 							var parentVal = scope.get(parentName);
 							if (parentVal != null && Std.isOfType(parentVal, HaxiomClass)) {
 								parentCls = cast parentVal;
@@ -3266,7 +3281,6 @@ class Interp {
 						default:
 					}
 				}
-				var fqName = currentPackage.length > 0 ? currentPackage.join(".") + "." + name : name;
 				var cls = new HaxiomClass(name, parentCls);
 				cls.name = fqName;
 				cls.parentType = parentType;
@@ -4775,6 +4789,28 @@ class Interp {
 			var mDyn:Dynamic = method;
 			if (mDyn.isAbstract) {
 				throw 'Cannot call abstract method ${method.name}';
+			}
+			if (mDyn.isExtern == true) {
+				var hostTarget:Dynamic = null;
+				if (obj != null && !Std.isOfType(obj, HaxiomClass) && !Std.isOfType(obj, HaxiomInstance)) {
+					hostTarget = obj;
+				} else if (globals.exists(method.name)) {
+					hostTarget = globals.get(method.name);
+				}
+				if (hostTarget != null) {
+					if (Reflect.isFunction(hostTarget)) {
+						return Reflect.callMethod(null, hostTarget, callArgs);
+					}
+					var f = Reflect.field(hostTarget, method.name);
+					if (f != null && Reflect.isFunction(f)) {
+						return Reflect.callMethod(hostTarget, f, callArgs);
+					}
+				}
+				var errLine = lastEvalPos != null ? lastEvalPos.line : 1;
+				var errCol = lastEvalPos != null ? lastEvalPos.col : 1;
+				var errFile = lastEvalPos != null && lastEvalPos.file != null ? lastEvalPos.file : "script";
+				var errMsg = 'Runtime Error: Unbound Host Extern \'${method.name}\' at ${errFile}:${errLine}:${errCol}';
+				throw new haxiom.ScriptException('Unbound Host Extern \'${method.name}\'', callStack.copy(), errMsg, errLine, errCol, errFile);
 			}
 			#if haxiom_debug
 			trace('Interp bindMethod guest function invoked! callArgs=' + callArgs);

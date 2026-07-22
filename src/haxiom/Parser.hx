@@ -9,6 +9,7 @@ class Parser {
 	var compCounter:Int = 0;
 	var file:String;
 	var definedTypes:Map<String, Pos> = new Map();
+	var externClassNames:Map<String, Bool> = new Map();
 
 	function registerType(name:String, pos:Pos) {
 		if (definedTypes.exists(name)) {
@@ -62,7 +63,12 @@ class Parser {
 				throw new CompileException("Haxe macros are not supported in Haxiom guest scripts", t.pos.line, t.pos.col, file);
 			case TExtern:
 				next();
-				throw new CompileException("Haxe externs are not supported in Haxiom guest scripts", t.pos.line, t.pos.col, file);
+				if (is(TClass)) {
+					expr = parseClass(meta, false, true);
+				} else {
+					var errT = peek();
+					throw new CompileException("Extern variables and functions must be declared inside a class or must be extern classes", errT.pos.line, errT.pos.col, file);
+				}
 			case TPackage:
 				if (meta != null)
 					throw new CompileException("Metadata cannot be attached to a package declaration", t.pos.line, t.pos.col, file);
@@ -354,7 +360,7 @@ class Parser {
 		return meta.length > 0 ? meta : null;
 	}
 
-	function parseClass(?meta:Array<{name:String, params:Array<Expr>}>, isAbstract:Bool = false):Expr {
+	function parseClass(?meta:Array<{name:String, params:Array<Expr>}>, isAbstract:Bool = false, isExternClass:Bool = false):Expr {
 		if (isAbstract) {
 			if (meta == null) {
 				meta = [];
@@ -364,10 +370,26 @@ class Parser {
 		var t = expect(TClass);
 		var name = expectIdent();
 		registerType(name, t.pos);
+		if (isExternClass) {
+			externClassNames.set(name, true);
+		}
 		var params = parseOptParams();
 		var parent = null;
 		if (match(TExtends)) {
+			if (isExternClass) {
+				throw new CompileException("Extern classes in Haxiom cannot use 'extends'", t.pos.line, t.pos.col, file);
+			}
 			parent = parseType(false);
+			if (parent != null) {
+				switch (parent) {
+					case TPath(path, _):
+						var pName = path.join(".");
+						if (externClassNames.exists(pName)) {
+							throw new CompileException('Cannot extend extern class \'$pName\'', t.pos.line, t.pos.col, file);
+						}
+					default:
+				}
+			}
 		}
 		var interfaces = [];
 		while (match(TImplements)) {
@@ -382,18 +404,15 @@ class Parser {
 		while (! is(TBraceClose) && ! is(TEof)) {
 			var fMeta = parseMetadata();
 			var isStatic = false;
-			var isPublic = false; // Default member visibility is private
+			var isPublic = isExternClass; // In Haxe, members of extern classes default to public
 			var isFinal = false;
 			var isOverride = false;
 			var isAbstractMethod = false;
+			var isExternMember = isExternClass;
 
 			if (is(TMacro)) {
 				var t = peek();
 				throw new CompileException("Haxe macros are not supported in Haxiom guest scripts", t.pos.line, t.pos.col, file);
-			}
-			if (is(TExtern)) {
-				var t = peek();
-				throw new CompileException("Haxe externs are not supported in Haxiom guest scripts", t.pos.line, t.pos.col, file);
 			}
 
 			while (true) {
@@ -411,6 +430,9 @@ class Parser {
 					isOverride = true;
 				} else if (match(TAbstract)) {
 					isAbstractMethod = true;
+				} else if (match(TExtern)) {
+					isExternMember = true;
+					isPublic = true;
 				} else {
 					break;
 				}
@@ -445,7 +467,8 @@ class Parser {
 					isPublic: isPublic,
 					isFinal: isFinal,
 					property: prop,
-					meta: fMeta
+					meta: fMeta,
+					isExtern: isExternMember
 				});
 			} else if (memberT.def == TFunction) {
 				next();
@@ -459,7 +482,12 @@ class Parser {
 				var mArgs = parseArgs();
 				var mRetType = parseOptType();
 				var mBody = null;
-				if (isAbstractMethod) {
+				if (isExternMember || isExternClass) {
+					if (mRetType == null) {
+						throw new CompileException("Extern methods must explicitly define a return type", memberT.pos.line, memberT.pos.col, file);
+					}
+					expect(TSemicolon);
+				} else if (isAbstractMethod) {
 					expect(TSemicolon);
 				} else {
 					mBody = parseBlock();
@@ -474,7 +502,8 @@ class Parser {
 					isOverride: isOverride,
 					isAbstract: isAbstractMethod,
 					params: mParams,
-					meta: fMeta
+					meta: fMeta,
+					isExtern: isExternMember
 				});
 			} else {
 				throw new CompileException('Unexpected token inside class ${memberT.def}', memberT.pos.line, memberT.pos.col, file);
@@ -482,7 +511,7 @@ class Parser {
 			skipNewlines();
 		}
 		expect(TBraceClose);
-		return mk(EClass(name, fields, methods, parent, interfaces, params, meta), t.pos);
+		return mk(EClass(name, fields, methods, parent, interfaces, params, meta, isExternClass), t.pos);
 	}
 
 	function parseAbstract(?meta:Array<{name:String, params:Array<Expr>}>):Expr {
