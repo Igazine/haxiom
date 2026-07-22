@@ -103,6 +103,17 @@ class Main {
 
 ---
 
+## Future Plans
+
+I'm planning to add the following features in the future to extend functionality of Haxiom.
+
+- [ ] Support for `extern` keyword, so guest Haxiom scripts can access host-defined classes and methods in an LSP-safe manner without using preprocessor directives
+- [ ] Step-by-Step VM Debugger & DAP (Debug Adapter Protocol) to allow remote Haxiom VM debugging
+- [ ] VM State Machine - snapshotted VM state serialization, so VMs can be paused, their state saved and loaded later
+- [ ] Rust Native Engine Core - Create a bare-metal, zero-GC, ultra-fast Rust-based bytecode execution engine that compiles to a standalone C-ABI static/dynamic library (`libhaxiom.a` / `.so` / `.dylib` / `.wasm`)
+
+---
+
 ## License
 
 Haxiom is open-source software licensed under the MIT License.
