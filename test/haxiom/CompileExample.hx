@@ -42,8 +42,8 @@ class CompileExample {
         ";
 		var engine = new Haxiom();
 		engine.useVM = true;
-		haxiom.FFI.registerClass(engine, "feathers.controls.Button", MockButton);
-		haxiom.FFI.registerClass(engine, "haxiom.MockEvent", MockEvent);
+		engine.registerClass("feathers.controls.Button", MockButton);
+		engine.registerClass("haxiom.MockEvent", MockEvent);
 
 		// Compile without key (unencrypted)
 		var bytes1 = engine.compileToBytecodeBytes(script, "example1.hx", null, false);

@@ -6,7 +6,7 @@ import haxiom.FFI;
 class TestDigigun {
     public static function main() {
         var haxiom = new Haxiom();
-        FFI.registerExposedClasses(haxiom);
+        haxiom.registerExposedClasses();
         
         // 1. 3rd Party Generic Library (digigun.core.types.Property)
         var propStr = new digigun.core.types.Property<String>("tamas"); // force compilation

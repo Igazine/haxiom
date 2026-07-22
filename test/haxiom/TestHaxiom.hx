@@ -1265,8 +1265,8 @@ class TestHaxiom {
 		haxiom.interpret(script38);
 
 		// 39. Runtime FFI registration
-		FFI.registerClass(haxiom, "haxiom.FFIClassHelper", FFIClassHelper);
-		FFI.registerValue(haxiom, "haxiom.ffiValue", 123.45);
+		haxiom.registerClass("haxiom.FFIClassHelper", FFIClassHelper);
+		haxiom.registerValue("haxiom.ffiValue", 123.45);
 		var script39 = '
             var val = haxiom.ffiValue;
             var helper = new haxiom.FFIClassHelper(2);
@@ -1276,7 +1276,7 @@ class TestHaxiom {
 		haxiom.interpret(script39);
 
 		// 40. Macro Auto-Exposure FFI
-		FFI.registerExposedClasses(haxiom);
+		haxiom.registerExposedClasses();
 		var script40 = '
             var exposed = new haxiom.ExposedNativeClass(3);
             trace("Macro auto-exposed class call: " + exposed.multiply(10));
@@ -3263,7 +3263,7 @@ class TestHaxiom {
 
 		// 68. FFI Package Auto-Registration Verification
 		haxiom.importWhitelist = ["haxiom.autofiffi.*"];
-		FFI.registerExposedClasses(haxiom);
+		haxiom.registerExposedClasses();
 
 		var script68 = "
 			import haxiom.autofiffi.TestClass;

@@ -2,16 +2,16 @@ package haxiom;
 
 /**
  * An un-spoofable, opaque host reference handle for guest scripts.
- * Stores underlying host objects ONLY in host-private memory.
- * All methods are strictly static to guarantee zero script instance fields or methods.
+ * Stores underlying host objects ONLY in private instance memory.
+ * All public methods are strictly static to guarantee zero public script fields or methods.
  */
 @:keep
 final class HostRef<T> {
-	// Private host-side registry: HostRef handle instance -> host object
-	private static var registry:Map<HostRef<Dynamic>, Dynamic> = new Map();
+	@:noCompletion private var target:Dynamic;
 
-	// Private constructor — Guest scripts CANNOT call 'new HostRef()'
-	private function new() {}
+	private function new(target:Dynamic) {
+		this.target = target;
+	}
 
 	/**
 	 * Wraps a native host object into an opaque HostRef handle for guest scripts.
@@ -19,14 +19,12 @@ final class HostRef<T> {
 	public static function wrap<T>(value:T):HostRef<T> {
 		if (value == null)
 			return null;
-		var ref = new HostRef<T>();
-		registry.set(ref, value);
-		return ref;
+		return new HostRef<T>(value);
 	}
 
 	/**
 	 * Safely unwraps any untrusted reference passed from a guest script.
-	 * Returns null if ref is null, spoofed by a script, subclassed, or not in host registry.
+	 * Returns null if ref is null, spoofed by a script, subclassed, or freed.
 	 */
 	public static function unwrap<T>(ref:Dynamic):Null<T> {
 		if (ref == null)
@@ -38,7 +36,7 @@ final class HostRef<T> {
 		}
 
 		var hostRef:HostRef<Dynamic> = cast ref;
-		return registry.get(hostRef);
+		return hostRef.target;
 	}
 
 	/**
@@ -46,7 +44,8 @@ final class HostRef<T> {
 	 */
 	public static function free(ref:Dynamic):Void {
 		if (ref != null && Type.getClass(ref) == HostRef) {
-			registry.remove(cast ref);
+			var hostRef:HostRef<Dynamic> = cast ref;
+			hostRef.target = null;
 		}
 	}
 }

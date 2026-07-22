@@ -342,14 +342,15 @@ class TypeSystem {
 				// Fall back to original native type/class lookup
 				var resolvedTypePathVal = interp.resolveTypePath(path, scope);
 				var fqAbstractName:String = null;
-				if (fqAbstractName == null) {
-					if (haxiom.FFI.exposedAbstracts.exists(typeName)) {
+				var exposedAbs = interp != null ? interp.ffi.exposedAbstracts : null;
+				if (fqAbstractName == null && exposedAbs != null) {
+					if (exposedAbs.exists(typeName)) {
 						fqAbstractName = typeName;
 					} else if (resolvedTypePathVal != null) {
 						var resolvedClassName = interp.safeGetClassName(resolvedTypePathVal);
 						if (resolvedClassName != null) {
-							for (k in haxiom.FFI.exposedAbstracts.keys()) {
-								if (haxiom.FFI.exposedAbstracts.get(k).implClass == resolvedClassName) {
+							for (k in exposedAbs.keys()) {
+								if (exposedAbs.get(k).implClass == resolvedClassName) {
 									fqAbstractName = k;
 									break;
 								}
@@ -358,8 +359,8 @@ class TypeSystem {
 					}
 				}
 
-				if (fqAbstractName != null) {
-					var absInfo = haxiom.FFI.exposedAbstracts.get(fqAbstractName);
+				if (fqAbstractName != null && exposedAbs != null) {
+					var absInfo = exposedAbs.get(fqAbstractName);
 					var underlyingTypeDecl = TPath(absInfo.underlying.split("."), []);
 					return castOrCheckType(interp, val, underlyingTypeDecl, scope, genericBindings);
 				}

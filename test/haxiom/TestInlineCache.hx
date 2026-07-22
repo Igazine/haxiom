@@ -2,7 +2,6 @@ package haxiom;
 
 import haxiom.Haxiom;
 import haxiom.VM;
-import haxiom.FFI;
 
 class TestInlineCache {
     public static function main() {

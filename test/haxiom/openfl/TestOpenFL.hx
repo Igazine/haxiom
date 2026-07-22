@@ -149,18 +149,18 @@ class TestOpenFL extends Application {
 	}
 
 	function registerFFI(haxiom:Haxiom) {
-		FFI.registerClass(haxiom, "feathers.core.FeathersControl", FeathersControl);
-		FFI.registerClass(haxiom, "feathers.controls.Button", Button);
-		FFI.registerClass(haxiom, "feathers.controls.Alert", feathers.controls.Alert);
-		FFI.registerClass(haxiom, "feathers.controls.Label", Label);
-		FFI.registerClass(haxiom, "feathers.controls.LayoutGroup", LayoutGroup);
-		FFI.registerClass(haxiom, "feathers.events.TriggerEvent", TriggerEvent);
-		FFI.registerClass(haxiom, "openfl.display.BitmapData", openfl.display.BitmapData);
-		FFI.registerClass(haxiom, "openfl.display.Bitmap", openfl.display.Bitmap);
-		FFI.registerClass(haxiom, "openfl.Assets", openfl.utils.Assets);
-		FFI.registerClass(haxiom, "openfl.display.Sprite", openfl.display.Sprite);
-		FFI.registerClass(haxiom, "openfl.display.Graphics", openfl.display.Graphics);
-		FFI.registerValue(haxiom, "openfl.display.CapsStyle", {
+		haxiom.registerClass("feathers.core.FeathersControl", FeathersControl);
+		haxiom.registerClass("feathers.controls.Button", Button);
+		haxiom.registerClass("feathers.controls.Alert", feathers.controls.Alert);
+		haxiom.registerClass("feathers.controls.Label", Label);
+		haxiom.registerClass("feathers.controls.LayoutGroup", LayoutGroup);
+		haxiom.registerClass("feathers.events.TriggerEvent", TriggerEvent);
+		haxiom.registerClass("openfl.display.BitmapData", openfl.display.BitmapData);
+		haxiom.registerClass("openfl.display.Bitmap", openfl.display.Bitmap);
+		haxiom.registerClass("openfl.Assets", openfl.utils.Assets);
+		haxiom.registerClass("openfl.display.Sprite", openfl.display.Sprite);
+		haxiom.registerClass("openfl.display.Graphics", openfl.display.Graphics);
+		haxiom.registerValue("openfl.display.CapsStyle", {
 			NONE: openfl.display.CapsStyle.NONE,
 			ROUND: openfl.display.CapsStyle.ROUND,
 			SQUARE: openfl.display.CapsStyle.SQUARE

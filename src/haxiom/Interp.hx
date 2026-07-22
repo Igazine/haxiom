@@ -525,6 +525,7 @@ class Interp {
 	];
 
 	public var globals:Scope = new Scope();
+	public var ffi:FFIRegistry = new FFIRegistry();
 
 	var currentThis:Dynamic = null;
 
@@ -838,7 +839,7 @@ class Interp {
 						}
 					}
 					var genericSig = fqName + "<" + paramNames.join(",") + ">";
-					var mappedGenClass = haxiom.FFI.exposedGenerics.get(genericSig);
+					var mappedGenClass = this.ffi.exposedGenerics.get(genericSig);
 					if (mappedGenClass != null) {
 						var cls = resolveNativeClass(mappedGenClass);
 						if (cls != null)
@@ -872,7 +873,7 @@ class Interp {
 				}
 
 				// 3. Check Exposed Abstracts constructor redirection
-				var absInfo = haxiom.FFI.exposedAbstracts.get(fqName);
+				var absInfo = this.ffi.exposedAbstracts.get(fqName);
 				if (absInfo != null) {
 					var implCls = resolveAbstractImpl(fqName, absInfo.implClass);
 					if (implCls != null) {
@@ -1923,7 +1924,7 @@ class Interp {
 		}
 
 		// Custom FFI member resolution overrides
-		for (resolver in haxiom.FFI.memberResolvers) {
+		for (resolver in this.ffi.memberResolvers) {
 			var res = resolver(obj, field);
 			if (res != null)
 				return res;
@@ -1932,8 +1933,8 @@ class Interp {
 		// Native static field overrides (for static inline variables erased on target platforms)
 		if (Std.isOfType(obj, Class)) {
 			var className = Type.getClassName(cast obj);
-			if (className != null && haxiom.FFI.nativeStaticFields.exists(className)) {
-				var fields = haxiom.FFI.nativeStaticFields.get(className);
+			if (className != null && this.ffi.nativeStaticFields.exists(className)) {
+				var fields = this.ffi.nativeStaticFields.get(className);
 				if (fields.exists(field)) {
 					return fields.get(field);
 				}
@@ -1960,8 +1961,8 @@ class Interp {
 		#end
 
 		// Check if this is an abstract method or property redirection closure/getter
-		for (absName in haxiom.FFI.exposedAbstracts.keys()) {
-			var absInfo = haxiom.FFI.exposedAbstracts.get(absName);
+		for (absName in this.ffi.exposedAbstracts.keys()) {
+			var absInfo = this.ffi.exposedAbstracts.get(absName);
 			var getterName = "get_" + field;
 			var isGetter = absInfo.methods.indexOf(getterName) != -1;
 			var methodName = isGetter ? getterName : field;
@@ -2100,8 +2101,8 @@ class Interp {
 			} else {
 				// Check if this is an abstract setter redirection
 				var setterResolved = false;
-				for (absName in haxiom.FFI.exposedAbstracts.keys()) {
-					var absInfo = haxiom.FFI.exposedAbstracts.get(absName);
+				for (absName in this.ffi.exposedAbstracts.keys()) {
+					var absInfo = this.ffi.exposedAbstracts.get(absName);
 					var setterName = "set_" + field;
 					if (absInfo.methods.indexOf(setterName) != -1) {
 						var matchesType = false;
@@ -2135,7 +2136,7 @@ class Interp {
 				}
 				if (!setterResolved) {
 					var assigned = false;
-					for (assigner in haxiom.FFI.memberAssigners) {
+					for (assigner in this.ffi.memberAssigners) {
 						if (assigner(obj, field, val)) {
 							assigned = true;
 							break;
@@ -3083,8 +3084,8 @@ class Interp {
 						}
 
 						// Check if this is an abstract method redirection call
-						for (absName in haxiom.FFI.exposedAbstracts.keys()) {
-							var absInfo = haxiom.FFI.exposedAbstracts.get(absName);
+						for (absName in this.ffi.exposedAbstracts.keys()) {
+							var absInfo = this.ffi.exposedAbstracts.get(absName);
 							if (absInfo.methods.indexOf(field) != -1) {
 								var matchesType = false;
 								switch (absInfo.underlying) {
@@ -3706,9 +3707,9 @@ class Interp {
 					var prefix = parentPath + ".";
 
 					// 1. Scan FFI exposed abstracts
-					for (fqName in haxiom.FFI.exposedAbstracts.keys()) {
+					for (fqName in this.ffi.exposedAbstracts.keys()) {
 						if (StringTools.startsWith(fqName, prefix) && isImportWhitelisted(fqName)) {
-							var absInfo = haxiom.FFI.exposedAbstracts.get(fqName);
+							var absInfo = this.ffi.exposedAbstracts.get(fqName);
 							var implCls = resolveAbstractImpl(fqName, absInfo.implClass);
 							if (implCls != null) {
 								var parts = fqName.split(".");
@@ -3845,8 +3846,8 @@ class Interp {
 				}
 
 				if (isImportWhitelisted(fqName)) {
-					if (haxiom.FFI.exposedAbstracts.exists(fqName)) {
-						var absInfo = haxiom.FFI.exposedAbstracts.get(fqName);
+					if (this.ffi.exposedAbstracts.exists(fqName)) {
+						var absInfo = this.ffi.exposedAbstracts.get(fqName);
 						var implCls = resolveAbstractImpl(fqName, absInfo.implClass);
 						if (implCls != null) {
 							scope.declare(shortName, implCls);
@@ -3865,8 +3866,8 @@ class Interp {
 					}
 
 					// Module check
-					if (FFI.exposedModules.exists(fqName)) {
-						var types = FFI.exposedModules.get(fqName);
+					if (this.ffi.exposedModules.exists(fqName)) {
+						var types = this.ffi.exposedModules.get(fqName);
 						for (typeFq in types) {
 							var subParts = typeFq.split(".");
 							var subShortName = subParts[subParts.length - 1];
@@ -3884,7 +3885,7 @@ class Interp {
 					}
 
 					// Module subtype check
-					for (modKey in FFI.exposedModules.keys()) {
+					for (modKey in this.ffi.exposedModules.keys()) {
 						if (StringTools.startsWith(fqName, modKey + ".")) {
 							var subName = fqName.substr(modKey.length + 1);
 							var lastDot = modKey.lastIndexOf(".");
@@ -5548,8 +5549,8 @@ class Interp {
 			var fqName = prefix.join(".");
 
 			var resolvedType:Dynamic = null;
-			if (haxiom.FFI.exposedAbstracts.exists(fqName)) {
-				var absInfo = haxiom.FFI.exposedAbstracts.get(fqName);
+			if (this.ffi.exposedAbstracts.exists(fqName)) {
+				var absInfo = this.ffi.exposedAbstracts.get(fqName);
 				resolvedType = resolveAbstractImpl(fqName, absInfo.implClass);
 			} else {
 				var cls = resolveNativeClass(fqName);
@@ -5564,7 +5565,7 @@ class Interp {
 			}
 
 			if (resolvedType == null) {
-				for (modKey in FFI.exposedModules.keys()) {
+				for (modKey in this.ffi.exposedModules.keys()) {
 					if (StringTools.startsWith(fqName, modKey + ".")) {
 						var subName = fqName.substr(modKey.length + 1);
 						var lastDot = modKey.lastIndexOf(".");
@@ -5645,8 +5646,8 @@ class Interp {
 
 		var fqName = path.join(".");
 
-		if (haxiom.FFI.exposedAbstracts.exists(fqName)) {
-			var absInfo = haxiom.FFI.exposedAbstracts.get(fqName);
+		if (this.ffi.exposedAbstracts.exists(fqName)) {
+			var absInfo = this.ffi.exposedAbstracts.get(fqName);
 			var impl = resolveAbstractImpl(fqName, absInfo.implClass);
 			if (impl != null && isManualImportRequired(fqName)) {
 				if (!isClassInScope(impl, scope))
@@ -5669,7 +5670,7 @@ class Interp {
 			return enm;
 
 		// Check if fqName is a module subtype compile-time path
-		for (modKey in FFI.exposedModules.keys()) {
+		for (modKey in this.ffi.exposedModules.keys()) {
 			if (StringTools.startsWith(fqName, modKey + ".")) {
 				var subName = fqName.substr(modKey.length + 1);
 				var lastDot = modKey.lastIndexOf(".");
@@ -6165,7 +6166,7 @@ class Interp {
 	}
 
 	function resolveAbstractImpl(absName:String, implClassName:String):Dynamic {
-		var implCls = haxiom.FFI.abstractImpls.get(absName);
+		var implCls = this.ffi.abstractImpls.get(absName);
 		if (implCls == null) {
 			implCls = resolveNativeClass(implClassName);
 		}

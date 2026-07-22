@@ -200,5 +200,77 @@ class InternalTests {
 			throw "Expected verification error for out-of-bounds jump, but none occurred";
 
 		trace("SUCCESS: Bytecode Verification & Safety Checks verified.");
+		runThreadSafetyTests();
+	}
+
+	static function runThreadSafetyTests():Void {
+		#if sys
+		trace("Testing Multi-Threaded Concurrent Execution & Zero Shared Static State...");
+		var threadCount = 8;
+		var results = new sys.thread.Deque<Bool>();
+
+		for (i in 0...threadCount) {
+			sys.thread.Thread.create(function() {
+				try {
+					var engine = new Haxiom();
+					engine.registerStaticField("TestTarget", "val", i * 10);
+					var handle = HostRef.wrap("thread_secret_" + i);
+					engine.setGlobal("handle", handle);
+
+					// Run AST interpretation
+					var astRes = engine.interpret("
+						var x = 0;
+						for (j in 0...1000) {
+							x += 1;
+						}
+						x;
+					");
+					if (astRes != 1000) {
+						results.add(false);
+						return;
+					}
+
+					// Run VM bytecode execution
+					engine.useVM = true;
+					var vmRes = engine.interpret("
+						var sum = 0;
+						for (k in 0...500) {
+							sum += 2;
+						}
+						sum;
+					");
+					if (vmRes != 1000) {
+						results.add(false);
+						return;
+					}
+
+					// Verify HostRef unwrapping
+					var unwrapped:Dynamic = HostRef.unwrap(handle);
+					if (unwrapped != "thread_secret_" + i) {
+						results.add(false);
+						return;
+					}
+
+					results.add(true);
+				} catch (e:Dynamic) {
+					trace("Thread Error: " + e);
+					results.add(false);
+				}
+			});
+		}
+
+		var passedCount = 0;
+		for (i in 0...threadCount) {
+			var res = results.pop(true);
+			if (res == true) passedCount++;
+		}
+
+		if (passedCount != threadCount) {
+			throw 'FAIL: Concurrent multi-threaded test failed ($passedCount / $threadCount passed)';
+		}
+		trace('SUCCESS: Multi-Threaded Parallel Execution verified ($passedCount / $threadCount concurrent engine threads passed cleanly).');
+		#else
+		trace("SKIPPED: Multi-threaded test skipped on non-sys target.");
+		#end
 	}
 }

@@ -332,10 +332,18 @@ class Optimizer {
 	 *
 	 * Runs after foldConstants so constant-folded branches are already resolved.
 	 */
-	static var globalUsages:Map<String, Int>;
-	static var keepSubClassNames:Map<String, Bool> = new Map();
+	var globalUsages:Map<String, Int>;
+	var keepSubClassNames:Map<String, Bool> = new Map();
 
-	static function getTypeName(t:TypeDecl):Null<String> {
+	public static function eliminateDeadCode(expr:Expr):Expr {
+		if (expr == null)
+			return null;
+		return new Optimizer().eliminateDeadCodeInternal(expr);
+	}
+
+	public function new() {}
+
+	function getTypeName(t:TypeDecl):Null<String> {
 		if (t == null) return null;
 		switch (t) {
 			case TPath(path, _):
@@ -345,7 +353,7 @@ class Optimizer {
 		}
 	}
 
-	static function collectClasses(expr:Expr, classes:Array<Expr>):Void {
+	function collectClasses(expr:Expr, classes:Array<Expr>):Void {
 		if (expr == null) return;
 		switch (expr.def) {
 			case EClass(_, _, _, _, _, _, _):
@@ -356,7 +364,7 @@ class Optimizer {
 		}
 	}
 
-	static function processKeepSub(expr:Expr):Void {
+	function processKeepSub(expr:Expr):Void {
 		var classesList = [];
 		collectClasses(expr, classesList);
 
@@ -403,7 +411,7 @@ class Optimizer {
 		}
 	}
 
-	static function eliminateDeadCode(expr:Expr):Expr {
+	function eliminateDeadCodeInternal(expr:Expr):Expr {
 		if (expr == null)
 			return null;
 		globalUsages = new Map();
@@ -412,7 +420,7 @@ class Optimizer {
 		return dceExpr(expr);
 	}
 
-	static function dceExpr(expr:Expr):Expr {
+	function dceExpr(expr:Expr):Expr {
 		if (expr == null)
 			return null;
 		switch (expr.def) {
@@ -726,7 +734,7 @@ class Optimizer {
 	 * Only tracks reads — writes via EVar declarations are NOT counted here.
 	 * Call-site names, field objects, and loop variables are all counted as reads.
 	 */
-	static function collectUsages(expr:Expr, usages:Map<String, Int>):Void {
+	function collectUsages(expr:Expr, usages:Map<String, Int>):Void {
 		if (expr == null)
 			return;
 		switch (expr.def) {
@@ -883,7 +891,7 @@ class Optimizer {
 	 *   - EAssign, EUnop(++/--) (mutating)
 	 *   - EThrow, EReturn (control flow)
 	 */
-	static function isPure(expr:Expr):Bool {
+	function isPure(expr:Expr):Bool {
 		if (expr == null)
 			return true;
 		return switch (expr.def) {
@@ -917,7 +925,7 @@ class Optimizer {
 	 *      of a comprehension or block-expression. Never prune bare EIdent reads — they
 	 *      commonly serve as yield values inside for/while comprehension bodies.
 	 */
-	static function pruneBlock(exprs:Array<Expr>, usages:Map<String, Int>):Array<Expr> {
+	function pruneBlock(exprs:Array<Expr>, usages:Map<String, Int>):Array<Expr> {
 		var result:Array<Expr> = [];
 		for (i in 0...exprs.length) {
 			var expr = exprs[i];

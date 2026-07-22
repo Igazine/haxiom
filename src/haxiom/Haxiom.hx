@@ -207,10 +207,10 @@ class Haxiom {
 	 */
 	public function new() {
 		interp = new Interp();
-		FFI.exposedModules.set("haxiom.AST", ["haxiom.ExprDef", "haxiom.TypeDecl"]);
-		FFI.registerEnum(this, "haxiom.ExprDef", haxiom.AST.ExprDef);
-		FFI.registerEnum(this, "haxiom.TypeDecl", haxiom.AST.TypeDecl);
-		FFI.registerClass(this, "haxiom.guest.Future", haxiom.guest.Future);
+		registerModule("haxiom.AST", ["haxiom.ExprDef", "haxiom.TypeDecl"]);
+		registerEnum("haxiom.ExprDef", haxiom.AST.ExprDef);
+		registerEnum("haxiom.TypeDecl", haxiom.AST.TypeDecl);
+		registerClassRuntime("haxiom.guest.Future", haxiom.guest.Future);
 	}
 
 
@@ -952,7 +952,7 @@ class Haxiom {
 	 * @param name The fully-qualified name of the interface.
 	 */
 	public static function registerInterface(haxiom:Haxiom, name:String):Void {
-		FFI.registerValue(haxiom, name, {__isInterface: true});
+		haxiom.registerValue(name, {__isInterface: true});
 	}
 
 	/**
@@ -966,5 +966,162 @@ class Haxiom {
 	public static function constructHelper(haxiom:Haxiom, className:String, factory:(Haxiom, Dynamic) -> Dynamic):Dynamic {
 		var guestInst = haxiom.interpret("new " + className + "();");
 		return factory(haxiom, guestInst);
+	}
+
+	public function registerMemberResolver(resolver:(obj:Dynamic, field:String) -> Dynamic):Void {
+		interp.ffi.registerMemberResolver(resolver);
+	}
+
+	public function registerMemberAssigner(assigner:(obj:Dynamic, field:String, val:Dynamic) -> Bool):Void {
+		interp.ffi.registerMemberAssigner(assigner);
+	}
+
+	public function registerStaticField(className:String, fieldName:String, value:Dynamic):Void {
+		interp.ffi.registerStaticField(className, fieldName, value);
+	}
+
+	public function registerModule(moduleName:String, types:Array<String>):Void {
+		interp.ffi.exposedModules.set(moduleName, types);
+	}
+
+	public function registerClassRuntime(fqName:String, cls:Class<Dynamic>):Void {
+		interp.registerFullyQualified(fqName, cls, interp.globals);
+		if (interp.importWhitelist != null && interp.importWhitelist.indexOf(fqName) == -1) {
+			interp.importWhitelist.push(fqName);
+		}
+		var parts = fqName.split(".");
+		var shortName = parts[parts.length - 1];
+		if (!interp.globals.exists(shortName)) {
+			interp.globals.declare(shortName, cls);
+		}
+	}
+
+	public function registerGenericInstantiation(signature:String, cls:Class<Dynamic>):Void {
+		interp.ffi.exposedGenerics.set(signature, Type.getClassName(cls));
+		interp.registerFullyQualified(signature, cls, interp.globals);
+		if (interp.importWhitelist != null && interp.importWhitelist.indexOf(signature) == -1) {
+			interp.importWhitelist.push(signature);
+		}
+	}
+
+	public function registerEnum(fqName:String, enm:Enum<Dynamic>):Void {
+		interp.registerFullyQualified(fqName, enm, interp.globals);
+		if (interp.importWhitelist != null && interp.importWhitelist.indexOf(fqName) == -1) {
+			interp.importWhitelist.push(fqName);
+		}
+		var parts = fqName.split(".");
+		var shortName = parts[parts.length - 1];
+		if (!interp.globals.exists(shortName)) {
+			interp.globals.declare(shortName, enm);
+		}
+	}
+
+	public function registerValue(fqName:String, value:Dynamic):Void {
+		interp.registerFullyQualified(fqName, value, interp.globals);
+		if (interp.importWhitelist != null && interp.importWhitelist.indexOf(fqName) == -1) {
+			interp.importWhitelist.push(fqName);
+		}
+		var parts = fqName.split(".");
+		var shortName = parts[parts.length - 1];
+		if (!interp.globals.exists(shortName)) {
+			interp.globals.declare(shortName, value);
+		}
+	}
+
+	public function registerExposedClasses():Void {
+		#if !macro
+		// 1. Load exposed classes
+		var res = haxe.Resource.getString("haxiom_exposed_classes");
+		if (res != null) {
+			var list:Array<String> = haxe.Json.parse(res);
+			for (fqName in list) {
+				var cls = Type.resolveClass(fqName);
+				if (cls != null) {
+					registerClassRuntime(fqName, cls);
+				}
+			}
+		}
+
+		// 2. Load exposed abstracts
+		var absRes = haxe.Resource.getString("haxiom_exposed_abstracts");
+		if (absRes != null) {
+			var obj:Dynamic = haxe.Json.parse(absRes);
+			for (k in Reflect.fields(obj)) {
+				interp.ffi.exposedAbstracts.set(k, Reflect.field(obj, k));
+			}
+		}
+
+		// 2b. Load runtime abstract implementation references
+		var registryCls = Type.resolveClass("haxiom.macro.AbstractRegistry");
+		if (registryCls != null) {
+			var impls:Map<String, Dynamic> = Reflect.field(registryCls, "impls");
+			if (impls != null) {
+				for (k in impls.keys()) {
+					interp.ffi.abstractImpls.set(k, impls.get(k));
+				}
+			}
+		}
+
+		// 3. Load exposed generics
+		var genRes = haxe.Resource.getString("haxiom_exposed_generics");
+		if (genRes != null) {
+			var obj:Dynamic = haxe.Json.parse(genRes);
+			for (k in Reflect.fields(obj)) {
+				interp.ffi.exposedGenerics.set(k, Reflect.field(obj, k));
+			}
+		}
+
+		// 4. Load exposed modules
+		var modRes = haxe.Resource.getString("haxiom_exposed_modules");
+		if (modRes != null) {
+			var obj:Dynamic = haxe.Json.parse(modRes);
+			for (k in Reflect.fields(obj)) {
+				var arr:Array<Dynamic> = Reflect.field(obj, k);
+				interp.ffi.exposedModules.set(k, [for (item in arr) Std.string(item)]);
+			}
+		}
+		#end
+	}
+
+	public macro function registerClass(selfExpr:haxe.macro.Expr, fqNameExpr:haxe.macro.Expr.ExprOf<String>, classExpr:haxe.macro.Expr) {
+		#if macro
+		var className = haxe.macro.ExprTools.toString(classExpr);
+		var t = null;
+		try {
+			t = haxe.macro.Context.getType(className);
+		} catch (e:Dynamic) {}
+
+		var exprs:Array<haxe.macro.Expr> = [];
+		exprs.push(macro $selfExpr.registerClassRuntime($fqNameExpr, $classExpr));
+
+		if (t != null) {
+			switch (t) {
+				case TInst(classRef, _):
+					var c = classRef.get();
+					for (field in c.statics.get()) {
+						if (field.isPublic) {
+							var isReadable = true;
+							switch (field.kind) {
+								case FVar(read, _):
+									switch (read) {
+										case AccNo | AccNever:
+											isReadable = false;
+										default:
+									}
+								default:
+							}
+							if (isReadable) {
+								var fieldName = field.name;
+								exprs.push(macro $selfExpr.registerStaticField($fqNameExpr, $v{fieldName}, $classExpr.$fieldName));
+							}
+						}
+					}
+				default:
+			}
+		}
+		return macro { $a{exprs} };
+		#else
+		return macro null;
+		#end
 	}
 }

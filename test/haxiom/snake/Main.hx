@@ -85,19 +85,19 @@ class Main extends Sprite {
 	}
 
 	function registerFFI(haxiom:Haxiom) {
-		FFI.registerClass(haxiom, "openfl.display.Sprite", Sprite);
-		FFI.registerClass(haxiom, "openfl.display.Shape", openfl.display.Shape);
-		FFI.registerClass(haxiom, "openfl.text.TextField", openfl.text.TextField);
-		FFI.registerClass(haxiom, "openfl.text.TextFormat", openfl.text.TextFormat);
-		FFI.registerClass(haxiom, "openfl.events.MouseEvent", openfl.events.MouseEvent);
-		FFI.registerClass(haxiom, "openfl.events.KeyboardEvent", openfl.events.KeyboardEvent);
-		FFI.registerClass(haxiom, "openfl.ui.Keyboard", openfl.ui.Keyboard);
+		haxiom.registerClass("openfl.display.Sprite", Sprite);
+		haxiom.registerClass("openfl.display.Shape", openfl.display.Shape);
+		haxiom.registerClass("openfl.text.TextField", openfl.text.TextField);
+		haxiom.registerClass("openfl.text.TextFormat", openfl.text.TextFormat);
+		haxiom.registerClass("openfl.events.MouseEvent", openfl.events.MouseEvent);
+		haxiom.registerClass("openfl.events.KeyboardEvent", openfl.events.KeyboardEvent);
+		haxiom.registerClass("openfl.ui.Keyboard", openfl.ui.Keyboard);
 
 		// Expose Actuate for visual tweening effects
-		FFI.registerClass(haxiom, "motion.Actuate", motion.Actuate);
+		haxiom.registerClass("motion.Actuate", motion.Actuate);
 
 		// Expose a host Timer that maps haxe.Timer.delay to Haxiom Future resolutions
-		FFI.registerClass(haxiom, "Timer", HaxiomTimer);
+		haxiom.registerClass("Timer", HaxiomTimer);
 	}
 }
 

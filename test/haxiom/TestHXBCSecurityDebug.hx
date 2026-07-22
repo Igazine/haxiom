@@ -243,7 +243,7 @@ class TestHXBCSecurityDebug {
         var engine = new Haxiom();
         engine.useVM = true;
         
-        FFI.registerClass(engine, "haxe.crypto.Sha1", haxe.crypto.Sha1);
+        engine.registerClass("haxe.crypto.Sha1", haxe.crypto.Sha1);
 
         var script = "
             import haxe.crypto.Sha1;
@@ -260,7 +260,7 @@ class TestHXBCSecurityDebug {
         // Test AST mode as well
         var engineAST = new Haxiom();
         engineAST.useVM = false;
-        FFI.registerClass(engineAST, "haxe.crypto.Sha1", haxe.crypto.Sha1);
+        engineAST.registerClass("haxe.crypto.Sha1", haxe.crypto.Sha1);
         engineAST.interpret(script);
 
         trace("SUCCESS: Native class casting verified.");
