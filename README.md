@@ -107,6 +107,7 @@ class Main {
 
 I'm planning to add the following features in the future to extend functionality of Haxiom.
 
+- [ ] Explicit Host vs. Guest Namespace Separation in the codebase architecture
 - [ ] Support for `extern` keyword, so guest Haxiom scripts can access host-defined classes and methods in an LSP-safe manner without using preprocessor directives
 - [ ] Step-by-Step VM Debugger & DAP (Debug Adapter Protocol) to allow remote Haxiom VM debugging
 - [ ] VM State Machine - snapshotted VM state serialization, so VMs can be paused, their state saved and loaded later
