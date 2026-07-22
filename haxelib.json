@@ -7,10 +7,11 @@
     "bytecode",
     "vm",
     "interpreter",
-    "haxe"
+    "haxe",
+    "haxe-in-haxe"
   ],
-  "description": "Haxiom scripting engine: bytecode VM and AST interpretation for Haxe.",
-  "version": "0.0.1",
+  "description": "Haxiom is a secure, sandboxed Haxe-in-Haxe scripting engine and bytecode Virtual Machine (VM)",
+  "version": "0.5.0",
   "classPath": "src",
   "main": "haxiom.LibRun",
   "releasenote": "Standalone Haxiom release.",
