@@ -65,12 +65,18 @@ class ResourceCompiler {
 			}
 			candidates.push(relPath);
 			try {
-				var cwd = Sys.getCwd();
-				if (cwd != null && cwd.length > 0) {
-					candidates.push(haxe.io.Path.join([cwd, relPath]));
-					if (pos != null && pos.file != null && pos.file.length > 0) {
-						var dir = haxe.io.Path.directory(pos.file);
-						candidates.push(haxe.io.Path.join([cwd, dir, relPath]));
+				var sysCls = Type.resolveClass("Sys");
+				if (sysCls != null) {
+					var getCwdFunc = Reflect.field(sysCls, "getCwd");
+					if (getCwdFunc != null) {
+						var cwd:String = Reflect.callMethod(sysCls, getCwdFunc, []);
+						if (cwd != null && cwd.length > 0) {
+							candidates.push(haxe.io.Path.join([cwd, relPath]));
+							if (pos != null && pos.file != null && pos.file.length > 0) {
+								var dir = haxe.io.Path.directory(pos.file);
+								candidates.push(haxe.io.Path.join([cwd, dir, relPath]));
+							}
+						}
 					}
 				}
 			} catch (e:Dynamic) {}
