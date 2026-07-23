@@ -109,6 +109,7 @@ I'm planning to add the following features in the future to extend functionality
 
 - [x] Support for `extern` keyword, so guest Haxiom scripts can access host-defined classes and methods in an LSP-safe manner without using preprocessor directives
 - [ ] Caller identification in the Host
+- [ ] Automatic `IHaxiomModule` Interface injection for Guest Scripts
 - [ ] Class/field alias with `@:native` metadata inside Haxiom scripts
 - [ ] ~Boot scripts with arguments (similarly to how `Sys.args()` work on certain Haxe targets)~
 - [ ] Better, more detailed configuration options for Haxiom instances
