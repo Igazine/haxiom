@@ -105,7 +105,7 @@ class Main {
 
 ## Future Plans
 
-I'm planning to add the following features in the future to extend functionality of Haxiom.
+I'm planning to add the following features in the future to extend functionality of Haxiom. Most of the listed items are currently in discovery/investigation phase, and it's not guaranteed that each of them will be implemented ever.
 
 - [x] Support for `extern` keyword, so guest Haxiom scripts can access host-defined classes and methods in an LSP-safe manner without using preprocessor directives
 - [ ] Caller identification in the Host
