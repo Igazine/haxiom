@@ -458,7 +458,6 @@ class LibRun {
 	}
 
 	static function compileSingleFile(workingDir:String, input:String, ?key:String, ?staticTypes:Bool = false, ?compress:Bool = false) {
-		ResourceCompiler.workingDir = workingDir;
 		var fullInputPath = workingDir + input;
 		final haxiom = new Haxiom();
 		haxiom.enableStaticTypes = staticTypes;

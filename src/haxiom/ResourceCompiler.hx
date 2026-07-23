@@ -5,9 +5,8 @@ import haxe.io.Bytes;
 
 /**
  * Helper class for processing `@:haxiom.resource('./path')` metadata annotations.
- * Target-agnostic resource resolution with ZERO `#if sys` compiler directives.
- * Supports disk loading (on sys environments), virtual resources map,
- * custom host resource provider callbacks, and embedded `haxe.Resource` items.
+ * Supports embedded binary payloads, virtual resources map,
+ * custom host resource provider callbacks, and disk loading on sys targets.
  */
 class ResourceCompiler {
 	/** Global virtual resources map for host-injected memory assets */
@@ -15,9 +14,6 @@ class ResourceCompiler {
 
 	/** Custom host resource provider function */
 	public static var resourceProvider:Null<(path:String) -> Bytes> = null;
-
-	/** Working directory set by CLI/runner for resolving project-relative assets */
-	public static var workingDir:String = null;
 
 	public static function loadResourceBytes(relPath:String, pos:Pos):Bytes {
 		var pStr = pos != null ? '${pos.file != null ? pos.file : "script"}:${pos.line}:${pos.col}' : "script";
@@ -41,60 +37,25 @@ class ResourceCompiler {
 				return hRes;
 		} catch (e:Dynamic) {}
 
-		// 4. Reflective Sys FileSystem / File loading (100% target agnostic, zero #if sys)
-		var fsCls = Type.resolveClass("sys.FileSystem");
-		var fileCls = Type.resolveClass("sys.io.File");
-
-		if (fsCls != null && fileCls != null) {
-			var existsFunc = Reflect.field(fsCls, "exists");
-			var getBytesFunc = Reflect.field(fileCls, "getBytes");
-
-			var candidates:Array<String> = [];
-			if (workingDir != null && workingDir.length > 0) {
-				candidates.push(haxe.io.Path.join([workingDir, relPath]));
-				if (pos != null && pos.file != null && pos.file.length > 0) {
-					var dir = haxe.io.Path.directory(pos.file);
-					candidates.push(haxe.io.Path.join([workingDir, dir, relPath]));
+		// 4. FileSystem disk loading on sys targets
+		#if sys
+		var fullPath = relPath;
+		if (pos != null && pos.file != null && pos.file.length > 0) {
+			var dir = haxe.io.Path.directory(pos.file);
+			if (dir != null && dir.length > 0) {
+				var p = haxe.io.Path.join([dir, relPath]);
+				if (sys.FileSystem.exists(p)) {
+					fullPath = p;
 				}
 			}
-			if (pos != null && pos.file != null && pos.file.length > 0) {
-				var dir = haxe.io.Path.directory(pos.file);
-				if (dir != null && dir.length > 0) {
-					candidates.push(haxe.io.Path.join([dir, relPath]));
-				}
-			}
-			candidates.push(relPath);
-			try {
-				var sysCls = Type.resolveClass("Sys");
-				if (sysCls != null) {
-					var getCwdFunc = Reflect.field(sysCls, "getCwd");
-					if (getCwdFunc != null) {
-						var cwd:String = Reflect.callMethod(sysCls, getCwdFunc, []);
-						if (cwd != null && cwd.length > 0) {
-							candidates.push(haxe.io.Path.join([cwd, relPath]));
-							if (pos != null && pos.file != null && pos.file.length > 0) {
-								var dir = haxe.io.Path.directory(pos.file);
-								candidates.push(haxe.io.Path.join([cwd, dir, relPath]));
-							}
-						}
-					}
-				}
-			} catch (e:Dynamic) {}
-
-			var fullPath:String = null;
-			for (cand in candidates) {
-				if (cand != null && cand.length > 0 && Reflect.callMethod(fsCls, existsFunc, [cand])) {
-					fullPath = cand;
-					break;
-				}
-			}
-
-			if (fullPath == null) {
-				throw 'Compile Error: Resource file not found: \'${relPath}\' at ${pStr}';
-			}
-
-			return Reflect.callMethod(fileCls, getBytesFunc, [fullPath]);
 		}
+		if (sys.FileSystem.exists(fullPath)) {
+			return sys.io.File.getBytes(fullPath);
+		}
+		if (sys.FileSystem.exists(relPath)) {
+			return sys.io.File.getBytes(relPath);
+		}
+		#end
 
 		throw 'Compile Error: Resource file not found: \'${relPath}\' at ${pStr}';
 	}
