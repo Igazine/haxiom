@@ -37,8 +37,10 @@ class LibRun {
 			Sys.exit(1);
 		}
 		var workingDir = args.pop();
-		if (workingDir != null && workingDir.length > 0 && !StringTools.endsWith(workingDir, "/") && !StringTools.endsWith(workingDir, "\\")) {
-			workingDir += "/";
+		if (workingDir != null && workingDir.length > 0) {
+			try {
+				Sys.setCwd(workingDir);
+			} catch (e:Dynamic) {}
 		}
 		var command = args.shift();
 		if (command == null) {
