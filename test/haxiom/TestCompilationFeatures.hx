@@ -249,6 +249,9 @@ class TestCompilationFeatures {
     static function testMacros() {
         var engine = new Haxiom();
         engine.useVM = true;
+        engine.registerModule("haxiom.AST", ["haxiom.ExprDef", "haxiom.TypeDecl"]);
+        engine.exposeEnum("haxiom.ExprDef", haxiom.AST.ExprDef);
+        engine.exposeEnum("haxiom.TypeDecl", haxiom.AST.TypeDecl);
 
         // Define a macro static method inside a class
         var script = '

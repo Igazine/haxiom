@@ -207,13 +207,8 @@ class Haxiom {
 	 */
 	public function new() {
 		interp = new Interp();
-		registerModule("haxiom.AST", ["haxiom.ExprDef", "haxiom.TypeDecl"]);
-		registerEnum("haxiom.ExprDef", haxiom.AST.ExprDef);
-		registerEnum("haxiom.TypeDecl", haxiom.AST.TypeDecl);
 		registerClassRuntime("haxiom.guest.Future", haxiom.guest.Future);
 	}
-
-
 
 	/**
 	 * Validates if the supplied package namespace string is a valid identifier path.
@@ -598,7 +593,12 @@ class Haxiom {
 			info.constantPoolSize = chunk.constants != null ? chunk.constants.length : 0;
 			info.debugSymbolCount = chunk.debugSymbols != null ? chunk.debugSymbols.length : 0;
 			info.positionMappingCount = chunk.positions != null ? chunk.positions.length : 0;
-			info.debugSymbols = chunk.debugSymbols != null ? chunk.debugSymbols.map(s -> {slot: s.slot, name: s.name, startIp: s.startIp, endIp: s.endIp}) : [];
+			info.debugSymbols = chunk.debugSymbols != null ? chunk.debugSymbols.map(s -> {
+				slot: s.slot,
+				name: s.name,
+				startIp: s.startIp,
+				endIp: s.endIp
+			}) : [];
 
 			// Source files extraction
 			var filesMap = new Map<String, Bool>();
@@ -1001,7 +1001,6 @@ class Haxiom {
 	}
 
 	/** Unified API Aliases **/
-
 	/** Expose a host class to scripts (alias for registerClass) */
 	public inline function exposeClass(fqName:String, cls:Class<Dynamic>):Void {
 		registerClassRuntime(fqName, cls);
@@ -1154,7 +1153,7 @@ class Haxiom {
 				default:
 			}
 		}
-		return macro { $a{exprs} };
+		return macro {$a{exprs}};
 		#else
 		return macro null;
 		#end
