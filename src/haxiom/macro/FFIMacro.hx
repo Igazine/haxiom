@@ -182,13 +182,18 @@ class FFIMacro {
                                 
                                 var methods = [];
                                 for (field in implClass.statics.get()) {
-                                    methods.push(field.name);
+                                    switch (field.kind) {
+                                        case FVar(_, _):
+                                            methods.push(field.name);
+                                        default:
+                                    }
                                 }
                                 
                                 exposedAbstracts.set(fqName, {
                                     implClass: fqImplName,
                                     methods: methods,
-                                    underlying: haxe.macro.TypeTools.toString(abs.type)
+                                    underlying: haxe.macro.TypeTools.toString(abs.type),
+                                    isEnum: abs.meta.has(":enum")
                                 });
                                 
                                 Compiler.keep(fqImplName);
@@ -330,25 +335,33 @@ class FFIMacro {
     public static macro function getAbstractMap():haxe.macro.Expr {
         #if macro
         var exprs = [];
+        var pos = haxe.macro.Context.currentPos();
         for (k in exposedAbstracts.keys()) {
             var absInfo = exposedAbstracts.get(k);
             var fqName = k;
-            
-            var expr:haxe.macro.Expr;
-            if (haxe.macro.Context.defined("js")) {
-                var jsVar = fqName.split(".").join("_");
-                expr = macro js.Syntax.code($v{jsVar});
-            } else {
-                var parts = absInfo.implClass.split(".");
-                for (i in 0...parts.length - 1) {
-                    if (StringTools.startsWith(parts[i], "_")) {
-                        parts[i] = parts[i].substring(1);
+
+            if (absInfo != null && absInfo.isEnum == true && absInfo.methods != null && absInfo.methods.length > 0) {
+                var fieldExprs = [];
+                for (mName in absInfo.methods) {
+                    if (mName != null && mName.length > 0 && !StringTools.startsWith(mName, "_")) {
+                        try {
+                            var accessStr = fqName + "." + mName;
+                            var fieldAccess = haxe.macro.Context.parseInlineString(accessStr, pos);
+                            fieldExprs.push({ field: mName, expr: fieldAccess });
+                        } catch (e:Dynamic) {}
                     }
                 }
-                var cleanImplClass = parts.join(".");
-                expr = macro Type.resolveClass($v{cleanImplClass});
+                if (fieldExprs.length > 0) {
+                    var objExpr:haxe.macro.Expr = { expr: EObjectDecl(fieldExprs), pos: pos };
+                    exprs.push(macro $v{k} => $objExpr);
+                    continue;
+                }
             }
-            exprs.push(macro $v{k} => $expr);
+
+            if (absInfo != null && absInfo.implClass != null) {
+                var implName = absInfo.implClass;
+                exprs.push(macro $v{k} => Type.resolveClass($v{implName}));
+            }
         }
         return macro [ $a{exprs} ];
         #else
@@ -404,7 +417,7 @@ class FFIMacro {
     static var registryDefined = false;
     static var stdlibRegistryDefined = false;
     static var exposedClasses:Array<String> = [];
-    static var exposedAbstracts = new Map<String, { implClass: String, methods: Array<String>, underlying: String }>();
+    static var exposedAbstracts = new Map<String, { implClass: String, methods: Array<String>, underlying: String, ?isEnum: Bool }>();
     static var exposedGenerics = new Map<String, String>();
     static var exposedModules = new Map<String, Array<String>>();
     static var genericBases:Array<ClassType> = [];

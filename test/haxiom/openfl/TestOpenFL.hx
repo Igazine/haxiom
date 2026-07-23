@@ -26,107 +26,98 @@ class TestOpenFL extends Application {
 	static final SCRIPTS:Array<ScriptDef> = [
 		{
 			id: "Basic.hx",
-			name: "Basic FeathersUI Example",
-			path: "./scripts/Basic.hx",
-			context: [
-				{fqName: "feathers.controls.Button", cls: Button},
-				{fqName: "feathers.controls.Alert", cls: feathers.controls.Alert},
-				{fqName: "feathers.controls.LayoutGroup", cls: LayoutGroup},
-				{fqName: "feathers.events.TriggerEvent", cls: TriggerEvent}
-			]
+			name: "1. Basic FeathersUI Example",
+			path: "./scripts/Basic.hx"
 		},
 		{
-			id: "Bytecode.hxbc",
-			name: "Pre-compiled Bytecode Example",
-			path: "./scripts/Bytecode.hxbc",
-			isBytecode: true,
+			id: "SnakeGame.hx",
+			name: "2. Snake Game (Multi-Module Script)",
+			path: "./scripts/SnakeGame.hx"
 		},
 		{
-			id: "BitmapLoader.hx",
-			name: "OpenFL - DisplayingABitmap",
-			path: "./scripts/BitmapLoader.hx",
+			id: "BitmapLoader.hxbc",
+			name: "3. Pre-compiled Bytecode (Embedded Asset)",
+			path: "./scripts/BitmapLoader.hxbc",
+			isBytecode: true
 		},
 		{
 			id: "Shapes.hx",
-			name: "OpenFL - DrawingShapes",
-			path: "./scripts/Shapes.hx",
+			name: "4. OpenFL Drawing Shapes",
+			path: "./scripts/Shapes.hx"
 		},
 		{
 			id: "Sandboxing.hx",
-			name: "Sandboxing Example",
-			path: "./scripts/Sandboxing.hx",
+			name: "5. Sandboxing & Security Filter",
+			path: "./scripts/Sandboxing.hx"
 		},
 		{
 			id: "Million.hx",
-			path: "./scripts/Million.hx",
-			name: "Performance - Million Instructions"
+			name: "6. Performance Benchmark (1M Instructions)",
+			path: "./scripts/Million.hx"
 		}
 	];
 
-	var lyt:HorizontalLayout;
 	var scriptArea:ScriptArea;
 	var executeButton:Button;
-	var right:LayoutGroup;
 	var dropdown:PopUpListView;
-	var label:Label;
 	var container:LayoutGroup;
 	var selectedScript:ScriptDef;
-	var selectedScriptContent:Bytes;
 
 	public function new() {
 		var theme = cast(Theme.fallbackTheme, IDarkModeTheme);
 		theme.darkMode = true;
 
 		super();
-		init();
+		initUI();
 	}
 
-	function init() {
-		lyt = new HorizontalLayout();
-		lyt.gap = 10;
-		lyt.setPadding(10);
-		this.layout = lyt;
+	function initUI() {
+		// Main Layout
+		var mainLayout = new HorizontalLayout();
+		mainLayout.gap = 10;
+		mainLayout.setPadding(10);
+		this.layout = mainLayout;
 
-		var left = new LayoutGroup();
-		left.layoutData = new HorizontalLayoutData(100, 100);
-		this.addChild(left);
+		// Left Panel (Script Selection & Editor)
+		var leftPanel = new LayoutGroup();
+		leftPanel.layoutData = new HorizontalLayoutData(100, 100);
 		var leftLayout = new VerticalLayout();
 		leftLayout.gap = 10;
 		leftLayout.horizontalAlign = HorizontalAlign.CENTER;
-		left.layout = leftLayout;
+		leftPanel.layout = leftLayout;
+		this.addChild(leftPanel);
 
 		dropdown = new PopUpListView();
 		dropdown.dataProvider = new ArrayCollection(SCRIPTS);
 		dropdown.layoutData = new VerticalLayoutData(100);
-		dropdown.itemToText = function(item:Dynamic) {
-			return item.name;
-		};
+		dropdown.itemToText = function(item:Dynamic) return item.name;
 		dropdown.addEventListener(Event.CHANGE, (event) -> {
 			selectedScript = dropdown.selectedItem;
 			loadScript();
 		});
-		left.addChild(dropdown);
+		leftPanel.addChild(dropdown);
 
 		scriptArea = new ScriptArea();
 		scriptArea.text = "";
 		scriptArea.layoutData = new VerticalLayoutData(100, 100);
-		left.addChild(scriptArea);
+		leftPanel.addChild(scriptArea);
 
 		executeButton = new Button();
 		executeButton.text = "Execute Haxiom Script";
 		executeButton.layoutData = new HorizontalLayoutData(100, 100);
 		executeButton.addEventListener(TriggerEvent.TRIGGER, onExecuteTrigger);
-		left.addChild(executeButton);
+		leftPanel.addChild(executeButton);
 
-		right = new LayoutGroup();
-		right.layoutData = new HorizontalLayoutData(100, 100);
+		// Right Panel (Render Canvas Container)
+		var rightPanel = new LayoutGroup();
+		rightPanel.layoutData = new HorizontalLayoutData(100, 100);
 		var rightLayout = new VerticalLayout();
 		rightLayout.gap = 10;
-		right.layout = rightLayout;
-		this.addChild(right);
+		rightPanel.layout = rightLayout;
+		this.addChild(rightPanel);
 
-		label = new Label("Shared Container");
-		right.addChild(label);
+		var label = new Label("Shared Render Container");
+		rightPanel.addChild(label);
 
 		container = new LayoutGroup();
 		container.backgroundSkin = new RectangleSkin(FillStyle.SolidColor(0x181818), LineStyle.SolidColor(1, 0));
@@ -136,45 +127,55 @@ class TestOpenFL extends Application {
 		containerLayout.horizontalAlign = HorizontalAlign.CENTER;
 		containerLayout.verticalAlign = VerticalAlign.MIDDLE;
 		container.layout = containerLayout;
-		right.addChild(container);
+		rightPanel.addChild(container);
 
 		selectedScript = SCRIPTS[0];
 		loadScript();
-		/*
-			haxe.Timer.delay(function() {
-				onExecuteTrigger(null);
-			}, 500);
-		 */
 	}
 
 	function registerFFI(haxiom:Haxiom) {
-		haxiom.registerClass("feathers.core.FeathersControl", FeathersControl);
-		haxiom.registerClass("feathers.controls.Button", Button);
-		haxiom.registerClass("feathers.controls.Alert", feathers.controls.Alert);
-		haxiom.registerClass("feathers.controls.Label", Label);
-		haxiom.registerClass("feathers.controls.LayoutGroup", LayoutGroup);
-		haxiom.registerClass("feathers.events.TriggerEvent", TriggerEvent);
-		haxiom.registerClass("openfl.display.BitmapData", openfl.display.BitmapData);
-		haxiom.registerClass("openfl.display.Bitmap", openfl.display.Bitmap);
-		haxiom.registerClass("openfl.Assets", openfl.utils.Assets);
-		haxiom.registerClass("openfl.display.Sprite", openfl.display.Sprite);
-		haxiom.registerClass("openfl.display.Graphics", openfl.display.Graphics);
-		haxiom.registerValue("openfl.display.CapsStyle", {
-			NONE: openfl.display.CapsStyle.NONE,
-			ROUND: openfl.display.CapsStyle.ROUND,
-			SQUARE: openfl.display.CapsStyle.SQUARE
-		});
+		// FeathersUI Controls
+		haxiom.exposeClass("feathers.core.FeathersControl", FeathersControl);
+		haxiom.exposeClass("feathers.controls.Button", Button);
+		haxiom.exposeClass("feathers.controls.Alert", feathers.controls.Alert);
+		haxiom.exposeClass("feathers.controls.Label", Label);
+		haxiom.exposeClass("feathers.controls.LayoutGroup", LayoutGroup);
+		haxiom.exposeClass("feathers.events.TriggerEvent", TriggerEvent);
+
+		// OpenFL Display & UI
+		haxiom.exposePackage("openfl.display.*");
+		haxiom.exposeClass("openfl.text.TextField", openfl.text.TextField);
+		haxiom.exposeClass("openfl.text.TextFormat", openfl.text.TextFormat);
+		haxiom.exposeClass("openfl.events.KeyboardEvent", openfl.events.KeyboardEvent);
+		haxiom.exposeClass("openfl.events.MouseEvent", openfl.events.MouseEvent);
+		haxiom.exposeClass("openfl.events.Event", openfl.events.Event);
+		haxiom.exposeClass("openfl.ui.Keyboard", openfl.ui.Keyboard);
+		haxiom.exposeClass("openfl.utils.Assets", openfl.utils.Assets);
+		haxiom.exposeClass("lime.app.Future", lime.app.Future);
+
+		// Haxe Core Utilities
+		haxiom.exposeClass("haxe.Timer", haxe.Timer);
 	}
 
 	function registerGlobals(haxiom:Haxiom) {
 		haxiom.setGlobal("ScriptContext", {
 			container: container,
+			gameRoot: container,
 			sandboxedContainer: {
 				addChild: function(child:FeathersControl) {
-					container.addChild(child); // Forwards call to native container
+					container.addChild(child);
 				}
 			}
 		});
+
+		// Dynamic module resolver for multi-module scripts (e.g. SnakeGame importing snake.entities.*)
+		haxiom.moduleResolver = function(moduleName:String):String {
+			var path = "scripts/" + StringTools.replace(moduleName, ".", "/") + ".hx";
+			if (openfl.utils.Assets.exists(path)) {
+				return openfl.utils.Assets.getText(path);
+			}
+			return null;
+		};
 	}
 
 	function loadScript() {
@@ -184,11 +185,13 @@ class TestOpenFL extends Application {
 
 	function onExecuteTrigger(e:TriggerEvent) {
 		container.removeChildren();
-		trace("Executing script...");
+		trace("Executing script: " + scriptArea.currentScript.name + "...");
+
 		final haxiom = new Haxiom();
 		haxiom.useVM = true;
 		registerFFI(haxiom);
 		registerGlobals(haxiom);
+
 		final t = Timer.stamp();
 		try {
 			if (scriptArea.currentScript.isBytecode) {
@@ -197,28 +200,15 @@ class TestOpenFL extends Application {
 				haxiom.currentFilename = scriptArea.currentScript.id;
 				haxiom.interpret(scriptArea.currentScriptContent.toString());
 			}
-
-			// Simulate button click to verify guest event listener
-			/*
-				if (container.numChildren > 0) {
-					var child = container.getChildAt(0);
-					if (Std.isOfType(child, Button)) {
-						var btn:Button = cast child;
-						trace("Dynamically triggering button click event...");
-						TriggerEvent.dispatchFromMouseEvent(btn, new MouseEvent(MouseEvent.CLICK));
-						trace("Button click event dispatched successfully!");
-					}
-				}
-			 */
 		} catch (err:Dynamic) {
-			trace("CATCH ERROR: " + err);
-			trace("CATCH STACK: " + haxe.CallStack.toString(haxe.CallStack.exceptionStack()));
+			trace("SCRIPT EXCEPTION ERROR: " + err);
+			trace("STACK TRACE: " + haxe.CallStack.toString(haxe.CallStack.exceptionStack()));
 		}
-		final d = (Timer.stamp() - t);
-		if (d < 1) {
-			trace("Script executed in " + (d * 1000) + " milliseconds");
+		final duration = (Timer.stamp() - t);
+		if (duration < 1) {
+			trace("Script executed in " + (duration * 1000) + " milliseconds");
 		} else {
-			trace("Script executed in " + d + " seconds");
+			trace("Script executed in " + duration + " seconds");
 		}
 	}
 }
@@ -234,4 +224,14 @@ typedef ScriptDef = {
 typedef ScriptContext = {
 	fqName:String,
 	cls:Class<Dynamic>,
+}
+
+class HaxiomTimer {
+	public static function delay(ms:Int):haxiom.guest.Future {
+		var fut = new haxiom.guest.Future();
+		haxe.Timer.delay(function() {
+			fut.resolve(null);
+		}, ms);
+		return fut;
+	}
 }
