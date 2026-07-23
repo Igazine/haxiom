@@ -16,6 +16,9 @@ class ResourceCompiler {
 	/** Custom host resource provider function */
 	public static var resourceProvider:Null<(path:String) -> Bytes> = null;
 
+	/** Working directory set by CLI/runner for resolving project-relative assets */
+	public static var workingDir:String = null;
+
 	public static function loadResourceBytes(relPath:String, pos:Pos):Bytes {
 		var pStr = pos != null ? '${pos.file != null ? pos.file : "script"}:${pos.line}:${pos.col}' : "script";
 
@@ -46,23 +49,42 @@ class ResourceCompiler {
 			var existsFunc = Reflect.field(fsCls, "exists");
 			var getBytesFunc = Reflect.field(fileCls, "getBytes");
 
-			var fullPath = relPath;
+			var candidates:Array<String> = [];
+			if (workingDir != null && workingDir.length > 0) {
+				candidates.push(haxe.io.Path.join([workingDir, relPath]));
+				if (pos != null && pos.file != null && pos.file.length > 0) {
+					var dir = haxe.io.Path.directory(pos.file);
+					candidates.push(haxe.io.Path.join([workingDir, dir, relPath]));
+				}
+			}
 			if (pos != null && pos.file != null && pos.file.length > 0) {
 				var dir = haxe.io.Path.directory(pos.file);
 				if (dir != null && dir.length > 0) {
-					var resolved = haxe.io.Path.join([dir, relPath]);
-					if (Reflect.callMethod(fsCls, existsFunc, [resolved])) {
-						fullPath = resolved;
+					candidates.push(haxe.io.Path.join([dir, relPath]));
+				}
+			}
+			candidates.push(relPath);
+			try {
+				var cwd = Sys.getCwd();
+				if (cwd != null && cwd.length > 0) {
+					candidates.push(haxe.io.Path.join([cwd, relPath]));
+					if (pos != null && pos.file != null && pos.file.length > 0) {
+						var dir = haxe.io.Path.directory(pos.file);
+						candidates.push(haxe.io.Path.join([cwd, dir, relPath]));
 					}
+				}
+			} catch (e:Dynamic) {}
+
+			var fullPath:String = null;
+			for (cand in candidates) {
+				if (cand != null && cand.length > 0 && Reflect.callMethod(fsCls, existsFunc, [cand])) {
+					fullPath = cand;
+					break;
 				}
 			}
 
-			if (!Reflect.callMethod(fsCls, existsFunc, [fullPath])) {
-				if (Reflect.callMethod(fsCls, existsFunc, [relPath])) {
-					fullPath = relPath;
-				} else {
-					throw 'Compile Error: Resource file not found: \'${relPath}\' at ${pStr}';
-				}
+			if (fullPath == null) {
+				throw 'Compile Error: Resource file not found: \'${relPath}\' at ${pStr}';
 			}
 
 			return Reflect.callMethod(fileCls, getBytesFunc, [fullPath]);

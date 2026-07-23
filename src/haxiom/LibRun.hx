@@ -37,6 +37,9 @@ class LibRun {
 			Sys.exit(1);
 		}
 		var workingDir = args.pop();
+		if (workingDir != null && workingDir.length > 0 && !StringTools.endsWith(workingDir, "/") && !StringTools.endsWith(workingDir, "\\")) {
+			workingDir += "/";
+		}
 		var command = args.shift();
 		if (command == null) {
 			Sys.println('Usage: haxelib run haxiom <command> <input> [--static] [-c/--compress]');
@@ -455,6 +458,7 @@ class LibRun {
 	}
 
 	static function compileSingleFile(workingDir:String, input:String, ?key:String, ?staticTypes:Bool = false, ?compress:Bool = false) {
+		ResourceCompiler.workingDir = workingDir;
 		var fullInputPath = workingDir + input;
 		final haxiom = new Haxiom();
 		haxiom.enableStaticTypes = staticTypes;
