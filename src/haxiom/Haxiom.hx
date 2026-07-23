@@ -1024,9 +1024,9 @@ class Haxiom {
 		registerEnum(fqName, enm);
 	}
 
-	/** Expose a host value or global to scripts (alias for setGlobal / registerValue) */
+	/** Expose a host value or global to scripts (alias for registerValue) */
 	public inline function exposeValue(fqName:String, value:Dynamic):Void {
-		setGlobal(fqName, value);
+		registerValue(fqName, value);
 	}
 
 	/** Expose / Whitelist an entire package pattern (e.g. "motion.*" or "openfl.*") */
