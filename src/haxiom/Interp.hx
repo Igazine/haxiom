@@ -3937,6 +3937,10 @@ class Interp {
 				}
 
 				if (isImportWhitelisted(fqName)) {
+					if (globals.exists(fqName)) {
+						scope.declare(shortName, globals.get(fqName));
+						return null;
+					}
 					if (this.ffi.exposedAbstracts.exists(fqName)) {
 						var absInfo = this.ffi.exposedAbstracts.get(fqName);
 						var implCls = resolveAbstractImpl(fqName, absInfo.implClass);
