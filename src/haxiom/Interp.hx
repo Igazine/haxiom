@@ -1171,6 +1171,11 @@ class Interp {
 		if (chunk.positions.length > 0 && chunk.positions[0] != null) {
 			lastEvalPos = chunk.positions[0];
 		}
+		if (chunk.resources != null) {
+			for (k => v in chunk.resources) {
+				ResourceCompiler.virtualResources.set(k, v);
+			}
+		}
 		try {
 			return VM.runChunk(this, chunk, globals, null, "toplevel");
 		} catch (e:ControlFlow) {
