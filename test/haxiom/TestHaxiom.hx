@@ -25,6 +25,7 @@ class TestHaxiom {
 			TestSafeguardsTCO.runTests();
 			TestNSConflict.main();
 			TestExterns.runTests();
+			TestCallerIdentification.runTests();
 			trace("ALL TESTS COMPLETED SUCCESSFULLY!");
 		});
 	}

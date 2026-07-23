@@ -313,6 +313,8 @@ class VM {
 			callFrames.push(frame);
 		}
 
+		interp.activeVMCallFrames = callFrames;
+
 		var frame = callFrames[callFrames.length - 1];
 		var inst = frame.chunk.instructions;
 		var consts = frame.chunk.constants;
@@ -1751,8 +1753,10 @@ class VM {
 				stackPool.push(stack);
 				callFramesPool.push(callFrames);
 			}
+			interp.activeVMCallFrames = null;
 			return res;
 		} catch (e:Dynamic) {
+			interp.activeVMCallFrames = null;
 			var se:ScriptException = null;
 			if (Std.isOfType(e, ScriptException)) {
 				se = cast e;

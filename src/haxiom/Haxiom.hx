@@ -200,7 +200,20 @@ class Haxiom {
 	/**
 	 * Contextual filename representing the active script execution path (used for error stack traces).
 	 */
-	public var currentFilename:String = null;
+	public var currentFilename(get, set):String;
+
+	inline function get_currentFilename() return interp.currentFilename;
+	inline function set_currentFilename(v) return interp.currentFilename = v;
+
+	/**
+	 * Identifies the active script caller (file, className, methodName, line, column)
+	 * during an active FFI host function call. Returns `null` if the call originated natively from host code
+	 * or if the engine is idle.
+	 */
+	public var currentCaller(get, never):Null<ScriptStackFrame>;
+
+	inline function get_currentCaller():Null<ScriptStackFrame>
+		return interp.getCallerInfo();
 
 	/**
 	 * Instantiates a new Haxiom scripting engine instance and registers core HFFI bindings.

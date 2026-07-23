@@ -542,7 +542,69 @@ class Interp {
 	public var activeUsings:Array<Dynamic> = [];
 
 	public var callStack:Array<{method:String, pos:Pos}> = [];
+	public var activeVMCallFrames:Dynamic = null;
+	public var currentFilename:String = null;
 	public var onRuntimeError:Null<ScriptException->Void> = null;
+
+	public function getCallerInfo():Null<ScriptStackFrame> {
+		if (activeVMCallFrames != null && Std.isOfType(activeVMCallFrames, Array)) {
+			var frames:Array<Dynamic> = cast activeVMCallFrames;
+			if (frames.length > 0) {
+				var frame:Dynamic = frames[frames.length - 1];
+				var chunk:Dynamic = frame.chunk;
+				var fullMethod:String = chunk != null && chunk.name != null ? chunk.name : (frame.methodName != null ? frame.methodName : "anonymous");
+				var fileName:String = chunk != null && chunk.scriptName != null ? chunk.scriptName : (currentFilename != null ? currentFilename : "script");
+				var clsName:String = "";
+				var mName:String = fullMethod;
+				var dotIdx = fullMethod.lastIndexOf(".");
+				if (dotIdx != -1) {
+					clsName = fullMethod.substr(0, dotIdx);
+					mName = fullMethod.substr(dotIdx + 1);
+				}
+				var lineVal:Int = 1;
+				var colVal:Int = 1;
+				if (frame.pos != null) {
+					lineVal = frame.pos.line;
+					colVal = frame.pos.col;
+				} else if (lastEvalPos != null) {
+					lineVal = lastEvalPos.line;
+					colVal = lastEvalPos.col;
+				}
+				return {
+					file: fileName,
+					className: clsName,
+					methodName: mName,
+					line: lineVal,
+					column: colVal
+				};
+			}
+		}
+
+		if (callStack.length > 0) {
+			var topFrame = callStack[callStack.length - 1];
+			var fullMethod = topFrame.method != null ? topFrame.method : "anonymous";
+			var framePos = (lastEvalPos != null) ? lastEvalPos : topFrame.pos;
+			var fileName = (framePos != null && framePos.file != null) ? framePos.file : (currentFilename != null ? currentFilename : "script");
+			var clsName:String = "";
+			var mName:String = fullMethod;
+			var dotIdx = fullMethod.lastIndexOf(".");
+			if (dotIdx != -1) {
+				clsName = fullMethod.substr(0, dotIdx);
+				mName = fullMethod.substr(dotIdx + 1);
+			}
+			var lineVal:Int = framePos != null ? framePos.line : 1;
+			var colVal:Int = framePos != null ? framePos.col : 1;
+			return {
+				file: fileName,
+				className: clsName,
+				methodName: mName,
+				line: lineVal,
+				column: colVal
+			};
+		}
+
+		return null;
+	}
 	public var haltedNamespaces:Map<String, Bool> = new Map();
 
 	public function isNamespaceHalted(name:String):Bool {
