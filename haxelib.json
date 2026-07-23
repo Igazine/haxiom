@@ -10,11 +10,11 @@
     "haxe",
     "haxe-in-haxe"
   ],
-  "description": "Haxiom is a secure, sandboxed Haxe-in-Haxe scripting engine and bytecode Virtual Machine (VM)",
-  "version": "0.6.1",
+  "description": "Haxiom is a secure, sandboxed Haxe-in-Haxe interpreter, scripting engine and bytecode Virtual Machine (VM)",
+  "version": "0.6.2",
   "classPath": "src",
   "main": "haxiom.LibRun",
-  "releasenote": "Updated `trace()` with `PosInfos`; Smart Actionable Diagnostic Errors",
+  "releasenote": "Added engine.currentCaller for host-side script caller identification",
   "contributors": [
     "Igazine"
   ],
