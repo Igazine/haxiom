@@ -490,7 +490,12 @@ class Parser {
 				} else if (isAbstractMethod) {
 					expect(TSemicolon);
 				} else {
-					mBody = parseBlock();
+					skipNewlines();
+					if (is(TBraceOpen)) {
+						mBody = parseBlock();
+					} else {
+						mBody = parseStatement();
+					}
 				}
 				methods.push({
 					name: mName,
