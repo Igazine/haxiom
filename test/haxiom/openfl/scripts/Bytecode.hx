@@ -41,10 +41,6 @@ class DCE {
 	}
 }
 
-#if !haxiom_script
-// Definitions for error-free local compilation, and Language Server Protocol in IDEs
-// This block is ignored in Haxiom
-class ScriptContext {
+extern class ScriptContext {
 	public static var container:LayoutGroup;
 }
-#end

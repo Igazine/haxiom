@@ -11,8 +11,8 @@
 	
 	<source path="."/>
 
-    <assets path="scripts" include="*" />
-	<assets path="assets" include="*" />
+    <assets path="scripts" />
+	<assets path="assets" />
 	
 	<haxelib name="openfl"/>
 	<haxelib name="actuate"/>

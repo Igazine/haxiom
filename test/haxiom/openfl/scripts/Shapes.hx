@@ -1,6 +1,5 @@
 package;
 
-import openfl.display.CapsStyle;
 import openfl.display.Graphics;
 import openfl.display.Sprite;
 
@@ -123,12 +122,6 @@ class Shapes {
 	}
 }
 
-#if !haxiom_script
-/*
- * Definitions for error-free local compilation, and Language Server Protocol in IDEs
- * This block is ignored in Haxiom
- */
-class ScriptContext {
+extern class ScriptContext {
 	public static var container:Dynamic;
 }
-#end

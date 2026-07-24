@@ -1,22 +1,22 @@
 package;
 
-import openfl.Assets;
 import openfl.display.Bitmap;
+import openfl.display.BitmapData;
 
 class BitmapLoader {
+	@:haxiom.resource("../assets/openfl.png")
+	static var logoBytes:haxe.io.Bytes;
+
 	public static function main() {
-		var bitmapData = Assets.getBitmapData("assets/openfl.png");
-		var bitmap = new Bitmap(bitmapData);
-		ScriptContext.container.addChild(bitmap);
+		if (logoBytes != null) {
+			var bitmapData = BitmapData.loadFromBytes(logoBytes).onComplete(function(b) {
+				var bitmap = new Bitmap(b);
+				ScriptContext.container.addChild(bitmap);
+			});
+		}
 	}
 }
 
-#if !haxiom_script
-/*
- * Definitions for error-free local compilation, and Language Server Protocol in IDEs
- * This block is ignored in Haxiom
- */
-class ScriptContext {
+extern class ScriptContext {
 	public static var container:Dynamic;
 }
-#end

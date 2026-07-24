@@ -31,18 +31,12 @@ class Sandboxing {
 	}
 }
 
-#if !haxiom_script
-/*
- * Definitions for error-free local compilation, and Language Server Protocol in IDEs
- * This block is ignored in Haxiom
- */
 interface ILayoutGroup {
 	function addChild(child:feathers.core.FeathersControl):Void;
 }
 
-class ScriptContext {
+extern class ScriptContext {
 	public static var sandboxedContainer:ILayoutGroup;
 	// Alternative definition without interface
 	// public static var sandboxedContainer:{addChild:feathers.core.FeathersControl->Void};
 }
-#end
