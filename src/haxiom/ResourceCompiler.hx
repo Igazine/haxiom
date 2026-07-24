@@ -123,7 +123,7 @@ class ResourceCompiler {
 							throw 'Compile Error: Field marked with @:haxiom.resource cannot have an explicit initializer at ${pStr}';
 						}
 					} else {
-						if (!Std.isOfType(v, Bytes)) {
+						if (!Std.isOfType(v, Bytes) && !Std.isOfType(v, BinaryResourceRefHolder)) {
 							throw 'Compile Error: Field marked with @:haxiom.resource cannot have an explicit initializer at ${pStr}';
 						}
 					}
@@ -140,7 +140,7 @@ class ResourceCompiler {
 			var utf8Str = fileBytes.toString();
 			return {def: EValue(utf8Str), pos: pos};
 		} else {
-			return {def: EValue(fileBytes), pos: pos};
+			return {def: EValue(new BinaryResourceRefHolder(relPath)), pos: pos};
 		}
 	}
 }

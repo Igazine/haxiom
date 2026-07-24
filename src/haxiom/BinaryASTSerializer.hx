@@ -198,6 +198,14 @@ class BinaryASTSerializer {
             return;
         }
         
+        if (Std.isOfType(val, BinaryResourceRefHolder) || (Reflect.isObject(val) && Reflect.hasField(val, "key") && !Reflect.hasField(val, "def"))) {
+            out.writeByte(10);
+            var refKey:String = Reflect.field(val, "key");
+            var keyIdx = stringMap.exists(refKey) ? stringMap.get(refKey) : -1;
+            writeVarInt(out, keyIdx);
+            return;
+        }
+
         if (Std.isOfType(val, Bytes)) {
             out.writeByte(9);
             var bVal:Bytes = cast val;
@@ -281,6 +289,10 @@ class BinaryASTSerializer {
             case 9:
                 var bLen = readVarInt(input);
                 return input.read(bLen);
+            case 10:
+                var keyIdx = readVarInt(input);
+                var resKey = (keyIdx >= 0 && keyIdx < stringPool.length) ? stringPool[keyIdx] : "";
+                return new BinaryResourceRefHolder(resKey);
             default:
                 throw 'Unknown type tag $typeTag in binary AST deserialization';
         }

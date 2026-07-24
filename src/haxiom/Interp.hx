@@ -2271,6 +2271,12 @@ class Interp {
 				#if haxiom_debug
 				trace("AST eval EValue: val=" + Std.string(v) + " typeof=" + Std.string(Type.typeof(v)));
 				#end
+				if (v != null && (Std.isOfType(v, BinaryResourceRefHolder) || Reflect.hasField(v, "key"))) {
+					var resKey:String = Reflect.field(v, "key");
+					if (resKey != null && ResourceCompiler.virtualResources.exists(resKey)) {
+						return ResourceCompiler.virtualResources.get(resKey);
+					}
+				}
 				return v;
 
 			case EEReg(pattern, flags):

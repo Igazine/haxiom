@@ -70,8 +70,22 @@ class Serializer {
 		}
 	}
 
+	static function bytesEqual(a:Bytes, b:Bytes):Bool {
+		if (a == b)
+			return true;
+		if (a == null || b == null)
+			return false;
+		if (a.length != b.length)
+			return false;
+		for (i in 0...a.length) {
+			if (a.get(i) != b.get(i))
+				return false;
+		}
+		return true;
+	}
+
 	static function shouldWrap(val:Dynamic):Bool {
-		if (val == null || Std.isOfType(val, haxe.io.Bytes) || Std.isOfType(val, BinaryBytesHolder))
+		if (val == null || Std.isOfType(val, haxe.io.Bytes) || Std.isOfType(val, BinaryBytesHolder) || Std.isOfType(val, BinaryResourceRefHolder))
 			return false;
 		if (Std.isOfType(val, BinaryExprHolder))
 			return false;
@@ -187,7 +201,23 @@ class Serializer {
 					wrappedConstants.push(new BinaryExprHolder(serializedBytes));
 				} else if (c != null && Std.isOfType(c, haxe.io.Bytes)) {
 					var bytesVal:haxe.io.Bytes = cast c;
-					wrappedConstants.push(new BinaryBytesHolder(bytesVal.toHex()));
+					var foundKey:String = null;
+					if (chunk.resources != null) {
+						for (k => v in chunk.resources) {
+							if (bytesEqual(v, bytesVal)) {
+								foundKey = k;
+								break;
+							}
+						}
+					}
+					if (foundKey == null) {
+						if (chunk.resources == null) {
+							chunk.resources = new Map<String, Bytes>();
+						}
+						foundKey = "__const_bytes_" + (chunk.resources.keys() != null ? [for (k in chunk.resources.keys()) k].length : 0);
+						chunk.resources.set(foundKey, bytesVal);
+					}
+					wrappedConstants.push(new BinaryResourceRefHolder(foundKey));
 				} else {
 					wrappedConstants.push(c);
 				}
@@ -390,6 +420,20 @@ class Serializer {
 					var resLen = readVarInt(payloadInput);
 					var resBytes = payloadInput.read(resLen);
 					resources.set(resKey, resBytes);
+				}
+			}
+		}
+
+		for (i in 0...constants.length) {
+			var c = constants[i];
+			if (c != null && (Std.isOfType(c, BinaryResourceRefHolder) || Reflect.hasField(c, "key"))) {
+				var resKey:String = Reflect.field(c, "key");
+				if (resKey != null) {
+					if (resources != null && resources.exists(resKey)) {
+						constants[i] = resources.get(resKey);
+					} else if (ResourceCompiler.virtualResources.exists(resKey)) {
+						constants[i] = ResourceCompiler.virtualResources.get(resKey);
+					}
 				}
 			}
 		}
