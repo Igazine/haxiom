@@ -314,7 +314,8 @@ class StaticTypeChecker {
 										var parentArg = parentMethod.args[i];
 										var childArg = m.args[i];
 										if (Std.string(parentArg.type) != Std.string(childArg.type)) {
-											addError('Method ${m.name} overrides parent class method but has incompatible type for argument ${childArg.name}', expr.pos);
+											addError('Method ${m.name} overrides parent class method but has incompatible type for argument ${childArg.name}',
+												expr.pos);
 										}
 									}
 								}
@@ -705,7 +706,8 @@ class StaticTypeChecker {
 										switch (argType) {
 											case TPath(path, typeParams):
 												var typeName = path.join(".");
-												if ((typeName == "Future" || typeName == "haxiom.guest.Future" || typeName == "haxiom.Future") && typeParams.length > 0) {
+												if ((typeName == "Future" || typeName == "haxiom.guest.Future" || typeName == "haxiom.Future")
+													&& typeParams.length > 0) {
 													return typeParams[0];
 												}
 											default:
@@ -862,8 +864,10 @@ class StaticTypeChecker {
 			case [TPath(srcPath, srcParams), TPath(dstPath, dstParams)]:
 				var sn = srcPath.join(".");
 				var dn = dstPath.join(".");
-				if (sn == "haxiom.guest.Future") sn = "Future";
-				if (dn == "haxiom.guest.Future") dn = "Future";
+				if (sn == "haxiom.guest.Future")
+					sn = "Future";
+				if (dn == "haxiom.guest.Future")
+					dn = "Future";
 				// Allow numeric widening Int → Float
 				if (dn == "Float" && sn == "Int")
 					return true;
@@ -1154,14 +1158,16 @@ class StaticTypeChecker {
 		var typeName:String = null;
 		if (isStaticAccess) {
 			switch (objExpr.def) {
-				case EIdent(name): typeName = name;
+				case EIdent(name):
+					typeName = name;
 				default:
 			}
 		} else {
 			var objType = inferType(objExpr, env);
 			if (objType != null) {
 				switch (objType) {
-					case TPath(path, _): typeName = path.join(".");
+					case TPath(path, _):
+						typeName = path.join(".");
 					default:
 				}
 			}
@@ -1216,7 +1222,8 @@ class StaticTypeChecker {
 						}
 					}
 					if (!hasBypass) {
-						if (env.currentClass == null || (!isSubclassOfName(env.currentClass, typeName) && !isSubclassOfName(typeName, env.currentClass))) {
+						if (env.currentClass == null
+							|| (!isSubclassOfName(env.currentClass, typeName) && !isSubclassOfName(typeName, env.currentClass))) {
 							addError('Cannot access private member ${field} of class ${typeName}', pos);
 						}
 					}
@@ -1297,12 +1304,13 @@ class StaticTypeChecker {
 		return null;
 	}
 
-	function checkPrivateAccessBypass(metaList:Null<Array<{name:String, params:Array<Expr>}>>, targetTypeName:String, fieldName:String, isAccessMode:Bool):Bool {
+	function checkPrivateAccessBypass(metaList:Null<Array<{name:String, params:Array<Expr>}>>, targetTypeName:String, fieldName:String,
+			isAccessMode:Bool):Bool {
 		if (metaList == null)
 			return false;
 		for (m in metaList) {
-			var isBypassMeta = (isAccessMode && (m.name == ":access" || m.name == "access")) ||
-			                   (!isAccessMode && (m.name == ":allow" || m.name == "allow"));
+			var isBypassMeta = (isAccessMode && (m.name == ":access" || m.name == "access"))
+				|| (!isAccessMode && (m.name == ":allow" || m.name == "allow"));
 			if (isBypassMeta) {
 				if (m.params != null && m.params.length > 0) {
 					var path = getExprPath(m.params[0]);
@@ -1345,15 +1353,17 @@ class StaticTypeChecker {
 	}
 
 	function checkInterfaceImplementationsVisibility(className:String, pos:Pos):Void {
-		if (!classes.exists(className)) return;
+		if (!classes.exists(className))
+			return;
 		var cls = classes.get(className);
-		
+
 		var allItfMethods = new Map<String, Bool>();
 		var allItfFields = new Map<String, Bool>();
 		var visitedItf = new Map<String, Bool>();
 
 		function collectItfMembers(itfName:String) {
-			if (visitedItf.exists(itfName)) return;
+			if (visitedItf.exists(itfName))
+				return;
 			visitedItf.set(itfName, true);
 			if (classes.exists(itfName)) {
 				var itf = classes.get(itfName);
@@ -1400,8 +1410,8 @@ class StaticTypeChecker {
 class LocalEnv {
 	var parent:LocalEnv;
 	var vars:Map<String, TypeDecl> = new Map();
-	public var currentClass:Null<String> = null;
-	public var currentMethod:Null<String> = null;
+	private var currentClass:Null<String> = null;
+	private var currentMethod:Null<String> = null;
 
 	function new(?parent:LocalEnv) {
 		this.parent = parent;
@@ -1457,7 +1467,13 @@ class ClassInfo {
 		?meta:Array<{name:String, params:Array<Expr>}>,
 		?isExtern:Bool
 	}> = new Map();
-	var fields:Map<String, {type:TypeDecl, isStatic:Bool, isPublic:Bool, ?meta:Array<{name:String, params:Array<Expr>}>, ?isExtern:Bool}> = new Map();
+	var fields:Map<String, {
+		type:TypeDecl,
+		isStatic:Bool,
+		isPublic:Bool,
+		?meta:Array<{name:String, params:Array<Expr>}>,
+		?isExtern:Bool
+	}> = new Map();
 	var meta:Null<Array<{name:String, params:Array<Expr>}>> = null;
 
 	function new(name:String, params:Array<TypeParamDef>) {

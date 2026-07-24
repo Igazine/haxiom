@@ -17,11 +17,9 @@ class Scope {
 	var isCaptured:Bool = false;
 	var isInPool:Bool = false;
 
-	static var pool:Array<Scope> = [];
-
-	static function create(?parent:Scope):Scope {
-		if (pool.length > 0) {
-			var s = pool.pop();
+	static function create(?parent:Scope, ?interp:Interp):Scope {
+		if (interp != null && interp.enablePooling && interp.scopePool.length > 0) {
+			var s = interp.scopePool.pop();
 			s.parent = parent;
 			s.isCaptured = false;
 			s.isInPool = false;
@@ -30,7 +28,7 @@ class Scope {
 		return new Scope(parent);
 	}
 
-	static function recycle(s:Scope):Void {
+	static function recycle(s:Scope, ?interp:Interp):Void {
 		if (s == null || s.isCaptured)
 			return;
 		if (s.isInPool)
@@ -41,7 +39,9 @@ class Scope {
 		s.parent = null;
 		s.isCaptured = false;
 		s.isInPool = true;
-		pool.push(s);
+		if (interp != null && interp.enablePooling) {
+			interp.scopePool.push(s);
+		}
 	}
 
 	function markCaptured():Void {
@@ -217,7 +217,7 @@ class HaxiomEnumInstance {
 		this.args = args;
 	}
 
-	public function toString():String {
+	private function toString():String {
 		if (args == null || args.length == 0)
 			return constructorName;
 		return constructorName + "(" + args.join(", ") + ")";
@@ -261,11 +261,12 @@ class HaxiomAbstractInstance {
 		this.underlyingValue = underlyingValue;
 	}
 
-	public function toString():String {
+	private function toString():String {
 		return Std.string(underlyingValue);
 	}
 }
 
+@:allow(haxiom)
 class HaxiomMeta {
 	static function cleanName(name:String):String {
 		if (name != null && StringTools.startsWith(name, ":")) {
@@ -274,7 +275,7 @@ class HaxiomMeta {
 		return name;
 	}
 
-	public static function getType(t:Dynamic):Dynamic {
+	private static function getType(t:Dynamic):Dynamic {
 		if (t == null)
 			return null;
 		if (Std.isOfType(t, HaxiomClass)) {
@@ -310,7 +311,7 @@ class HaxiomMeta {
 		return haxe.rtti.Meta.getType(t);
 	}
 
-	public static function getFields(t:Dynamic):Dynamic {
+	private static function getFields(t:Dynamic):Dynamic {
 		if (t == null)
 			return null;
 		if (Std.isOfType(t, HaxiomClass)) {
@@ -400,7 +401,7 @@ class HaxiomMeta {
 		return haxe.rtti.Meta.getFields(t);
 	}
 
-	public static function getStatics(t:Dynamic):Dynamic {
+	private static function getStatics(t:Dynamic):Dynamic {
 		if (t == null)
 			return null;
 		if (Std.isOfType(t, HaxiomClass)) {
@@ -477,8 +478,9 @@ class HaxiomTypedef {
 }
 
 @:keep
+@:allow(haxiom)
 class HaxiomAnchor {
-	public static function keep() {
+	private static function keep() {
 		var s = new haxe.ds.StringMap<Dynamic>();
 		var i = new haxe.ds.IntMap<Dynamic>();
 		var o = new haxe.ds.ObjectMap<Dynamic, Dynamic>();
@@ -488,7 +490,7 @@ class HaxiomAnchor {
 
 @:allow(haxiom)
 class Interp {
-	public static var defaultWhitelist:Array<String> = [
+	private static var defaultWhitelist:Array<String> = [
 		"Date",
 		"DateTools",
 		"StringBuf",
@@ -524,36 +526,38 @@ class Interp {
 		"haxiom.HostRef"
 	];
 
-	public var globals:Scope = new Scope();
-	public var ffi:FFIRegistry = new FFIRegistry();
-	public var externClasses:Map<String, Bool> = new Map();
+	private var globals:Scope = new Scope();
+	private var ffi:FFIRegistry = new FFIRegistry();
+	private var externClasses:Map<String, Bool> = new Map();
 
 	var currentThis:Dynamic = null;
 
-	public var currentPackage:Array<String> = [];
-	public var moduleResolver:String->String = null;
-	public var importWhitelist:Array<String> = defaultWhitelist.copy();
-	public var importedModules:Map<String, Scope> = new Map();
-	public var functionSignatures:FunctionSignatures = new FunctionSignatures();
+	private var currentPackage:Array<String> = [];
+	private var moduleResolver:String->String = null;
+	private var importWhitelist:Array<String> = defaultWhitelist.copy();
+	private var importedModules:Map<String, Scope> = new Map();
+	private var functionSignatures:FunctionSignatures = new FunctionSignatures();
 
 	var currentConstructorInstance:Dynamic = null;
 	var inAbstractMethod:Bool = false;
 
-	public var activeUsings:Array<Dynamic> = [];
+	private var activeUsings:Array<Dynamic> = [];
 
-	public var callStack:Array<{method:String, pos:Pos}> = [];
-	public var activeVMCallFrames:Dynamic = null;
-	public var currentFilename:String = null;
-	public var onRuntimeError:Null<ScriptException->Void> = null;
+	private var callStack:Array<{method:String, pos:Pos}> = [];
+	private var activeVMCallFrames:Dynamic = null;
+	private var currentFilename:String = null;
+	private var onRuntimeError:Null<ScriptException->Void> = null;
 
-	public function getCallerInfo():Null<ScriptStackFrame> {
+	private function getCallerInfo():Null<ScriptStackFrame> {
 		if (activeVMCallFrames != null && Std.isOfType(activeVMCallFrames, Array)) {
 			var frames:Array<Dynamic> = cast activeVMCallFrames;
 			if (frames.length > 0) {
 				var frame:Dynamic = frames[frames.length - 1];
 				var chunk:Dynamic = frame.chunk;
-				var fullMethod:String = chunk != null && chunk.name != null ? chunk.name : (frame.methodName != null ? frame.methodName : "anonymous");
-				var fileName:String = chunk != null && chunk.scriptName != null ? chunk.scriptName : (currentFilename != null ? currentFilename : "script");
+				var fullMethod:String = chunk != null
+					&& chunk.name != null ? chunk.name : (frame.methodName != null ? frame.methodName : "anonymous");
+				var fileName:String = chunk != null
+					&& chunk.scriptName != null ? chunk.scriptName : (currentFilename != null ? currentFilename : "script");
 				var clsName:String = "";
 				var mName:String = fullMethod;
 				var dotIdx = fullMethod.lastIndexOf(".");
@@ -605,9 +609,10 @@ class Interp {
 
 		return null;
 	}
-	public var haltedNamespaces:Map<String, Bool> = new Map();
 
-	public function isNamespaceHalted(name:String):Bool {
+	private var haltedNamespaces:Map<String, Bool> = new Map();
+
+	private function isNamespaceHalted(name:String):Bool {
 		if (name == null || name == "")
 			return false;
 		var segments = name.split(".");
@@ -615,32 +620,32 @@ class Interp {
 		return haltedNamespaces.exists(rootNamespace);
 	}
 
-	public function haltNamespace(name:String):Void {
+	private function haltNamespace(name:String):Void {
 		if (name == null || name == "" || name == "toplevel" || name == "anonymous")
 			return;
 		var segments = name.split(".");
 		haltedNamespaces.set(segments[0], true);
 	}
 
-	public function clearHaltedNamespaces():Void {
+	private function clearHaltedNamespaces():Void {
 		haltedNamespaces.clear();
 	}
 
 	var lastEvalPos:Pos = null;
 
-	public var lastSource:Null<String> = null;
-	public var preprocessorFlags:Map<String, Bool> = new Map();
-	public var lastActiveLocals:Null<Map<String, Dynamic>> = null;
-	public var disposed(default, null):Bool = false;
-	public var disposeHandlers:Array<Dynamic> = [];
+	private var lastSource:Null<String> = null;
+	private var preprocessorFlags:Map<String, Bool> = new Map();
+	private var lastActiveLocals:Null<Map<String, Dynamic>> = null;
+	private var disposed(default, null):Bool = false;
+	private var disposeHandlers:Array<Dynamic> = [];
 
-	public function addDisposeHandler(handler:Dynamic):Void {
+	private function addDisposeHandler(handler:Dynamic):Void {
 		if (handler != null) {
 			disposeHandlers.push(handler);
 		}
 	}
 
-	public function dispose():Void {
+	private function dispose():Void {
 		for (handler in disposeHandlers) {
 			try {
 				if (Reflect.isFunction(handler)) {
@@ -664,11 +669,11 @@ class Interp {
 		onRuntimeError = null;
 	}
 
-	public inline function pushFrame(methodName:String, pos:Pos) {
+	private inline function pushFrame(methodName:String, pos:Pos) {
 		callStack.push({method: methodName, pos: pos});
 	}
 
-	public inline function popFrame() {
+	private inline function popFrame() {
 		callStack.pop();
 	}
 
@@ -708,8 +713,10 @@ class Interp {
 		#if flash preprocessorFlags.set("flash", true); #end
 		#if java preprocessorFlags.set("java", true); #end
 		#if cs preprocessorFlags.set("cs", true); #end
-		#if mac preprocessorFlags.set("mac", true);
-		preprocessorFlags.set("macos", true); #end
+		#if mac
+		preprocessorFlags.set("mac", true);
+		preprocessorFlags.set("macos", true);
+		#end
 		#if windows preprocessorFlags.set("windows", true); #end
 		#if linux preprocessorFlags.set("linux", true); #end
 		#if debug preprocessorFlags.set("debug", true); #end
@@ -717,7 +724,7 @@ class Interp {
 		preprocessorFlags.set("haxiom_script", true);
 	}
 
-	public function new() {
+	private function new() {
 		initDefaultFlags();
 		// Core standard print/trace redirection with PosInfos
 		globals.declare("trace", Reflect.makeVarArgs((args:Array<Dynamic>) -> {
@@ -839,14 +846,23 @@ class Interp {
 		HaxiomAnchor.keep();
 	}
 
-	public var useVM:Bool = false;
-	public var debugMode:Bool = true;
-	public var maxInstructions:Int = 0;
-	public var instructionsCount:Int = 0;
-	public var maxMemory:Int = 0;
-	public var memoryUsage:Int = 0;
+	private var useVM:Bool = false;
+	private var debugMode:Bool = true;
+	private var maxInstructions:Int = 0;
+	private var instructionsCount:Int = 0;
+	private var maxMemory:Int = 0;
+	private var memoryUsage:Int = 0;
 
-	public function trackMemory(amount:Int, ?pos:Pos, ?callStackForEx:Array<{method:String, pos:Pos}>):Void {
+	private var enablePooling:Bool = true;
+	private var scopePool:Array<Scope> = [];
+	private var framePool:Array<haxiom.VM.VMCallFrame> = [];
+	private var stackPool:Array<Array<Dynamic>> = [];
+	private var callFramesPool:Array<Array<haxiom.VM.VMCallFrame>> = [];
+	private var autoWhitelistedTypesMap:Map<String, Bool> = null;
+	private var virtualResources:Map<String, haxe.io.Bytes> = new Map();
+	private var resourceProvider:Null<(path:String) -> haxe.io.Bytes> = null;
+
+	private function trackMemory(amount:Int, ?pos:Pos, ?callStackForEx:Array<{method:String, pos:Pos}>):Void {
 		if (maxMemory <= 0)
 			return;
 		memoryUsage += amount;
@@ -861,7 +877,7 @@ class Interp {
 		}
 	}
 
-	public function trackNewAllocation(val:Dynamic, ?pos:Pos, ?callStackForEx:Array<{method:String, pos:Pos}>):Void {
+	private function trackNewAllocation(val:Dynamic, ?pos:Pos, ?callStackForEx:Array<{method:String, pos:Pos}>):Void {
 		if (maxMemory <= 0 || val == null)
 			return;
 		if (Std.isOfType(val, Array)) {
@@ -897,7 +913,7 @@ class Interp {
 		}
 	}
 
-	public function evalNew(typeDecl:TypeDecl, argsExprs:Array<Expr>, scope:Scope, pos:Pos):Dynamic {
+	private function evalNew(typeDecl:TypeDecl, argsExprs:Array<Expr>, scope:Scope, pos:Pos):Dynamic {
 		var args:Array<Dynamic> = [for (a in argsExprs) eval(a, scope)];
 		switch (typeDecl) {
 			case TPath(path, params):
@@ -1117,7 +1133,7 @@ class Interp {
 		}
 	}
 
-	public function execute(expr:Expr):Dynamic {
+	private function execute(expr:Expr):Dynamic {
 		instructionsCount = 0;
 		memoryUsage = 0;
 		currentPackage = [];
@@ -1181,7 +1197,7 @@ class Interp {
 		}
 	}
 
-	public function executeChunk(chunk:haxiom.VM.BytecodeChunk):Dynamic {
+	private function executeChunk(chunk:haxiom.VM.BytecodeChunk):Dynamic {
 		instructionsCount = 0;
 		memoryUsage = 0;
 		currentPackage = [];
@@ -1304,9 +1320,9 @@ class Interp {
 		}
 	}
 
-	public var fieldAccessFilter:Null<(target:Dynamic, field:String) -> Bool> = null;
+	private var fieldAccessFilter:Null<(target:Dynamic, field:String) -> Bool> = null;
 
-	public function evalField(obj:Dynamic, field:String, scope:Scope, pos:Pos):Dynamic {
+	private function evalField(obj:Dynamic, field:String, scope:Scope, pos:Pos):Dynamic {
 		if (obj == null)
 			throw 'Cannot read field "$field" of null';
 
@@ -2339,7 +2355,8 @@ class Interp {
 				if (externClasses.exists(name)) {
 					var pStr = pos != null ? '${pos.file != null ? pos.file : "script"}:${pos.line}:${pos.col}' : "script";
 					var errMsg = 'Runtime Error: Unbound Host Extern \'$name\' at $pStr';
-					throw new haxiom.ScriptException('Unbound Host Extern \'$name\'', callStack.copy(), errMsg, pos.line, pos.col, pos.file != null ? pos.file : "script");
+					throw new haxiom.ScriptException('Unbound Host Extern \'$name\'', callStack.copy(), errMsg, pos.line, pos.col,
+						pos.file != null ? pos.file : "script");
 				}
 				throw 'Identifier "$name" not found at ${pos.line}:${pos.col}';
 
@@ -3383,7 +3400,8 @@ class Interp {
 						case TPath(path, _):
 							var parentName = path.join(".");
 							if (externClasses.exists(parentName)) {
-								throw new haxiom.CompileException('Cannot extend extern class \'$parentName\'', e.pos.line, e.pos.col, e.pos.file != null ? e.pos.file : "script");
+								throw new haxiom.CompileException('Cannot extend extern class \'$parentName\'', e.pos.line, e.pos.col,
+									e.pos.file != null ? e.pos.file : "script");
 							}
 							var parentVal = scope.get(parentName);
 							if (parentVal != null && Std.isOfType(parentVal, HaxiomClass)) {
@@ -3398,7 +3416,7 @@ class Interp {
 				cls.params = params != null ? params : [];
 				cls.interfaces = interfaceTypes != null ? interfaceTypes : [];
 				cls.meta = evaluateMetadata(meta, scope);
-				
+
 				var hasAbstractMeta = false;
 				if (cls.meta != null) {
 					for (m in cls.meta) {
@@ -3453,7 +3471,8 @@ class Interp {
 						if (parentMethod == null) {
 							throw new haxiom.CompileException('Method ${mName} is marked override but no parent class method was found', 0, 0, fqName);
 						} else if (parentMethod.isAbstract == true) {
-							throw new haxiom.CompileException('Method ${mName} overrides an abstract method and must not use the override keyword', 0, 0, fqName);
+							throw new haxiom.CompileException('Method ${mName} overrides an abstract method and must not use the override keyword', 0, 0,
+								fqName);
 						}
 					} else {
 						if (parentMethod != null && parentMethod.isAbstract != true && mName != "new") {
@@ -3492,7 +3511,8 @@ class Interp {
 							current = current.parent;
 						}
 						if (!implemented) {
-							throw new haxiom.CompileException('Class ${name} must implement abstract method ${mName} of parent class ${abstractMethods.get(mName)}', 0, 0, fqName);
+							throw new haxiom.CompileException('Class ${name} must implement abstract method ${mName} of parent class ${abstractMethods.get(mName)}',
+								0, 0, fqName);
 						}
 					}
 				}
@@ -3527,19 +3547,25 @@ class Interp {
 									}
 								}
 
-								var allItfMethods = new Map<String, {method:{
-									name:String,
-									args:Array<FunctionArg>,
-									retType:Null<TypeDecl>,
-									?body:Null<Expr>,
-									?meta:Array<{name:String, params:Array<Dynamic>}>
-								}, bindings:Map<String, TypeDecl>}>();
-								var allItfFields = new Map<String, {field:{
-									name:String,
-									type:Null<TypeDecl>,
-									?property:{get:String, set:String},
-									?meta:Array<{name:String, params:Array<Dynamic>}>
-								}, bindings:Map<String, TypeDecl>}>();
+								var allItfMethods = new Map<String, {
+									method:{
+										name:String,
+										args:Array<FunctionArg>,
+										retType:Null<TypeDecl>,
+										?body:Null<Expr>,
+										?meta:Array<{name:String, params:Array<Dynamic>}>
+									},
+									bindings:Map<String, TypeDecl>
+								}>();
+								var allItfFields = new Map<String, {
+									field:{
+										name:String,
+										type:Null<TypeDecl>,
+										?property:{get:String, set:String},
+										?meta:Array<{name:String, params:Array<Dynamic>}>
+									},
+									bindings:Map<String, TypeDecl>
+								}>();
 								var visitedItf = new Map();
 								function collectMethodsAndFields(currItf:HaxiomInterface, currentItfBindings:Map<String, TypeDecl>) {
 									if (visitedItf.exists(currItf.name))
@@ -3589,7 +3615,7 @@ class Interp {
 										throw 'Class ${cls.name} does not implement field ${itfField.name} required by interface ${itf.name} at ${pos.line}:${pos.col}';
 									}
 									if (!classField.isPublic) {
-										throw 'Field ${cls.name}.${itfField.name} must be public to implement interface ${itf.name} at ${pos.line}:${pos.col}';
+										throw 'Field ${cls.name}.${itfField.name} must be private to implement interface ${itf.name} at ${pos.line}:${pos.col}';
 									}
 									if (itfField.property != null) {
 										if (classField.property == null) {
@@ -3634,7 +3660,7 @@ class Interp {
 										}
 									}
 									if (!classMethod.isPublic) {
-										throw 'Method ${cls.name}.${itfMethod.name} must be public to implement interface ${itf.name} at ${pos.line}:${pos.col}';
+										throw 'Method ${cls.name}.${itfMethod.name} must be private to implement interface ${itf.name} at ${pos.line}:${pos.col}';
 									}
 									if (classMethod.args.length != itfMethod.args.length) {
 										throw 'Method ${cls.name}.${itfMethod.name} has argument count mismatch: expected ${itfMethod.args.length} but got ${classMethod.args.length} at ${pos.line}:${pos.col}';
@@ -3902,9 +3928,18 @@ class Interp {
 
 					// 5. Standard Haxe core packages check (e.g. haxe.ds.*, haxe.io.*)
 					var commonStdClasses = [
-						"haxe.ds.StringMap", "haxe.ds.IntMap", "haxe.ds.ObjectMap", "haxe.ds.Vector", "haxe.ds.List",
-						"haxe.ds.EnumValueMap", "haxe.ds.Option", "haxe.ds.Either", "haxe.io.Bytes", "haxe.io.BytesOutput",
-						"haxe.io.BytesInput", "haxe.io.Path"
+						"haxe.ds.StringMap",
+						"haxe.ds.IntMap",
+						"haxe.ds.ObjectMap",
+						"haxe.ds.Vector",
+						"haxe.ds.List",
+						"haxe.ds.EnumValueMap",
+						"haxe.ds.Option",
+						"haxe.ds.Either",
+						"haxe.io.Bytes",
+						"haxe.io.BytesOutput",
+						"haxe.io.BytesInput",
+						"haxe.io.Path"
 					];
 					for (fq in commonStdClasses) {
 						if (StringTools.startsWith(fq, prefix) && isImportWhitelisted(fq)) {
@@ -4563,7 +4598,7 @@ class Interp {
 			return v;
 		}
 		if (Std.isOfType(v, HaxiomClass)) {
-			return (cast v:HaxiomClass).name;
+			return (cast v : HaxiomClass).name;
 		}
 		if (Reflect.hasField(v, "def")) {
 			var exprPath = extractPath(cast v);
@@ -4578,8 +4613,8 @@ class Interp {
 		if (metaList == null)
 			return false;
 		for (m in metaList) {
-			var isBypassMeta = (isAccessMode && (m.name == ":access" || m.name == "access")) ||
-			                   (!isAccessMode && (m.name == ":allow" || m.name == "allow"));
+			var isBypassMeta = (isAccessMode && (m.name == ":access" || m.name == "access"))
+				|| (!isAccessMode && (m.name == ":allow" || m.name == "allow"));
 			if (isBypassMeta) {
 				if (m.params != null && m.params.length > 0) {
 					var pathStr = getMetaPath(m.params[0]);
@@ -5240,7 +5275,7 @@ class Interp {
 		return null;
 	}
 
-	public function typesEqual(t1:TypeDecl, t2:TypeDecl):Bool {
+	private function typesEqual(t1:TypeDecl, t2:TypeDecl):Bool {
 		if (t1 == null && t2 == null)
 			return true;
 		if (t1 == null || t2 == null)
@@ -5283,7 +5318,7 @@ class Interp {
 		}
 	}
 
-	public function lookupBinding(paramName:String, bindings:Map<String, TypeDecl>, inst:HaxiomInstance):TypeDecl {
+	private function lookupBinding(paramName:String, bindings:Map<String, TypeDecl>, inst:HaxiomInstance):TypeDecl {
 		if (inst != null) {
 			var curr = inst.cls;
 			while (curr != null) {
@@ -5303,7 +5338,7 @@ class Interp {
 		return null;
 	}
 
-	public function resolveType(t:TypeDecl, scope:Scope):TypeDecl {
+	private function resolveType(t:TypeDecl, scope:Scope):TypeDecl {
 		if (t == null)
 			return null;
 		switch (t) {
@@ -5344,7 +5379,7 @@ class Interp {
 		}
 	}
 
-	public function resolveGenericType(type:TypeDecl, genericBindings:Map<String, TypeDecl>, scope:Scope):TypeDecl {
+	private function resolveGenericType(type:TypeDecl, genericBindings:Map<String, TypeDecl>, scope:Scope):TypeDecl {
 		if (type == null)
 			return null;
 
@@ -5388,7 +5423,7 @@ class Interp {
 		}
 	}
 
-	public function resolveGenericTypeInBindings(type:TypeDecl, declaringClassName:String, bindings:Map<String, TypeDecl>):TypeDecl {
+	private function resolveGenericTypeInBindings(type:TypeDecl, declaringClassName:String, bindings:Map<String, TypeDecl>):TypeDecl {
 		if (type == null)
 			return null;
 		switch (type) {
@@ -5420,7 +5455,7 @@ class Interp {
 		}
 	}
 
-	public function populateGenericBindings(inst:HaxiomInstance, cls:HaxiomClass, concreteParams:Array<TypeDecl>, childClassName:String = null,
+	private function populateGenericBindings(inst:HaxiomInstance, cls:HaxiomClass, concreteParams:Array<TypeDecl>, childClassName:String = null,
 			childBindings:Map<String, TypeDecl> = null, scope:Scope = null) {
 		if (cls.params != null) {
 			for (i in 0...cls.params.length) {
@@ -5472,7 +5507,7 @@ class Interp {
 		return false;
 	}
 
-	public function checkTypeCompatibility(typeA:TypeDecl, typeB:TypeDecl, scope:Scope):Bool {
+	private function checkTypeCompatibility(typeA:TypeDecl, typeB:TypeDecl, scope:Scope):Bool {
 		if (typeA == null || typeB == null)
 			return true;
 		if (typesEqual(typeA, typeB))
@@ -5493,8 +5528,7 @@ class Interp {
 							for (itf in curr.interfaces) {
 								switch (itf) {
 									case TPath(itfPath, _):
-										if (isInterfaceCompatible(itfPath.join("."), nameB, scope))
-											return true;
+										if (isInterfaceCompatible(itfPath.join("."), nameB, scope)) return true;
 									default:
 								}
 							}
@@ -5508,11 +5542,11 @@ class Interp {
 		}
 	}
 
-	public function checkType(val:Dynamic, type:TypeDecl, scope:Scope, ?genericBindings:Map<String, TypeDecl>):Void {
+	private function checkType(val:Dynamic, type:TypeDecl, scope:Scope, ?genericBindings:Map<String, TypeDecl>):Void {
 		haxiom.TypeSystem.checkType(this, val, type, scope, genericBindings);
 	}
 
-	public function castOrCheckType(val:Dynamic, type:TypeDecl, scope:Scope, ?genericBindings:Map<String, TypeDecl>):Dynamic {
+	private function castOrCheckType(val:Dynamic, type:TypeDecl, scope:Scope, ?genericBindings:Map<String, TypeDecl>):Dynamic {
 		return haxiom.TypeSystem.castOrCheckType(this, val, type, scope, genericBindings);
 	}
 
@@ -5846,7 +5880,7 @@ class Interp {
 		return null;
 	}
 
-	public function registerFullyQualified(fullName:String, value:Dynamic, scope:Scope) {
+	private function registerFullyQualified(fullName:String, value:Dynamic, scope:Scope) {
 		var parts = fullName.split(".");
 		if (parts.length == 1) {
 			scope.declare(parts[0], value);
@@ -5966,10 +6000,10 @@ class Interp {
 	}
 
 	inline function isInternalHaxiomClass(name:String):Bool {
-		return (StringTools.startsWith(name, "haxiom.Haxiom") && name != "haxiom.Haxiom") ||
-			name == "haxiom.DynamicMap" ||
-			name == "haxiom.Scope" ||
-			name == "haxiom.VMFiber";
+		return (StringTools.startsWith(name, "haxiom.Haxiom") && name != "haxiom.Haxiom")
+			|| name == "haxiom.DynamicMap"
+			|| name == "haxiom.Scope"
+			|| name == "haxiom.VMFiber";
 	}
 
 	function isImportWhitelisted(fqName:String):Bool {
@@ -6021,16 +6055,18 @@ class Interp {
 		return null;
 	}
 
-	public function checkSafeToSerialize(v:Dynamic) {
+	private function checkSafeToSerialize(v:Dynamic) {
 		var visited = new haxe.ds.ObjectMap<Dynamic, Bool>();
 		_checkSafeToSerialize(v, visited);
 	}
 
 	function _checkSafeToSerialize(v:Dynamic, visited:haxe.ds.ObjectMap<Dynamic, Bool>) {
-		if (v == null) return;
+		if (v == null)
+			return;
 		switch (Type.typeof(v)) {
 			case TObject | TClass(_):
-				if (visited.exists(v)) return;
+				if (visited.exists(v))
+					return;
 				visited.set(v, true);
 			default:
 		}
@@ -6417,6 +6453,7 @@ class Interp {
 	}
 }
 
+@:allow(haxiom)
 class FunctionSignatures {
 	#if neko
 	var pairs:Array<{k:Dynamic, v:haxiom.TypeDecl}> = [];
@@ -6424,9 +6461,9 @@ class FunctionSignatures {
 	var map:haxe.ds.ObjectMap<Dynamic, haxiom.TypeDecl> = new haxe.ds.ObjectMap();
 	#end
 
-	public function new() {}
+	private function new() {}
 
-	public function set(k:Dynamic, v:haxiom.TypeDecl) {
+	private function set(k:Dynamic, v:haxiom.TypeDecl) {
 		#if neko
 		for (p in pairs) {
 			if (p.k == k) {
@@ -6440,7 +6477,7 @@ class FunctionSignatures {
 		#end
 	}
 
-	public function exists(k:Dynamic):Bool {
+	private function exists(k:Dynamic):Bool {
 		#if neko
 		for (p in pairs) {
 			if (p.k == k)
@@ -6452,7 +6489,7 @@ class FunctionSignatures {
 		#end
 	}
 
-	public function get(k:Dynamic):haxiom.TypeDecl {
+	private function get(k:Dynamic):haxiom.TypeDecl {
 		#if neko
 		for (p in pairs) {
 			if (p.k == k)

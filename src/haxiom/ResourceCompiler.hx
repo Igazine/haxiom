@@ -8,14 +8,15 @@ import haxe.io.Bytes;
  * Supports embedded binary payloads, virtual resources map,
  * custom host resource provider callbacks, and disk loading on sys targets.
  */
+@:allow(haxiom)
 class ResourceCompiler {
 	/** Global virtual resources map for host-injected memory assets */
-	public static var virtualResources:Map<String, Bytes> = new Map();
+	private static var virtualResources:Map<String, Bytes> = new Map();
 
 	/** Custom host resource provider function */
-	public static var resourceProvider:Null<(path:String) -> Bytes> = null;
+	private static var resourceProvider:Null<(path:String) -> Bytes> = null;
 
-	public static function loadResourceBytes(relPath:String, pos:Pos):Bytes {
+	private static function loadResourceBytes(relPath:String, pos:Pos):Bytes {
 		var pStr = pos != null ? '${pos.file != null ? pos.file : "script"}:${pos.line}:${pos.col}' : "script";
 
 		// 1. Check virtual resources map
@@ -60,13 +61,8 @@ class ResourceCompiler {
 		throw 'Compile Error: Resource file not found: \'${relPath}\' at ${pStr}';
 	}
 
-	public static function processResource(
-		meta:Null<Array<{name:String, params:Array<Expr>}>>,
-		type:Null<TypeDecl>,
-		expr:Null<Expr>,
-		pos:Pos,
-		resourcesMap:Map<String, Bytes>
-	):Null<Expr> {
+	private static function processResource(meta:Null<Array<{name:String, params:Array<Expr>}>>, type:Null<TypeDecl>, expr:Null<Expr>, pos:Pos,
+			resourcesMap:Map<String, Bytes>):Null<Expr> {
 		if (meta == null)
 			return expr;
 
@@ -90,7 +86,8 @@ class ResourceCompiler {
 
 		var relPath:String = null;
 		switch (resourceMeta.params[0].def) {
-			case EValue(v): relPath = Std.string(v);
+			case EValue(v):
+				relPath = Std.string(v);
 			default:
 				throw 'Compile Error: @:haxiom.resource path argument must be a string literal at ${pStr}';
 		}

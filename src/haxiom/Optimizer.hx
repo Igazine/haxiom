@@ -339,18 +339,20 @@ class Optimizer {
 	 * Runs after foldConstants so constant-folded branches are already resolved.
 	 */
 	var globalUsages:Map<String, Int>;
+
 	var keepSubClassNames:Map<String, Bool> = new Map();
 
-	public static function eliminateDeadCode(expr:Expr):Expr {
+	private static function eliminateDeadCode(expr:Expr):Expr {
 		if (expr == null)
 			return null;
 		return new Optimizer().eliminateDeadCodeInternal(expr);
 	}
 
-	public function new() {}
+	private function new() {}
 
 	function getTypeName(t:TypeDecl):Null<String> {
-		if (t == null) return null;
+		if (t == null)
+			return null;
 		switch (t) {
 			case TPath(path, _):
 				return path[path.length - 1];
@@ -360,12 +362,14 @@ class Optimizer {
 	}
 
 	function collectClasses(expr:Expr, classes:Array<Expr>):Void {
-		if (expr == null) return;
+		if (expr == null)
+			return;
 		switch (expr.def) {
 			case EClass(_, _, _, _, _, _, _):
 				classes.push(expr);
 			case EBlock(exprs):
-				for (e in exprs) collectClasses(e, classes);
+				for (e in exprs)
+					collectClasses(e, classes);
 			default:
 		}
 	}

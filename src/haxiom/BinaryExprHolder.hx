@@ -3,10 +3,11 @@ package haxiom;
 import haxe.io.Bytes;
 
 @:keep
+@:allow(haxiom)
 class BinaryExprHolder {
-    public var bytes:Bytes;
+	private var bytes:Bytes;
 
-    public function new(bytes:Bytes) {
-        this.bytes = bytes;
-    }
+	private function new(bytes:Bytes) {
+		this.bytes = bytes;
+	}
 }
