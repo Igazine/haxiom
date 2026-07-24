@@ -156,6 +156,7 @@ class TestOpenFL extends Application {
 
 		// Haxe Core Utilities
 		haxiom.exposeClass("haxe.Timer", haxe.Timer);
+		haxiom.exposeClass("Timer", HaxiomTimer);
 	}
 
 	function registerGlobals(haxiom:Haxiom) {
