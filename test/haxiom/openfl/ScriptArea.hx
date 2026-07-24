@@ -51,7 +51,7 @@ class ScriptArea extends TextArea {
 		loader.load(request);
 	}
 
-	function formatInspection(info:haxiom.Haxiom.HXBCInfo):String {
+	function formatInspection(info:haxiom.HXBCInfo):String {
 		var buf = new StringBuf();
 		buf.add("=== HXBC BYTECODE INSPECTION OBJECT ===\n\n");
 		buf.add("Status:                   " + info.status + "\n");
@@ -88,8 +88,16 @@ class ScriptArea extends TextArea {
 			buf.add("\n--- COMPILED TYPES ---\n");
 			for (t in info.compiledTypes) {
 				buf.add("- " + t.kind + ": " + t.name);
-				if (t.parent != null) buf.add(" extends " + t.parent);
+				if (t.parent != null)
+					buf.add(" extends " + t.parent);
 				buf.add("\n");
+			}
+		}
+
+		if (info.embeddedResources != null && info.embeddedResources.length > 0) {
+			buf.add("\n--- EMBEDDED RESOURCES ---\n");
+			for (r in info.embeddedResources) {
+				buf.add("- " + r.path + " (" + r.size + " bytes)\n");
 			}
 		}
 
