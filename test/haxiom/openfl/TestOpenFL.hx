@@ -38,7 +38,8 @@ class TestOpenFL extends Application {
 			id: "BitmapLoader.hxbc",
 			name: "3. Pre-compiled Bytecode (Embedded Asset)",
 			path: "./scripts/BitmapLoader.hxbc",
-			isBytecode: true
+			isBytecode: true,
+			inspect: true
 		},
 		{
 			id: "Shapes.hx",
@@ -218,6 +219,7 @@ typedef ScriptDef = {
 	path:String,
 	name:String,
 	?isBytecode:Bool,
+	?inspect:Bool,
 	?context:Array<ScriptContext>,
 }
 

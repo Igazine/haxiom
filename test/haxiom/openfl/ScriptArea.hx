@@ -36,7 +36,12 @@ class ScriptArea extends TextArea {
 			_currentScriptContent = cast event.target.data;
 			trace('Successfully loaded ${script.id} (${_currentScriptContent.length} bytes)');
 			if (currentScript.isBytecode) {
-				this.text = "Pre-compiled bytecode loaded (size: " + Std.string(_currentScriptContent.length) + " bytes)";
+				if (currentScript.inspect == true) {
+					var info = haxiom.Haxiom.inspectBytecode(_currentScriptContent);
+					this.text = formatInspection(info);
+				} else {
+					this.text = "Pre-compiled bytecode loaded (size: " + Std.string(_currentScriptContent.length) + " bytes)";
+				}
 				this.editable = false;
 			} else {
 				this.text = _currentScriptContent.toString();
@@ -44,5 +49,57 @@ class ScriptArea extends TextArea {
 			}
 		});
 		loader.load(request);
+	}
+
+	function formatInspection(info:haxiom.Haxiom.HXBCInfo):String {
+		var buf = new StringBuf();
+		buf.add("=== HXBC BYTECODE INSPECTION OBJECT ===\n\n");
+		buf.add("Status:                   " + info.status + "\n");
+		buf.add("File Size:                " + info.fileSize + " bytes\n");
+		buf.add("Uncompressed Size:        " + info.uncompressedPayloadSize + " bytes\n");
+		buf.add("Compression Ratio:        " + info.compressionRatioPct + "%\n");
+		buf.add("Format Version:           v" + info.version + "\n");
+		buf.add("Max Fiber Slots:          " + info.maxSlots + "\n");
+		buf.add("Async Mode:               " + info.isAsync + "\n");
+		buf.add("Encrypted:                " + info.isEncrypted + "\n");
+		buf.add("Compressed:               " + info.isCompressed + "\n");
+		buf.add("Checksum:                 " + info.checksum + "\n");
+
+		if (info.error != null) {
+			buf.add("\nError:                    " + info.error + "\n");
+		}
+
+		if (info.instructionCount != null) {
+			buf.add("\n--- PAYLOAD METADATA ---\n");
+			buf.add("Instruction Count:        " + info.instructionCount + "\n");
+			buf.add("Constant Pool Size:       " + info.constantPoolSize + "\n");
+			buf.add("Debug Symbols:            " + info.debugSymbolCount + "\n");
+			buf.add("Position Mappings:        " + info.positionMappingCount + "\n");
+		}
+
+		if (info.sourceFiles != null && info.sourceFiles.length > 0) {
+			buf.add("\n--- SOURCE FILES ---\n");
+			for (f in info.sourceFiles) {
+				buf.add("- " + f + "\n");
+			}
+		}
+
+		if (info.compiledTypes != null && info.compiledTypes.length > 0) {
+			buf.add("\n--- COMPILED TYPES ---\n");
+			for (t in info.compiledTypes) {
+				buf.add("- " + t.kind + ": " + t.name);
+				if (t.parent != null) buf.add(" extends " + t.parent);
+				buf.add("\n");
+			}
+		}
+
+		if (info.debugSymbols != null && info.debugSymbols.length > 0) {
+			buf.add("\n--- DEBUG SYMBOLS ---\n");
+			for (s in info.debugSymbols) {
+				buf.add("- slot " + s.slot + ": " + s.name + " (IP " + s.startIp + ".." + s.endIp + ")\n");
+			}
+		}
+
+		return buf.toString();
 	}
 }
