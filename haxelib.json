@@ -11,7 +11,7 @@
     "haxe-in-haxe"
   ],
   "description": "Haxiom is a secure, sandboxed Haxe-in-Haxe interpreter, scripting engine and bytecode Virtual Machine (VM)",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "classPath": "src",
   "main": "haxiom.LibRun",
   "releasenote": "Several bug fixes, and real-world examples",
