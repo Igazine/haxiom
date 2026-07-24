@@ -531,12 +531,14 @@ class BytecodeCompiler {
 
 			case ECall(callExpr, args):
 				var isAwait = false;
+				var isOnDispose = false;
 				switch (callExpr.def) {
 					case EField(obj, field):
-						if (field == "await" && obj != null) {
+						if (obj != null) {
 							switch (obj.def) {
 								case EIdent("HaxiomHost"):
-									isAwait = true;
+									if (field == "await") isAwait = true;
+									else if (field == "onDispose") isOnDispose = true;
 								default:
 							}
 						}
@@ -549,6 +551,12 @@ class BytecodeCompiler {
 					}
 					compileExpr(args[0]);
 					emit(OP_AWAIT, e.pos);
+				} else if (isOnDispose) {
+					if (args.length != 1) {
+						throw "HaxiomHost.onDispose expects exactly 1 argument";
+					}
+					compileExpr(args[0]);
+					emit(OP_ON_DISPOSE, e.pos);
 				} else {
 					switch (callExpr.def) {
 						case EField(obj, field):
@@ -1681,7 +1689,7 @@ class BytecodeCompiler {
 			case OP_NOP | OP_ADD | OP_SUB | OP_MUL | OP_DIV | OP_MOD | OP_EQ | OP_NEQ | OP_LT | OP_LTE | OP_GT | OP_GTE | OP_AND | OP_OR | OP_NOT |
 				OP_BIT_AND | OP_BIT_OR | OP_BIT_XOR | OP_BIT_NOT | OP_SHL | OP_SHR | OP_USHR | OP_RETURN | OP_THROW | OP_GET_THIS | OP_POP | OP_PUSH_SCOPE |
 				OP_POP_SCOPE | OP_GET_ITERATOR | OP_ITERATOR_HAS_NEXT | OP_ITERATOR_NEXT | OP_POP_TRY | OP_ARRAY_ACCESS_GET | OP_ARRAY_ACCESS_SET | OP_DUP |
-				OP_RANGE | OP_AWAIT | OP_PUSH_CASE_SCOPE:
+				OP_RANGE | OP_AWAIT | OP_PUSH_CASE_SCOPE | OP_ON_DISPOSE:
 				1;
 
 			case OP_LOAD_CONST | OP_GET_LOCAL | OP_SET_LOCAL | OP_GET_VAR | OP_SET_VAR | OP_JUMP | OP_JUMP_IF_FALSE | OP_JUMP_IF_FALSE_PEEK |

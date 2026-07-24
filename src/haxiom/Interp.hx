@@ -632,16 +632,36 @@ class Interp {
 	public var preprocessorFlags:Map<String, Bool> = new Map();
 	public var lastActiveLocals:Null<Map<String, Dynamic>> = null;
 	public var disposed(default, null):Bool = false;
+	public var disposeHandlers:Array<Dynamic> = [];
+
+	public function addDisposeHandler(handler:Dynamic):Void {
+		if (handler != null) {
+			disposeHandlers.push(handler);
+		}
+	}
 
 	public function dispose():Void {
+		for (handler in disposeHandlers) {
+			try {
+				if (Reflect.isFunction(handler)) {
+					Reflect.callMethod(null, handler, []);
+				}
+			} catch (_:Dynamic) {}
+		}
+		disposeHandlers = [];
 		disposed = true;
 		globals = new Scope(null); // Clear root scope and references
 		importedModules.clear();
+		externClasses.clear();
+		haltedNamespaces.clear();
 		lastActiveLocals = null;
 		currentThis = null;
 		currentConstructorInstance = null;
 		activeUsings = [];
 		callStack = [];
+		activeVMCallFrames = null;
+		moduleResolver = null;
+		onRuntimeError = null;
 	}
 
 	public inline function pushFrame(methodName:String, pos:Pos) {
@@ -2572,10 +2592,18 @@ class Interp {
 			case ECall(calleeExpr, argsExprs):
 				switch (calleeExpr.def) {
 					case EField(obj, field):
-						if (field == "await" && obj != null) {
+						if (obj != null) {
 							switch (obj.def) {
 								case EIdent("HaxiomHost"):
-									throw "HaxiomHost.await is only supported in VM execution mode (useVM = true)";
+									if (field == "await") {
+										throw "HaxiomHost.await is only supported in VM execution mode (useVM = true)";
+									} else if (field == "onDispose") {
+										if (argsExprs.length == 1) {
+											var cb = eval(argsExprs[0], scope);
+											addDisposeHandler(cb);
+											return null;
+										}
+									}
 								default:
 							}
 						}
@@ -4867,6 +4895,8 @@ class Interp {
 	function bindMethod(obj:Dynamic, method:ClassMethodInfo):Dynamic {
 		var bindings = (obj != null && Std.isOfType(obj, HaxiomInstance)) ? (cast obj : HaxiomInstance).genericBindings : null;
 		var func = (callArgs:Array<Dynamic>) -> {
+			if (disposed)
+				return null;
 			var mDyn:Dynamic = method;
 			if (mDyn.isAbstract) {
 				throw 'Cannot call abstract method ${method.name}';

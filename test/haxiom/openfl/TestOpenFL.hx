@@ -63,6 +63,7 @@ class TestOpenFL extends Application {
 	var dropdown:PopUpListView;
 	var container:LayoutGroup;
 	var selectedScript:ScriptDef;
+	var haxiom:Haxiom;
 
 	public function new() {
 		var theme = cast(Theme.fallbackTheme, IDarkModeTheme);
@@ -153,6 +154,7 @@ class TestOpenFL extends Application {
 		haxiom.exposeClass("openfl.ui.Keyboard", openfl.ui.Keyboard);
 		haxiom.exposeClass("openfl.utils.Assets", openfl.utils.Assets);
 		haxiom.exposeClass("lime.app.Future", lime.app.Future);
+		haxiom.exposeClass("openfl.Lib", openfl.Lib);
 
 		// Haxe Core Utilities
 		haxiom.exposeClass("haxe.Timer", haxe.Timer);
@@ -186,10 +188,12 @@ class TestOpenFL extends Application {
 	}
 
 	function onExecuteTrigger(e:TriggerEvent) {
+		if (haxiom != null)
+			haxiom.dispose();
 		container.removeChildren();
 		trace("Executing script: " + scriptArea.currentScript.name + "...");
 
-		final haxiom = new Haxiom();
+		haxiom = new Haxiom();
 		haxiom.useVM = true;
 		registerFFI(haxiom);
 		registerGlobals(haxiom);

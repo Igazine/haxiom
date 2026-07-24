@@ -1,3 +1,5 @@
+import haxiom.guest.HaxiomHost;
+import openfl.Lib;
 import openfl.display.Sprite;
 import openfl.events.KeyboardEvent;
 import openfl.events.MouseEvent;
@@ -87,20 +89,13 @@ class SnakeGame {
 		menuText.text = "HAXIOM SNAKE\nControl with WASD or Arrows\nClick anywhere to start!";
 		menuOverlay.addChild(menuText);
 
-		// Listen to click on overlay or root canvas to start/restart
+		// Event listeners
 		menuOverlay.addEventListener(MouseEvent.CLICK, onClickMenu);
 		canvas.addEventListener(MouseEvent.CLICK, onClickMenu);
+		Lib.current.stage.addEventListener(KeyboardEvent.KEY_DOWN, onKeyDown);
 
-		// Listen to keyboard inputs on root container and stage
-		root.addEventListener(KeyboardEvent.KEY_DOWN, onKeyDown);
-		if (root.stage != null) {
-			root.stage.addEventListener(KeyboardEvent.KEY_DOWN, onKeyDown);
-		}
-
-		// Reset and auto-start game
-		resetGame();
-		state = "Playing";
-		menuOverlay.visible = false;
+		// Register cleanup handler when Haxiom instance is disposed
+		HaxiomHost.onDispose(dispose);
 
 		// Initial drawing of background/board
 		draw();
@@ -109,8 +104,19 @@ class SnakeGame {
 		tickLoop();
 	}
 
+	public function dispose() {
+		Lib.current.stage.removeEventListener(KeyboardEvent.KEY_DOWN, onKeyDown);
+		if (canvas != null) {
+			canvas.removeEventListener(MouseEvent.CLICK, onClickMenu);
+		}
+		if (menuOverlay != null) {
+			menuOverlay.removeEventListener(MouseEvent.CLICK, onClickMenu);
+		}
+	}
+
 	function tickLoop() {
 		while (true) {
+			trace(state);
 			if (state == "Playing") {
 				update();
 				draw();
@@ -246,12 +252,15 @@ class SnakeGame {
 		}
 
 		// Draw Menu Overlay semi-transparent background if active
+		var og = menuOverlay.graphics;
+		og.clear();
 		if (state == "Menu" || state == "GameOver") {
-			var og = menuOverlay.graphics;
-			og.clear();
 			og.beginFill(0x000000, 0.7);
 			og.drawRect(0, 40, 500, 450);
 			og.endFill();
+			menuOverlay.visible = true;
+		} else {
+			menuOverlay.visible = false;
 		}
 	}
 }

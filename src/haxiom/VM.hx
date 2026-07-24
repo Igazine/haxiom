@@ -81,6 +81,7 @@ enum abstract Opcode(Int) from Int to Int {
 	var OP_CHECK_TYPE = 73;
 	var OP_AWAIT = 74;
 	var OP_EREG = 75;
+	var OP_ON_DISPOSE = 76;
 }
 
 typedef DebugSymbol = {
@@ -291,6 +292,7 @@ class VM {
 			stack = fiber.stack;
 			callFrames = fiber.callFrames;
 			interp.currentThis = fiber.thisContext;
+			interp.instructionsCount = 0;
 		} else {
 			if (enablePooling) {
 				stack = stackPool.length > 0 ? stackPool.pop() : [];
@@ -1036,6 +1038,8 @@ class VM {
 							var creationPos = currentPos();
 
 							var func = (callArgs:Array<Dynamic>) -> {
+								if (interp.disposed)
+									return null;
 								#if haxiom_debug
 								trace('VM guest function invoked! callArgs=' + callArgs);
 								#end
@@ -1294,9 +1298,24 @@ class VM {
 						case OP_UNOP_MUTATE:
 							var opStr:String = consts[inst[frame.ip++]];
 							var targetExprIdx = inst[frame.ip++];
-							var targetExpr = consts[targetExprIdx];
+							var targetExpr:Expr = consts[targetExprIdx];
 
-							var val = interp.eval(targetExpr, frame.scope);
+							var localSlot:Int = -1;
+							switch (targetExpr.def) {
+								case EIdent(name):
+									if (frame.chunk.debugSymbols != null) {
+										var activeLocals = frame.chunk.getActiveLocalsAt(frame.ip);
+										for (s in activeLocals.keys()) {
+											if (activeLocals.get(s) == name) {
+												localSlot = s;
+												break;
+											}
+										}
+									}
+								default:
+							}
+
+							var val:Dynamic = localSlot != -1 ? frame.locals[localSlot] : interp.eval(targetExpr, frame.scope);
 							var overloadRes = interp.findAbstractUnopOverload(opStr, val);
 							var finalVal:Dynamic = null;
 							var retVal:Dynamic = null;
@@ -1307,7 +1326,11 @@ class VM {
 								if (opStr == "post++" || opStr == "post--") {
 									retVal = val;
 								}
-								interp.assign(targetExpr, finalVal, frame.scope);
+								if (localSlot != -1) {
+									frame.locals[localSlot] = finalVal;
+								} else {
+									interp.assign(targetExpr, finalVal, frame.scope);
+								}
 							} else {
 								switch (opStr) {
 									case "post++":
@@ -1325,7 +1348,11 @@ class VM {
 									default:
 										throw 'Unknown mutating unary operator "$opStr"';
 								}
-								interp.assign(targetExpr, finalVal, frame.scope);
+								if (localSlot != -1) {
+									frame.locals[localSlot] = finalVal;
+								} else {
+									interp.assign(targetExpr, finalVal, frame.scope);
+								}
 							}
 							stack.push(retVal);
 
@@ -1616,6 +1643,10 @@ class VM {
 								stack.push(promise);
 							}
 
+						case OP_ON_DISPOSE:
+							var cb = stack.pop();
+							interp.addDisposeHandler(cb);
+
 						default:
 							throw 'Unsupported opcode $op';
 					}
@@ -1797,12 +1828,14 @@ class VM {
 
 			if (interp.onRuntimeError != null) {
 				interp.onRuntimeError(se);
+			} else {
+				haxe.Log.trace("SCRIPT EXCEPTION ERROR: " + se.message, null);
+				if (se.stack != null && se.stack.length > 0) {
+					haxe.Log.trace("STACK TRACE: " + haxe.CallStack.toString(se.stack), null);
+				}
 			}
 
 			if (fiber == null) {
-				if (interp.onRuntimeError != null) {
-					return null;
-				}
 				throw se;
 			} else {
 				return null;

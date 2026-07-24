@@ -221,6 +221,7 @@ class Haxiom {
 	public function new() {
 		interp = new Interp();
 		registerClassRuntime("haxiom.guest.Future", haxiom.guest.Future);
+		registerClassRuntime("haxiom.guest.HaxiomHost", haxiom.guest.HaxiomHost);
 	}
 
 	/**

@@ -137,6 +137,9 @@ class BytecodeVerifier {
 				case 74: // OP_AWAIT
 					// 0 operands
 
+				case 76: // OP_ON_DISPOSE
+					// 0 operands
+
 				case 75: // OP_EREG
 					checkOperands(ip, 2, inst.length);
 					checkConstIndex(inst[ip++], chunk); // pattern

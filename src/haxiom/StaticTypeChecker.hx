@@ -695,24 +695,28 @@ class StaticTypeChecker {
 	function inferCallType(calleeExpr:Expr, args:Array<Expr>, env:LocalEnv):TypeDecl {
 		switch (calleeExpr.def) {
 			case EField(obj, field):
-				if (field == "await" && obj != null) {
+				if (obj != null) {
 					switch (obj.def) {
 						case EIdent("HaxiomHost"):
-							if (args.length == 1) {
-								var argType = inferType(args[0], env);
-								if (argType != null) {
-									switch (argType) {
-										case TPath(path, typeParams):
-											var typeName = path.join(".");
-											if ((typeName == "Future" || typeName == "haxiom.guest.Future" || typeName == "haxiom.Future") && typeParams.length > 0) {
-												return typeParams[0];
-											}
-										default:
+							if (field == "await") {
+								if (args.length == 1) {
+									var argType = inferType(args[0], env);
+									if (argType != null) {
+										switch (argType) {
+											case TPath(path, typeParams):
+												var typeName = path.join(".");
+												if ((typeName == "Future" || typeName == "haxiom.guest.Future" || typeName == "haxiom.Future") && typeParams.length > 0) {
+													return typeParams[0];
+												}
+											default:
+										}
+										return argType;
 									}
-									return argType;
 								}
+								return TPath(["Dynamic"], []);
+							} else if (field == "onDispose") {
+								return TPath(["Dynamic"], []);
 							}
-							return null;
 						default:
 					}
 				}
