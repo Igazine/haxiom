@@ -68,11 +68,11 @@ class SnakeGame {
 		scoreLabel.height = 40;
 		scoreLabel.selectable = false;
 		scoreLabel.text = "Score: 0";
-		root.addChild(scoreLabel);
+		canvas.addChild(scoreLabel);
 
 		// Create menu overlay container
 		menuOverlay = new Sprite();
-		root.addChild(menuOverlay);
+		canvas.addChild(menuOverlay);
 
 		menuText = new TextField();
 		var menuTf = new TextFormat();
@@ -87,11 +87,20 @@ class SnakeGame {
 		menuText.text = "HAXIOM SNAKE\nControl with WASD or Arrows\nClick anywhere to start!";
 		menuOverlay.addChild(menuText);
 
-		// Listen to click on stage/gameRoot to start/restart
+		// Listen to click on overlay or root canvas to start/restart
 		menuOverlay.addEventListener(MouseEvent.CLICK, onClickMenu);
+		canvas.addEventListener(MouseEvent.CLICK, onClickMenu);
 
-		// Listen to keyboard inputs on root container
+		// Listen to keyboard inputs on root container and stage
 		root.addEventListener(KeyboardEvent.KEY_DOWN, onKeyDown);
+		if (root.stage != null) {
+			root.stage.addEventListener(KeyboardEvent.KEY_DOWN, onKeyDown);
+		}
+
+		// Reset and auto-start game
+		resetGame();
+		state = "Playing";
+		menuOverlay.visible = false;
 
 		// Initial drawing of background/board
 		draw();
