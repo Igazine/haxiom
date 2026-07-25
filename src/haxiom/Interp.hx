@@ -645,6 +645,16 @@ class Interp {
 		}
 	}
 
+	private function reset():Void {
+		if (disposed || state == DISPOSED)
+			return;
+		state = UNINITIALIZED;
+		haltedNamespaces.clear();
+		instructionsCount = 0;
+		memoryUsage = 0;
+		callStack = [];
+	}
+
 	private function dispose():Void {
 		for (handler in disposeHandlers) {
 			try {
@@ -655,6 +665,7 @@ class Interp {
 		}
 		disposeHandlers = [];
 		disposed = true;
+		state = DISPOSED;
 		globals = new Scope(null); // Clear root scope and references
 		importedModules.clear();
 		externClasses.clear();
@@ -867,6 +878,8 @@ class Interp {
 		// Ensure DCE keep
 		HaxiomAnchor.keep();
 	}
+
+	public var state(default, null):VMState = UNINITIALIZED;
 
 	private var useVM:Bool = false;
 	private var debugMode:Bool = true;
@@ -1156,6 +1169,13 @@ class Interp {
 	}
 
 	private function execute(expr:Expr):Dynamic {
+		if (disposed || state == DISPOSED) {
+			throw "Cannot execute on disposed Haxiom engine instance";
+		}
+		if (state == HALTED) {
+			reset();
+		}
+		state = RUNNING;
 		instructionsCount = 0;
 		memoryUsage = 0;
 		currentPackage = [];
@@ -1164,19 +1184,26 @@ class Interp {
 		lastActiveLocals = null;
 		lastEvalPos = expr.pos;
 		try {
+			var res:Dynamic = null;
 			if (useVM) {
 				var chunk = BytecodeCompiler.compile(expr, null, true, false, debugMode);
-				return VM.runChunk(this, chunk, globals, null, "toplevel");
+				res = VM.runChunk(this, chunk, globals, null, "toplevel");
+			} else {
+				res = eval(expr, globals);
 			}
-			return eval(expr, globals);
+			state = IDLE;
+			return res;
 		} catch (e:ControlFlow) {
 			switch (e) {
 				case Return(val):
+					state = IDLE;
 					return val;
 				default:
+					state = HALTED;
 					throw "Unexpected control flow break/continue at top-level";
 			}
 		} catch (e:Dynamic) {
+			state = HALTED;
 			var traceLines = [];
 			var isScriptException = Std.isOfType(e, haxiom.ScriptException);
 
@@ -1220,6 +1247,13 @@ class Interp {
 	}
 
 	private function executeChunk(chunk:haxiom.VM.BytecodeChunk):Dynamic {
+		if (disposed || state == DISPOSED) {
+			throw "Cannot execute on disposed Haxiom engine instance";
+		}
+		if (state == HALTED) {
+			reset();
+		}
+		state = RUNNING;
 		instructionsCount = 0;
 		memoryUsage = 0;
 		currentPackage = [];
@@ -1235,15 +1269,20 @@ class Interp {
 			}
 		}
 		try {
-			return VM.runChunk(this, chunk, globals, null, "toplevel");
+			var res = VM.runChunk(this, chunk, globals, null, "toplevel");
+			state = IDLE;
+			return res;
 		} catch (e:ControlFlow) {
 			switch (e) {
 				case Return(val):
+					state = IDLE;
 					return val;
 				default:
+					state = HALTED;
 					throw "Unexpected control flow break/continue at top-level";
 			}
 		} catch (e:Dynamic) {
+			state = HALTED;
 			trace("DEBUG ORIGINAL CALL STACK: " + haxe.CallStack.toString(haxe.CallStack.exceptionStack()));
 			var traceLines = [];
 			var isScriptException = Std.isOfType(e, haxiom.ScriptException);

@@ -26,8 +26,74 @@ class TestHaxiom {
 			TestNSConflict.main();
 			TestExterns.runTests();
 			TestCallerIdentification.runTests();
+			runVMStateTests();
 			trace("ALL TESTS COMPLETED SUCCESSFULLY!");
 		});
+	}
+
+	static function runVMStateTests():Void {
+		trace("Testing Low-Level VMState Transitions...");
+		var engine = new Haxiom();
+		if (engine.state != UNINITIALIZED) {
+			throw "Expected state UNINITIALIZED on new engine, got " + engine.state;
+		}
+
+		engine.interpret("var x = 10; x + 5;");
+		if (engine.state != IDLE) {
+			throw "Expected state IDLE after execution, got " + engine.state;
+		}
+
+		var threwError = false;
+		try {
+			engine.interpret("throw 'Simulated Failure';");
+		} catch (e:Dynamic) {
+			threwError = true;
+		}
+
+		if (!threwError) {
+			throw "Expected script exception during failure test";
+		}
+		if (engine.state != HALTED) {
+			throw "Expected state HALTED after exception, got " + engine.state;
+		}
+
+		// Re-evaluation automatically auto-resets HALTED state and evaluates clean
+		engine.interpret("1 + 1;");
+		if (engine.state != IDLE) {
+			throw "Expected state IDLE after auto-reset re-evaluation";
+		}
+
+		engine.reset();
+		if (engine.state != UNINITIALIZED) {
+			throw "Expected state UNINITIALIZED after reset(), got " + engine.state;
+		}
+
+		engine.interpret("100;");
+		if (engine.state != IDLE) {
+			throw "Expected state IDLE after re-evaluation post-reset";
+		}
+
+		engine.dispose();
+		if (engine.state != DISPOSED) {
+			throw "Expected state DISPOSED after dispose(), got " + engine.state;
+		}
+
+		engine.reset(); // Should be a no-op on DISPOSED engine
+		if (engine.state != DISPOSED) {
+			throw "Expected reset() on DISPOSED engine to remain DISPOSED, got " + engine.state;
+		}
+
+		var disposedBlocked = false;
+		try {
+			engine.interpret("1 + 1;");
+		} catch (e:Dynamic) {
+			disposedBlocked = true;
+		}
+		if (!disposedBlocked) {
+			throw "Expected disposed engine to block execution";
+		}
+
+		trace("SUCCESS: Low-Level VMState Machine transitions verified!");
 	}
 
 	static function runPart1(haxiom:haxiom.Haxiom) {

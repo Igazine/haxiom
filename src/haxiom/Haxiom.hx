@@ -185,6 +185,21 @@ class Haxiom {
 	}
 
 	/**
+	 * Returns the low-level lifecycle VMState of this engine instance.
+	 */
+	public var state(get, never):VMState;
+
+	inline function get_state():VMState
+		return interp.state;
+
+	/**
+	 * Resets halted error flags and resets the engine state to UNINITIALIZED.
+	 */
+	public function reset():Void {
+		interp.reset();
+	}
+
+	/**
 	 * Controls whether object/scope/frame pooling is enabled for this engine instance.
 	 */
 	public var enablePooling(get, set):Bool;
@@ -241,8 +256,11 @@ class Haxiom {
 	 */
 	public var currentFilename(get, set):String;
 
-	inline function get_currentFilename() return interp.currentFilename;
-	inline function set_currentFilename(v) return interp.currentFilename = v;
+	inline function get_currentFilename()
+		return interp.currentFilename;
+
+	inline function set_currentFilename(v)
+		return interp.currentFilename = v;
 
 	/**
 	 * Identifies the active script caller (file, className, methodName, line, column)
@@ -285,6 +303,7 @@ class Haxiom {
 
 	/**
 	 * Disposes of the engine instance, freeing all globals, scopes, AST caches, and aborting active fibers.
+	 * A `Haxiom` instance should not be used after `dispose()` is called.
 	 */
 	public function dispose():Void {
 		interp.dispose();
