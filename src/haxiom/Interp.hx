@@ -17,11 +17,9 @@ class Scope {
 	var isCaptured:Bool = false;
 	var isInPool:Bool = false;
 
-	static var pool:Array<Scope> = [];
-
-	static function create(?parent:Scope):Scope {
-		if (pool.length > 0) {
-			var s = pool.pop();
+	static function create(?parent:Scope, ?interp:Interp):Scope {
+		if (interp != null && interp.enablePooling && interp.scopePool.length > 0) {
+			var s = interp.scopePool.pop();
 			s.parent = parent;
 			s.isCaptured = false;
 			s.isInPool = false;
@@ -30,7 +28,7 @@ class Scope {
 		return new Scope(parent);
 	}
 
-	static function recycle(s:Scope):Void {
+	static function recycle(s:Scope, ?interp:Interp):Void {
 		if (s == null || s.isCaptured)
 			return;
 		if (s.isInPool)
@@ -41,7 +39,9 @@ class Scope {
 		s.parent = null;
 		s.isCaptured = false;
 		s.isInPool = true;
-		pool.push(s);
+		if (interp != null && interp.enablePooling) {
+			interp.scopePool.push(s);
+		}
 	}
 
 	function markCaptured():Void {
@@ -667,6 +667,10 @@ class Interp {
 		activeVMCallFrames = null;
 		moduleResolver = null;
 		onRuntimeError = null;
+		scopePool = [];
+		framePool = [];
+		stackPool = [];
+		callFramesPool = [];
 	}
 
 	private inline function pushFrame(methodName:String, pos:Pos) {
@@ -1227,7 +1231,7 @@ class Interp {
 		}
 		if (chunk.resources != null) {
 			for (k => v in chunk.resources) {
-				ResourceCompiler.virtualResources.set(k, v);
+				this.virtualResources.set(k, v);
 			}
 		}
 		try {
@@ -2307,8 +2311,8 @@ class Interp {
 				#end
 				if (v != null && (Std.isOfType(v, BinaryResourceRefHolder) || Reflect.hasField(v, "key"))) {
 					var resKey:String = Reflect.field(v, "key");
-					if (resKey != null && ResourceCompiler.virtualResources.exists(resKey)) {
-						return ResourceCompiler.virtualResources.get(resKey);
+					if (resKey != null && this.virtualResources.exists(resKey)) {
+						return this.virtualResources.get(resKey);
 					}
 				}
 				return v;
@@ -2379,7 +2383,7 @@ class Interp {
 				throw 'Identifier "$name" not found at ${pos.line}:${pos.col}';
 
 			case EVar(name, type, expr, isFinal, meta):
-				var processedExpr = ResourceCompiler.processResource(meta, type, expr, e.pos, null);
+				var processedExpr = ResourceCompiler.processResource(this, meta, type, expr, e.pos, null);
 				var val = processedExpr != null ? eval(processedExpr, scope) : null;
 				if (type != null) {
 					val = castOrCheckType(val, type, scope);
@@ -3449,7 +3453,7 @@ class Interp {
 				for (f in fields) {
 					var fieldExpr = f.expr;
 					if (f.meta != null) {
-						fieldExpr = ResourceCompiler.processResource(f.meta, f.type, f.expr, e.pos, null);
+						fieldExpr = ResourceCompiler.processResource(this, f.meta, f.type, f.expr, e.pos, null);
 					}
 					cls.fields.set(f.name, {
 						name: f.name,
@@ -3908,10 +3912,10 @@ class Interp {
 						}
 					}
 
-					// 3. Scan autoWhitelistedTypes
-					isAutoWhitelisted(""); // Ensure autoWhitelistedTypes is initialized
-					if (autoWhitelistedTypes != null) {
-						for (fq in autoWhitelistedTypes.keys()) {
+					// 3. Scan autoWhitelistedTypesMap
+					isAutoWhitelisted(""); // Ensure autoWhitelistedTypesMap is initialized
+					if (autoWhitelistedTypesMap != null) {
+						for (fq in autoWhitelistedTypesMap.keys()) {
 							if (StringTools.startsWith(fq, prefix) && isImportWhitelisted(fq)) {
 								var parts = fq.split(".");
 								var clsShort = parts[parts.length - 1];
@@ -5930,11 +5934,9 @@ class Interp {
 		Reflect.setField(current, parts[parts.length - 1], value);
 	}
 
-	static var autoWhitelistedTypes:Map<String, Bool> = null;
-
 	function isAutoWhitelisted(fqName:String):Bool {
-		if (autoWhitelistedTypes == null) {
-			autoWhitelistedTypes = new Map();
+		if (autoWhitelistedTypesMap == null) {
+			autoWhitelistedTypesMap = new Map();
 			#if !macro
 			// 1. Classes
 			var res = haxe.Resource.getString("haxiom_exposed_classes");
@@ -5942,7 +5944,7 @@ class Interp {
 				try {
 					var list:Array<String> = haxe.Json.parse(res);
 					for (x in list)
-						autoWhitelistedTypes.set(x, true);
+						autoWhitelistedTypesMap.set(x, true);
 				} catch (e:Dynamic) {}
 			}
 			// 2. Abstracts
@@ -5951,10 +5953,10 @@ class Interp {
 				try {
 					var obj:Dynamic = haxe.Json.parse(absRes);
 					for (k in Reflect.fields(obj)) {
-						autoWhitelistedTypes.set(k, true);
+						autoWhitelistedTypesMap.set(k, true);
 						var absInfo = Reflect.field(obj, k);
 						if (absInfo != null && absInfo.implClass != null) {
-							autoWhitelistedTypes.set(absInfo.implClass, true);
+							autoWhitelistedTypesMap.set(absInfo.implClass, true);
 						}
 					}
 				} catch (e:Dynamic) {}
@@ -5967,7 +5969,7 @@ class Interp {
 					for (k in Reflect.fields(obj)) {
 						var clsName = Reflect.field(obj, k);
 						if (clsName != null)
-							autoWhitelistedTypes.set(clsName, true);
+							autoWhitelistedTypesMap.set(clsName, true);
 					}
 				} catch (e:Dynamic) {}
 			}
@@ -5977,17 +5979,16 @@ class Interp {
 				try {
 					var obj:Dynamic = haxe.Json.parse(modRes);
 					for (k in Reflect.fields(obj)) {
-						autoWhitelistedTypes.set(k, true);
+						autoWhitelistedTypesMap.set(k, true);
 						var types:Array<String> = Reflect.field(obj, k);
 						for (t in types)
-							autoWhitelistedTypes.set(t, true);
+							autoWhitelistedTypesMap.set(t, true);
 					}
 				} catch (e:Dynamic) {}
 			}
-			// haxe.Log.trace("DEBUG autoWhitelistedKeys: " + [for (k in autoWhitelistedTypes.keys()) k], null);
 			#end
 		}
-		return autoWhitelistedTypes.exists(fqName);
+		return autoWhitelistedTypesMap.exists(fqName);
 	}
 
 	function isManualImportRequired(fqName:String):Bool {

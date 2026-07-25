@@ -185,6 +185,17 @@ class Haxiom {
 	}
 
 	/**
+	 * Controls whether object/scope/frame pooling is enabled for this engine instance.
+	 */
+	public var enablePooling(get, set):Bool;
+
+	inline function get_enablePooling()
+		return interp.enablePooling;
+
+	inline function set_enablePooling(v)
+		return interp.enablePooling = v;
+
+	/**
 	 * If true, compiles scripts in debug mode, tracking source code coordinates for traces
 	 * and generating debug symbol lifespans to output local variable values in error stack traces.
 	 */
@@ -759,14 +770,14 @@ class Haxiom {
 	 * Registers an in-memory virtual resource asset accessible to `@:haxiom.resource('./path')`.
 	 */
 	public function addResource(path:String, bytes:haxe.io.Bytes):Void {
-		ResourceCompiler.virtualResources.set(path, bytes);
+		interp.virtualResources.set(path, bytes);
 	}
 
 	/**
 	 * Sets a custom host resource provider function for resolving `@:haxiom.resource` items.
 	 */
 	public function setResourceProvider(provider:(path:String) -> haxe.io.Bytes):Void {
-		ResourceCompiler.resourceProvider = provider;
+		interp.resourceProvider = provider;
 	}
 
 	/**

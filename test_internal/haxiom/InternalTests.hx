@@ -125,7 +125,7 @@ class InternalTests {
 	}
 
 	static function runScopePoolTests(haxiom:Haxiom) {
-		var poolSizeBefore = Scope.pool.length;
+		var poolSizeBefore = @:privateAccess haxiom.interp.scopePool.length;
 		var script55_pool = "
             var sum = 0;
             for (i in 0...100) {
@@ -133,7 +133,7 @@ class InternalTests {
             }
         ";
 		haxiom.interpret(script55_pool);
-		var poolSizeAfter = Scope.pool.length;
+		var poolSizeAfter = @:privateAccess haxiom.interp.scopePool.length;
 		trace("Scope pool size before: " + poolSizeBefore + ", after: " + poolSizeAfter);
 		if (poolSizeAfter > 0) {
 			trace("SUCCESS: Scope pooling successfully recycled scopes.");

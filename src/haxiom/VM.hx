@@ -184,19 +184,14 @@ class VMCallFrame {
 
 @:allow(haxiom)
 class VM {
-	public static var enablePooling:Bool = true;
-	static var framePool:Array<VMCallFrame> = [];
-	static var stackPool:Array<Array<Dynamic>> = [];
-	static var callFramesPool:Array<Array<VMCallFrame>> = [];
-
 	static inline function isTruthy(v:Dynamic):Bool {
 		return v != null && v != false;
 	}
 
-	static function obtainFrame(chunk:BytecodeChunk, ip:Int, scope:Scope, methodName:String):VMCallFrame {
+	static function obtainFrame(interp:Interp, chunk:BytecodeChunk, ip:Int, scope:Scope, methodName:String):VMCallFrame {
 		var frame:VMCallFrame = null;
-		if (enablePooling && framePool.length > 0) {
-			frame = framePool.pop();
+		if (interp != null && interp.enablePooling && interp.framePool.length > 0) {
+			frame = interp.framePool.pop();
 			frame.isInPool = false;
 			frame.chunk = chunk;
 			frame.ip = ip;
@@ -220,10 +215,10 @@ class VM {
 		return frame;
 	}
 
-	static function recycleFrame(frame:VMCallFrame):Void {
+	static function recycleFrame(interp:Interp, frame:VMCallFrame):Void {
 		if (frame == null)
 			return;
-		if (!enablePooling)
+		if (interp == null || !interp.enablePooling)
 			return;
 		if (frame.isInPool)
 			return;
@@ -250,7 +245,7 @@ class VM {
 		frame.tryStack = [];
 		#end
 		frame.isInPool = true;
-		framePool.push(frame);
+		interp.framePool.push(frame);
 	}
 
 	static function runChunk(interp:Interp, chunk:BytecodeChunk, scope:Scope, ?currentThis:Dynamic, ?methodName:String = "toplevel",
@@ -294,14 +289,14 @@ class VM {
 			interp.currentThis = fiber.thisContext;
 			interp.instructionsCount = 0;
 		} else {
-			if (enablePooling) {
-				stack = stackPool.length > 0 ? stackPool.pop() : [];
-				callFrames = callFramesPool.length > 0 ? callFramesPool.pop() : [];
+			if (interp != null && interp.enablePooling) {
+				stack = interp.stackPool.length > 0 ? interp.stackPool.pop() : [];
+				callFrames = interp.callFramesPool.length > 0 ? interp.callFramesPool.pop() : [];
 			} else {
 				stack = [];
 				callFrames = [];
 			}
-			var frame = obtainFrame(chunk, 0, scope, methodName);
+			var frame = obtainFrame(interp, chunk, 0, scope, methodName);
 			if (args != null) {
 				for (i in 0...args.length) {
 					if (i < frame.locals.length) {
@@ -356,7 +351,7 @@ class VM {
 					if (frame.ip >= inst.length) {
 						if (callFrames.length > 1) {
 							var popped = callFrames.pop();
-							recycleFrame(popped);
+							recycleFrame(interp, popped);
 							frame = callFrames[callFrames.length - 1];
 							inst = frame.chunk.instructions;
 							consts = frame.chunk.constants;
@@ -673,7 +668,7 @@ class VM {
 							var res = stack.pop();
 							if (callFrames.length > 1) {
 								var popped = callFrames.pop();
-								recycleFrame(popped);
+								recycleFrame(interp, popped);
 								frame = callFrames[callFrames.length - 1];
 								inst = frame.chunk.instructions;
 								consts = frame.chunk.constants;
@@ -1043,7 +1038,7 @@ class VM {
 								#if haxiom_debug
 								trace('VM guest function invoked! callArgs=' + callArgs);
 								#end
-								var fScope = Scope.create(closureScope);
+								var fScope = Scope.create(closureScope, interp);
 								var mappedArgs = [];
 								for (i in 0...proto.args.length) {
 									var arg = proto.args[i];
@@ -1074,26 +1069,26 @@ class VM {
 										res = interp.castOrCheckType(res, proto.retType, fScope);
 									}
 									interp.popFrame();
-									Scope.recycle(fScope);
+									Scope.recycle(fScope, interp);
 									return res;
 								} catch (flow:ControlFlow) {
 									interp.popFrame();
 									switch (flow) {
 										case Return(val):
 											if (proto.retType != null && interp.typeToString(proto.retType) == "Void") {
-												Scope.recycle(fScope);
+												Scope.recycle(fScope, interp);
 												return null;
 											}
 											val = interp.castOrCheckType(val, proto.retType, fScope);
-											Scope.recycle(fScope);
+											Scope.recycle(fScope, interp);
 											return val;
 										default:
-											Scope.recycle(fScope);
+											Scope.recycle(fScope, interp);
 											throw flow;
 									}
 								} catch (err:Dynamic) {
 									interp.popFrame();
-									Scope.recycle(fScope);
+									Scope.recycle(fScope, interp);
 									throw err;
 								}
 							};
@@ -1140,7 +1135,7 @@ class VM {
 							stack.pop();
 
 						case OP_PUSH_SCOPE:
-							frame.scope = Scope.create(frame.scope);
+							frame.scope = Scope.create(frame.scope, interp);
 
 						case OP_PUSH_CASE_SCOPE:
 							var caseScope:Scope = stack.pop();
@@ -1149,7 +1144,7 @@ class VM {
 						case OP_POP_SCOPE:
 							var s = frame.scope;
 							frame.scope = s.parent;
-							Scope.recycle(s);
+							Scope.recycle(s, interp);
 
 						case OP_GET_ITERATOR:
 							var iterable = stack.pop();
@@ -1209,7 +1204,7 @@ class VM {
 							var val = stack[stack.length - 1];
 							var pattern = consts[patternIdx];
 							var guard = guardIdx >= 0 ? consts[guardIdx] : null;
-							var caseScope = Scope.create(frame.scope);
+							var caseScope = Scope.create(frame.scope, interp);
 							var matched = false;
 							try {
 								if (interp.matchPattern(val, pattern, frame.scope, caseScope)) {
@@ -1230,7 +1225,7 @@ class VM {
 								stack.push(caseScope);
 								stack.push(true);
 							} else {
-								Scope.recycle(caseScope);
+								Scope.recycle(caseScope, interp);
 								stack.push(false);
 							}
 
@@ -1238,7 +1233,7 @@ class VM {
 							var clauseIdx = inst[frame.ip++];
 							var c = consts[clauseIdx];
 							var errVal = stack[stack.length - 1];
-							var caseScope = Scope.create(frame.scope);
+							var caseScope = Scope.create(frame.scope, interp);
 							var matched = false;
 							try {
 								if (interp.matchPattern(errVal, c.pattern, frame.scope, caseScope)) {
@@ -1274,7 +1269,7 @@ class VM {
 								stack.push(caseScope);
 								stack.push(true);
 							} else {
-								Scope.recycle(caseScope);
+								Scope.recycle(caseScope, interp);
 								stack.push(false);
 							}
 
@@ -1722,7 +1717,7 @@ class VM {
 							break;
 						}
 						var popped = callFrames.pop();
-						recycleFrame(popped);
+						recycleFrame(interp, popped);
 					}
 					if (foundHandler) {
 						continue;
@@ -1763,15 +1758,15 @@ class VM {
 				} else {
 					fiber.future.resolve(res);
 					if (fiber.scope != null) {
-						Scope.recycle(fiber.scope);
+						Scope.recycle(fiber.scope, interp);
 						fiber.scope = null;
 					}
 				}
 			}
 			for (f in callFrames) {
-				recycleFrame(f);
+				recycleFrame(interp, f);
 			}
-			if (enablePooling && (fiber == null || !fiber.isSuspended)) {
+			if (interp != null && interp.enablePooling && (fiber == null || !fiber.isSuspended)) {
 				#if haxe4
 				stack.resize(0);
 				callFrames.resize(0);
@@ -1781,8 +1776,8 @@ class VM {
 				while (callFrames.length > 0)
 					callFrames.pop();
 				#end
-				stackPool.push(stack);
-				callFramesPool.push(callFrames);
+				interp.stackPool.push(stack);
+				interp.callFramesPool.push(callFrames);
 			}
 			interp.activeVMCallFrames = null;
 			return res;
@@ -1802,16 +1797,16 @@ class VM {
 					var rejectVal = Std.isOfType(e, ScriptException) ? (cast e : ScriptException).rawValue : e;
 					fiber.future.reject(rejectVal);
 					if (fiber.scope != null) {
-						Scope.recycle(fiber.scope);
+						Scope.recycle(fiber.scope, interp);
 						fiber.scope = null;
 					}
 				}
 			}
 			if (fiber == null || !fiber.isSuspended) {
 				for (f in callFrames) {
-					recycleFrame(f);
+					recycleFrame(interp, f);
 				}
-				if (enablePooling) {
+				if (interp != null && interp.enablePooling) {
 					#if haxe4
 					stack.resize(0);
 					callFrames.resize(0);
@@ -1821,8 +1816,8 @@ class VM {
 					while (callFrames.length > 0)
 						callFrames.pop();
 					#end
-					stackPool.push(stack);
-					callFramesPool.push(callFrames);
+					interp.stackPool.push(stack);
+					interp.callFramesPool.push(callFrames);
 				}
 			}
 
@@ -1896,7 +1891,7 @@ class HaxiomSuperInstance {
 		if (parentCls != null) {
 			var constr = interp.findMethod(parentCls, "new");
 			if (constr != null) {
-				var cScope = Scope.create(scope);
+				var cScope = Scope.create(scope, interp);
 				cScope.declare("this", inst);
 				for (i in 0...constr.args.length) {
 					var arg = constr.args[i];
@@ -1918,16 +1913,16 @@ class HaxiomSuperInstance {
 					} else {
 						interp.eval(constr.body, cScope);
 					}
-					Scope.recycle(cScope);
+					Scope.recycle(cScope, interp);
 				} catch (flow:ControlFlow) {
-					Scope.recycle(cScope);
+					Scope.recycle(cScope, interp);
 					switch (flow) {
 						case Return(_):
 						default:
 							throw flow;
 					}
 				} catch (err:Dynamic) {
-					Scope.recycle(cScope);
+					Scope.recycle(cScope, interp);
 					throw err;
 				}
 				interp.currentConstructorInstance = oldConstrInst;

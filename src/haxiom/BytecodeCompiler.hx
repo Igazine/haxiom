@@ -39,8 +39,10 @@ class BytecodeCompiler {
 	var functionName:Null<String> = null;
 	var args:Null<Array<FunctionArg>> = null;
 	var resources:Map<String, haxe.io.Bytes> = new Map();
+	var interp:Null<Interp> = null;
 
-	function new(?args:Array<FunctionArg>, ?isTopLevel:Bool = true, ?isAsync:Bool = false, ?debugMode:Bool = false, ?functionName:String) {
+	function new(?interp:Interp, ?args:Array<FunctionArg>, ?isTopLevel:Bool = true, ?isAsync:Bool = false, ?debugMode:Bool = false, ?functionName:String) {
+		this.interp = interp;
 		this.args = args;
 		this.isTopLevel = isTopLevel;
 		this.isAsync = isAsync;
@@ -54,9 +56,9 @@ class BytecodeCompiler {
 	}
 
 	static function compile(expr:Expr, ?args:Array<FunctionArg>, ?isTopLevel:Bool = true, ?isAsync:Bool = false, ?debugMode:Bool = false,
-			?functionName:String):BytecodeChunk {
+			?functionName:String, ?interp:Interp):BytecodeChunk {
 		var actualAsync = isAsync || hasAwait(expr);
-		var compiler = new BytecodeCompiler(args, isTopLevel, actualAsync, debugMode, functionName);
+		var compiler = new BytecodeCompiler(interp, args, isTopLevel, actualAsync, debugMode, functionName);
 		if (!isTopLevel) {
 			compiler.findCapturedVars(expr, new Map<String, Bool>(), compiler.capturedVars);
 		}
@@ -352,7 +354,7 @@ class BytecodeCompiler {
 				}
 
 			case EVar(name, type, expr, isFinal, meta):
-				var processedExpr = ResourceCompiler.processResource(meta, type, expr, e.pos, this.resources);
+				var processedExpr = ResourceCompiler.processResource(this.interp, meta, type, expr, e.pos, this.resources);
 				if (processedExpr != null) {
 					compileExpr(processedExpr);
 				} else {
@@ -1020,7 +1022,7 @@ class BytecodeCompiler {
 					return;
 				for (f in fields) {
 					if (f.meta != null) {
-						f.expr = ResourceCompiler.processResource(f.meta, f.type, f.expr, e.pos, this.resources);
+						f.expr = ResourceCompiler.processResource(this.interp, f.meta, f.type, f.expr, e.pos, this.resources);
 					}
 				}
 				for (m in methods) {
@@ -1035,7 +1037,7 @@ class BytecodeCompiler {
 							}
 						}
 						var mDyn:Dynamic = m;
-						mDyn.bytecodeChunk = BytecodeCompiler.compile(m.body, m.args, false, isMethodAsync, debugMode, m.name);
+						mDyn.bytecodeChunk = BytecodeCompiler.compile(m.body, m.args, false, isMethodAsync, debugMode, m.name, this.interp);
 						if (!debugMode) {
 							m.body = null;
 						}
@@ -1055,7 +1057,7 @@ class BytecodeCompiler {
 			case EAbstract(name, underlyingType, fields, methods, params, meta):
 				for (f in fields) {
 					if (f.meta != null) {
-						f.expr = ResourceCompiler.processResource(f.meta, f.type, f.expr, e.pos, this.resources);
+						f.expr = ResourceCompiler.processResource(this.interp, f.meta, f.type, f.expr, e.pos, this.resources);
 					}
 				}
 				for (m in methods) {

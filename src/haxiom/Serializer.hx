@@ -428,12 +428,8 @@ class Serializer {
 			var c = constants[i];
 			if (c != null && (Std.isOfType(c, BinaryResourceRefHolder) || Reflect.hasField(c, "key"))) {
 				var resKey:String = Reflect.field(c, "key");
-				if (resKey != null) {
-					if (resources != null && resources.exists(resKey)) {
-						constants[i] = resources.get(resKey);
-					} else if (ResourceCompiler.virtualResources.exists(resKey)) {
-						constants[i] = ResourceCompiler.virtualResources.get(resKey);
-					}
+				if (resKey != null && resources != null && resources.exists(resKey)) {
+					constants[i] = resources.get(resKey);
 				}
 			}
 		}

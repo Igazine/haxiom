@@ -10,23 +10,17 @@ import haxe.io.Bytes;
  */
 @:allow(haxiom)
 class ResourceCompiler {
-	/** Global virtual resources map for host-injected memory assets */
-	private static var virtualResources:Map<String, Bytes> = new Map();
-
-	/** Custom host resource provider function */
-	private static var resourceProvider:Null<(path:String) -> Bytes> = null;
-
-	private static function loadResourceBytes(relPath:String, pos:Pos):Bytes {
+	private static function loadResourceBytes(interp:Interp, relPath:String, pos:Pos):Bytes {
 		var pStr = pos != null ? '${pos.file != null ? pos.file : "script"}:${pos.line}:${pos.col}' : "script";
 
-		// 1. Check virtual resources map
-		if (virtualResources.exists(relPath)) {
-			return virtualResources.get(relPath);
+		// 1. Check virtual resources map on interp instance
+		if (interp != null && interp.virtualResources != null && interp.virtualResources.exists(relPath)) {
+			return interp.virtualResources.get(relPath);
 		}
 
-		// 2. Check custom host resource provider
-		if (resourceProvider != null) {
-			var res = resourceProvider(relPath);
+		// 2. Check custom host resource provider on interp instance
+		if (interp != null && interp.resourceProvider != null) {
+			var res = interp.resourceProvider(relPath);
 			if (res != null)
 				return res;
 		}
@@ -61,7 +55,7 @@ class ResourceCompiler {
 		throw 'Compile Error: Resource file not found: \'${relPath}\' at ${pStr}';
 	}
 
-	private static function processResource(meta:Null<Array<{name:String, params:Array<Expr>}>>, type:Null<TypeDecl>, expr:Null<Expr>, pos:Pos,
+	private static function processResource(interp:Interp, meta:Null<Array<{name:String, params:Array<Expr>}>>, type:Null<TypeDecl>, expr:Null<Expr>, pos:Pos,
 			resourcesMap:Map<String, Bytes>):Null<Expr> {
 		if (meta == null)
 			return expr;
@@ -109,7 +103,7 @@ class ResourceCompiler {
 		}
 
 		// Load resource bytes via target-agnostic resolver
-		var fileBytes = loadResourceBytes(relPath, pos);
+		var fileBytes = loadResourceBytes(interp, relPath, pos);
 
 		// Validation 2: Explicit initializer check (verify expr matches synthesized resource value)
 		if (expr != null) {
