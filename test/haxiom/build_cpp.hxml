@@ -1,0 +1,6 @@
+--library haxiom
+--class-path ..
+--class-path ../test_internal
+--macro haxiom.macro.FFIMacro.exposePackage("haxiom.autofiffi")
+--main haxiom.TestMultiThread
+--cpp bin/cpp

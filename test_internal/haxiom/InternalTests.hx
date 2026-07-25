@@ -206,11 +206,11 @@ class InternalTests {
 	static function runThreadSafetyTests():Void {
 		#if sys
 		trace("Testing Multi-Threaded Concurrent Execution & Zero Shared Static State...");
-		var threadCount = 8;
+		var threadCount = 20;
 		var results = new sys.thread.Deque<Bool>();
 
 		for (i in 0...threadCount) {
-			sys.thread.Thread.create(function() {
+			sys.thread.Thread.createWithEventLoop(function() {
 				try {
 					var engine = new Haxiom();
 					engine.registerStaticField("TestTarget", "val", i * 10);
