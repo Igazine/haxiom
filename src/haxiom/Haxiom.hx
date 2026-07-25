@@ -157,6 +157,34 @@ class Haxiom {
 		return interp.preprocessorFlags;
 
 	/**
+	 * Defines a custom preprocessor flag for script conditional compilation (#if name).
+	 */
+	public function setDefine(name:String, value:Bool = true):Void {
+		interp.setDefine(name, value);
+	}
+
+	/**
+	 * Removes a defined preprocessor flag.
+	 */
+	public function removeDefine(name:String):Void {
+		interp.removeDefine(name);
+	}
+
+	/**
+	 * Returns true if a preprocessor flag is defined.
+	 */
+	public function hasDefine(name:String):Bool {
+		return interp.hasDefine(name);
+	}
+
+	/**
+	 * Returns the boolean value of a defined preprocessor flag.
+	 */
+	public function getDefine(name:String):Bool {
+		return interp.getDefine(name);
+	}
+
+	/**
 	 * If true, compiles scripts in debug mode, tracking source code coordinates for traces
 	 * and generating debug symbol lifespans to output local variable values in error stack traces.
 	 */

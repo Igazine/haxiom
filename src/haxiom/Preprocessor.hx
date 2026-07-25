@@ -25,6 +25,32 @@ class Preprocessor {
 		return null;
 	}
 
+	static function isValidIdentifierPath(pathStr:String):Bool {
+		if (pathStr == null || pathStr.length == 0)
+			return false;
+		var parts = pathStr.split(".");
+		for (part in parts) {
+			if (part.length == 0)
+				return false;
+			var firstChar = part.charCodeAt(0);
+			var isFirstValid = (firstChar >= 'a'.code && firstChar <= 'z'.code)
+				|| (firstChar >= 'A'.code && firstChar <= 'Z'.code)
+				|| firstChar == '_'.code;
+			if (!isFirstValid)
+				return false;
+			for (i in 1...part.length) {
+				var c = part.charCodeAt(i);
+				var isValidChar = (c >= 'a'.code && c <= 'z'.code)
+					|| (c >= 'A'.code && c <= 'Z'.code)
+					|| (c >= '0'.code && c <= '9'.code)
+					|| c == '_'.code;
+				if (!isValidChar)
+					return false;
+			}
+		}
+		return true;
+	}
+
 	static function validatePreprocessExpr(e:Expr) {
 		if (e == null)
 			return;
@@ -32,13 +58,18 @@ class Preprocessor {
 		var path = getExprPath(e);
 		if (path != null) {
 			var fullPath = path.join(".");
-			if (fullPath != "haxiom_script" && fullPath != "haxiom.script") {
-				throw 'Only the "haxiom_script" and "haxiom.script" preprocessor conditionals are allowed. Found: "$fullPath"';
+			if (!isValidIdentifierPath(fullPath)) {
+				throw 'Invalid preprocessor flag identifier syntax: "$fullPath"';
 			}
 			return;
 		}
 
 		switch (e.def) {
+			case EValue(v):
+				if (Std.isOfType(v, Bool)) {
+					return;
+				}
+				throw 'Invalid preprocessor flag identifier syntax: "$v"';
 			case EUnop(_, sub):
 				validatePreprocessExpr(sub);
 			case EBinop(_, e1, e2):
@@ -49,7 +80,7 @@ class Preprocessor {
 					validatePreprocessExpr(expr);
 				}
 			default:
-				// values (like true/false) are fine
+				throw 'Invalid preprocessor expression: ' + Std.string(e.def);
 		}
 	}
 
@@ -72,17 +103,16 @@ class Preprocessor {
 	static function evalExpr(e:Expr, flags:Map<String, Bool>):Dynamic {
 		switch (e.def) {
 			case EIdent(name):
-				if (name == "haxiom_script") {
-					return flags.get("haxiom_script") == true;
-				}
-				return flags.get(name) == true;
+				return flags != null && flags.get(name) == true;
 			case EField(obj, field):
 				var path = getExprPath(e);
 				if (path != null) {
 					var fullPath = path.join(".");
-					if (fullPath == "haxiom.script") {
-						return flags.get("haxiom_script") == true || flags.get("haxiom.script") == true;
+					if (flags != null && flags.exists(fullPath)) {
+						return flags.get(fullPath) == true;
 					}
+					var lastPart = path[path.length - 1];
+					return flags != null && flags.get(lastPart) == true;
 				}
 				throw 'Unsupported preprocessor expression: ' + Std.string(e.def);
 			case EValue(v):

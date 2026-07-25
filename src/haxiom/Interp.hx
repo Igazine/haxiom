@@ -17,9 +17,11 @@ class Scope {
 	var isCaptured:Bool = false;
 	var isInPool:Bool = false;
 
-	static function create(?parent:Scope, ?interp:Interp):Scope {
-		if (interp != null && interp.enablePooling && interp.scopePool.length > 0) {
-			var s = interp.scopePool.pop();
+	static var pool:Array<Scope> = [];
+
+	static function create(?parent:Scope):Scope {
+		if (pool.length > 0) {
+			var s = pool.pop();
 			s.parent = parent;
 			s.isCaptured = false;
 			s.isInPool = false;
@@ -28,7 +30,7 @@ class Scope {
 		return new Scope(parent);
 	}
 
-	static function recycle(s:Scope, ?interp:Interp):Void {
+	static function recycle(s:Scope):Void {
 		if (s == null || s.isCaptured)
 			return;
 		if (s.isInPool)
@@ -39,9 +41,7 @@ class Scope {
 		s.parent = null;
 		s.isCaptured = false;
 		s.isInPool = true;
-		if (interp != null && interp.enablePooling) {
-			interp.scopePool.push(s);
-		}
+		pool.push(s);
 	}
 
 	function markCaptured():Void {
@@ -715,13 +715,31 @@ class Interp {
 		#if cs preprocessorFlags.set("cs", true); #end
 		#if mac
 		preprocessorFlags.set("mac", true);
-		preprocessorFlags.set("macos", true);
 		#end
 		#if windows preprocessorFlags.set("windows", true); #end
 		#if linux preprocessorFlags.set("linux", true); #end
 		#if debug preprocessorFlags.set("debug", true); #end
 		preprocessorFlags.set("haxiom", true);
-		preprocessorFlags.set("haxiom_script", true);
+	}
+
+	private function setDefine(name:String, value:Bool = true):Void {
+		if (name != null && name != "") {
+			preprocessorFlags.set(name, value);
+		}
+	}
+
+	private function removeDefine(name:String):Void {
+		if (name != null) {
+			preprocessorFlags.remove(name);
+		}
+	}
+
+	private function hasDefine(name:String):Bool {
+		return name != null && preprocessorFlags.exists(name);
+	}
+
+	private function getDefine(name:String):Bool {
+		return name != null && preprocessorFlags.get(name) == true;
 	}
 
 	private function new() {
@@ -3615,7 +3633,7 @@ class Interp {
 										throw 'Class ${cls.name} does not implement field ${itfField.name} required by interface ${itf.name} at ${pos.line}:${pos.col}';
 									}
 									if (!classField.isPublic) {
-										throw 'Field ${cls.name}.${itfField.name} must be private to implement interface ${itf.name} at ${pos.line}:${pos.col}';
+										throw 'Field ${cls.name}.${itfField.name} must be public to implement interface ${itf.name} at ${pos.line}:${pos.col}';
 									}
 									if (itfField.property != null) {
 										if (classField.property == null) {
@@ -3660,7 +3678,7 @@ class Interp {
 										}
 									}
 									if (!classMethod.isPublic) {
-										throw 'Method ${cls.name}.${itfMethod.name} must be private to implement interface ${itf.name} at ${pos.line}:${pos.col}';
+										throw 'Method ${cls.name}.${itfMethod.name} must be public to implement interface ${itf.name} at ${pos.line}:${pos.col}';
 									}
 									if (classMethod.args.length != itfMethod.args.length) {
 										throw 'Method ${cls.name}.${itfMethod.name} has argument count mismatch: expected ${itfMethod.args.length} but got ${classMethod.args.length} at ${pos.line}:${pos.col}';
