@@ -6,7 +6,9 @@ import haxe.io.BytesOutput;
 import haxiom.AST.ExprDef;
 
 @:allow(haxiom)
-class BinaryASTSerializer {
+// Serializes AST-shaped constants embedded inside HXBC chunks. Runtime AST
+// persistence uses PortableASTSerializer instead.
+class BytecodeConstantSerializer {
 	static function isBoolValue(val:Dynamic):Bool {
 		return Type.typeof(val) == TBool;
 	}
@@ -343,7 +345,7 @@ class BinaryASTSerializer {
 				var resKey = (keyIdx >= 0 && keyIdx < stringPool.length) ? stringPool[keyIdx] : "";
 				return new BinaryResourceRefHolder(resKey);
 			default:
-				throw 'Unknown type tag $typeTag in binary AST deserialization';
+				throw 'Unknown type tag $typeTag in bytecode constant deserialization';
 		}
 	}
 }

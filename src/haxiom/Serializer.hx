@@ -10,19 +10,6 @@ import haxe.crypto.Adler32;
 
 @:allow(haxiom)
 class Serializer {
-	static function serialize(expr:Expr):String {
-		var s = new haxe.Serializer();
-		s.useCache = true;
-		s.useEnumIndex = true;
-		s.serialize(expr);
-		return s.toString();
-	}
-
-	static function deserialize(str:String):Expr {
-		var u = new haxe.Unserializer(str);
-		return u.unserialize();
-	}
-
 	static function serializeToBytes(expr:Expr):Bytes {
 		return PortableASTSerializer.serializeToBytes(expr);
 	}
@@ -196,7 +183,7 @@ class Serializer {
 		if (chunk.constants != null) {
 			for (c in chunk.constants) {
 				if (shouldWrap(c)) {
-					var serializedBytes = BinaryASTSerializer.serialize(c);
+					var serializedBytes = BytecodeConstantSerializer.serialize(c);
 					wrappedConstants.push(new BinaryExprHolder(serializedBytes));
 				} else if (c != null && Std.isOfType(c, haxe.io.Bytes)) {
 					var bytesVal:haxe.io.Bytes = cast c;
@@ -378,7 +365,7 @@ class Serializer {
 			#end
 			if (c != null && Std.isOfType(c, BinaryExprHolder)) {
 				var holder:BinaryExprHolder = cast c;
-				constants[i] = BinaryASTSerializer.deserialize(holder.bytes);
+				constants[i] = BytecodeConstantSerializer.deserialize(holder.bytes);
 			} else if (c != null && (Std.isOfType(c, BinaryBytesHolder) || Reflect.hasField(c, "hex"))) {
 				var hexVal:String = Reflect.field(c, "hex");
 				constants[i] = Bytes.ofHex(hexVal);
