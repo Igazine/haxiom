@@ -215,7 +215,7 @@ class FFIMacro {
                                 var methods = [];
                                 for (field in implClass.statics.get()) {
                                     switch (field.kind) {
-                                        case FVar(_, _):
+                                        case FVar(_, _) | FMethod(_):
                                             methods.push(field.name);
                                         default:
                                     }
