@@ -2651,8 +2651,7 @@ class TestHaxiom {
 
             var dogRaw:Dynamic = cast d;
         ";
-		// TODO: ERROR
-		// haxiom.interpret(script66);
+		haxiom.interpret(script66);
 		trace("SUCCESS: Safe and unsafe casts verified.");
 
 		// 67. Cross-Platform Stdlib & Explicit Imports
@@ -2979,13 +2978,10 @@ class TestHaxiom {
 
 		var astLoaderEngine = new haxiom.Haxiom();
 		var astResult:Dynamic = astLoaderEngine.executeASTBytes(astBytes);
-		// TODO: ERROR
-		try {
-			if (astResult.sum != 30)
-				throw "AST persistence execution failed: sum=" + astResult.sum;
-			if (astResult.switchRes != "hundred")
-				throw "AST persistence execution failed: switchRes=" + astResult.switchRes;
-		} catch (e) {}
+		if (astResult.sum != 30)
+			throw "AST persistence execution failed: sum=" + astResult.sum;
+		if (astResult.switchRes != "hundred")
+			throw "AST persistence execution failed: switchRes=" + astResult.switchRes;
 
 		// 2. Bytecode Persistence Test
 		var bytecodeBytes = persistEngine.compileToBytecodeBytes(script72);
@@ -3377,13 +3373,11 @@ class TestHaxiom {
 		";
 
 		haxiom.useVM = false;
-		// TODO: ERROR
-		// haxiom.interpret(script68);
+		haxiom.interpret(script68);
 		trace("SUCCESS: FFI package auto-registration verified in AST Interpreter.");
 
 		haxiom.useVM = true;
-		// TODO: ERROR
-		// haxiom.interpret(script68);
+		haxiom.interpret(script68);
 		trace("SUCCESS: FFI package auto-registration verified in Bytecode VM.");
 		haxiom.useVM = false;
 
@@ -3408,8 +3402,7 @@ class TestHaxiom {
 		haxiom.useVM = false;
 
 		// Part B: Peephole Optimizer checks (Delegated to library self-test)
-		// TODO: ERROR
-		// InternalTests.run(haxiom);
+		InternalTests.run(haxiom);
 
 		// Test 5: HaxiomHost.await host execution failure and Future availability
 		var hostAwaitError = false;
