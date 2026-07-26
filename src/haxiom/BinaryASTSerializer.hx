@@ -3,9 +3,51 @@ package haxiom;
 import haxe.io.Bytes;
 import haxe.io.BytesInput;
 import haxe.io.BytesOutput;
+import haxiom.AST.ExprDef;
 
 @:allow(haxiom)
 class BinaryASTSerializer {
+	static function isBoolValue(val:Dynamic):Bool {
+		return Type.typeof(val) == TBool;
+	}
+
+	static function isIntValue(val:Dynamic):Bool {
+		return Type.typeof(val) == TInt;
+	}
+
+	static function isFloatValue(val:Dynamic):Bool {
+		return Type.typeof(val) == TFloat;
+	}
+
+	static function isStringValue(val:Dynamic):Bool {
+		if (Std.isOfType(val, String))
+			return true;
+		return switch (Type.typeof(val)) {
+			case TClass(c): c == String || Type.getClassName(c) == "String";
+			default: false;
+		}
+	}
+
+	static function enumTypeOf(val:Dynamic):Enum<Dynamic> {
+		if (val == null)
+			return null;
+		try {
+			switch (Type.typeof(val)) {
+				case TEnum(e):
+					Type.enumConstructor(cast val);
+					return e;
+				default:
+			}
+			var enumType = Type.getEnum(cast val);
+			if (enumType == null)
+				return null;
+			Type.enumConstructor(cast val);
+			return enumType;
+		} catch (e:Dynamic) {
+			return null;
+		}
+	}
+
 	private static function serialize(val:Dynamic):Bytes {
 		var stringPool:Array<String> = [];
 		var stringMap = new Map<String, Int>();
@@ -52,7 +94,7 @@ class BinaryASTSerializer {
 		if (val == null)
 			return;
 
-		if (Std.isOfType(val, String)) {
+		if (isStringValue(val)) {
 			var s:String = val;
 			if (!map.exists(s)) {
 				map.set(s, pool.length);
@@ -61,10 +103,10 @@ class BinaryASTSerializer {
 			return;
 		}
 
-		if (Reflect.isEnumValue(val)) {
+		var enumType = enumTypeOf(val);
+		if (enumType != null) {
 			var enumVal:Dynamic = val;
-			var e = Type.getEnum(enumVal);
-			var enumName = Type.getEnumName(e);
+			var enumName = Type.getEnumName(enumType);
 			if (!map.exists(enumName)) {
 				map.set(enumName, pool.length);
 				pool.push(enumName);
@@ -148,29 +190,29 @@ class BinaryASTSerializer {
 			return;
 		}
 
-		if (Std.isOfType(val, Bool)) {
+		if (isStringValue(val)) {
+			out.writeByte(4);
+			var idx = stringMap.get(val);
+			writeVarInt(out, idx);
+			return;
+		}
+
+		if (isBoolValue(val)) {
 			out.writeByte(1);
 			out.writeByte(val ? 1 : 0);
 			return;
 		}
 
-		if (Std.isOfType(val, Int)) {
+		if (isIntValue(val)) {
 			out.writeByte(2);
 			var zigzag = encodeZigZag(val);
 			writeVarInt(out, zigzag);
 			return;
 		}
 
-		if (Std.isOfType(val, Float)) {
+		if (isFloatValue(val)) {
 			out.writeByte(3);
 			out.writeDouble(val);
-			return;
-		}
-
-		if (Std.isOfType(val, String)) {
-			out.writeByte(4);
-			var idx = stringMap.get(val);
-			writeVarInt(out, idx);
 			return;
 		}
 
@@ -184,14 +226,13 @@ class BinaryASTSerializer {
 			return;
 		}
 
-		if (Reflect.isEnumValue(val)) {
+		var enumType = enumTypeOf(val);
+		if (enumType != null) {
 			out.writeByte(6);
 			var enumVal:Dynamic = val;
-			var e = Type.getEnum(enumVal);
-			var enumName = Type.getEnumName(e);
+			var enumName = Type.getEnumName(enumType);
 			var constr = Type.enumConstructor(enumVal);
 			var params = Type.enumParameters(enumVal);
-
 			writeVarInt(out, stringMap.get(enumName));
 			writeVarInt(out, stringMap.get(constr));
 			writeVarInt(out, params.length);
@@ -273,6 +314,9 @@ class BinaryASTSerializer {
 				}
 				var enumName = stringPool[enumNameIdx];
 				var constr = stringPool[constrIdx];
+				if (enumName == "haxiom.ExprDef" && constr == "EValue") {
+					return ExprDef.EValue(params[0]);
+				}
 				var e = Type.resolveEnum(enumName);
 				if (e == null)
 					throw 'Enum not found: $enumName';

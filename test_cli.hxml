@@ -1,7 +1,6 @@
-# Placeholder hxml file for language server
 -L haxiom
 --class-path test
 --class-path test_internal
 --macro haxiom.macro.FFIMacro.exposePackage("haxiom.autofiffi")
---main haxiom.TestFailureIsolation
+--main haxiom.TestBytecodeCLI
 --interp

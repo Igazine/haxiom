@@ -8,6 +8,27 @@ import haxe.macro.Compiler;
 #end
 
 class FFIMacro {
+    #if macro
+    static function constValue(expr:Null<TypedExpr>):{ supported:Bool, value:Dynamic } {
+        if (expr == null) {
+            return { supported: false, value: null };
+        }
+        return switch (expr.expr) {
+            case TConst(c):
+                switch (c) {
+                    case TInt(v): { supported: true, value: v };
+                    case TFloat(v): { supported: true, value: Std.parseFloat(v) };
+                    case TString(v): { supported: true, value: v };
+                    case TBool(v): { supported: true, value: v };
+                    case TNull: { supported: true, value: null };
+                    default: { supported: false, value: null };
+                }
+            default:
+                { supported: false, value: null };
+        }
+    }
+    #end
+
     /**
      * Globally hooks all compiled classes to apply the build macro,
      * removing the need for manual package listing.
@@ -125,6 +146,17 @@ class FFIMacro {
                                 if (!field.meta.has(":keep")) {
                                     field.meta.add(":keep", [], field.pos);
                                 }
+                                if (field.isPublic) {
+                                    var constVal = constValue(field.expr());
+                                    if (constVal.supported) {
+                                        var classStatics = exposedStaticFields.get(fqName);
+                                        if (classStatics == null) {
+                                            classStatics = [];
+                                            exposedStaticFields.set(fqName, classStatics);
+                                        }
+                                        classStatics.push({ name: field.name, value: constVal.value });
+                                    }
+                                }
                             }
                             if (cls.params.length > 0) {
                                 var found = false;
@@ -183,7 +215,7 @@ class FFIMacro {
                                 var methods = [];
                                 for (field in implClass.statics.get()) {
                                     switch (field.kind) {
-                                        case FVar(_, _):
+                                        case FVar(_, _) | FMethod(_):
                                             methods.push(field.name);
                                         default:
                                     }
@@ -307,6 +339,17 @@ class FFIMacro {
             // Serialize and add resources here (in onAfterTyping)
             var classesJson = haxe.Json.stringify(exposedClasses);
             Context.addResource("haxiom_exposed_classes", haxe.io.Bytes.ofString(classesJson));
+
+            var staticFieldsObj = {};
+            for (className in exposedStaticFields.keys()) {
+                var fieldsObj = {};
+                for (field in exposedStaticFields.get(className)) {
+                    Reflect.setField(fieldsObj, field.name, field.value);
+                }
+                Reflect.setField(staticFieldsObj, className, fieldsObj);
+            }
+            var staticFieldsJson = haxe.Json.stringify(staticFieldsObj);
+            Context.addResource("haxiom_exposed_static_fields", haxe.io.Bytes.ofString(staticFieldsJson));
             
             var abstractsObj = {};
             for (k in exposedAbstracts.keys()) {
@@ -417,6 +460,7 @@ class FFIMacro {
     static var registryDefined = false;
     static var stdlibRegistryDefined = false;
     static var exposedClasses:Array<String> = [];
+    static var exposedStaticFields = new Map<String, Array<{ name:String, value:Dynamic }>>();
     static var exposedAbstracts = new Map<String, { implClass: String, methods: Array<String>, underlying: String, ?isEnum: Bool }>();
     static var exposedGenerics = new Map<String, String>();
     static var exposedModules = new Map<String, Array<String>>();

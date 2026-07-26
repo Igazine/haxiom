@@ -123,15 +123,14 @@ class ResourceCompiler {
 			}
 		}
 
-		if (resourcesMap != null) {
-			resourcesMap.set(relPath, fileBytes);
-		}
-
 		if (isString) {
 			var utf8Str = fileBytes.toString();
 			return {def: EValue(utf8Str), pos: pos};
-		} else {
+		} else if (resourcesMap != null) {
+			resourcesMap.set(relPath, fileBytes);
 			return {def: EValue(new BinaryResourceRefHolder(relPath)), pos: pos};
+		} else {
+			return {def: EValue(fileBytes), pos: pos};
 		}
 	}
 }

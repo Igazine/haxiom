@@ -4,6 +4,13 @@ import haxiom.Lexer;
 import haxiom.Parser;
 import haxiom.Interp;
 import haxiom.HXBCInfo;
+import haxiom.HaxiomTypes.HaxiomClass;
+import haxiom.HaxiomTypes.HaxiomInterface;
+import haxiom.HaxiomTypes.HaxiomInstance;
+import haxiom.HaxiomTypes.HaxiomEnum;
+import haxiom.HaxiomTypes.HaxiomEnumInstance;
+import haxiom.HaxiomTypes.HaxiomAbstract;
+import haxiom.HaxiomTypes.HaxiomAbstractInstance;
 #if macro
 import haxe.macro.Context;
 import haxe.macro.Expr;
@@ -493,10 +500,169 @@ class Haxiom {
 	 * @return Serialized AST bytes.
 	 */
 	public function compileToASTBytes(source:String, ?filename:String):haxe.io.Bytes {
-		var ast = compile(source, filename);
+		var prevDCE = enableDCE;
+		var prevCache = enableAstCache;
+		enableDCE = false;
+		enableAstCache = false;
+		var ast = try {
+			compile(source, filename);
+		} catch (e:Dynamic) {
+			enableDCE = prevDCE;
+			enableAstCache = prevCache;
+			throw e;
+		}
+		enableDCE = prevDCE;
+		enableAstCache = prevCache;
 		if (ast == null)
 			return null;
+		ast = embedASTResources(ast);
 		return Serializer.serializeToBytes(ast);
+	}
+
+	function embedASTResources(expr:haxiom.AST.Expr):haxiom.AST.Expr {
+		if (expr == null)
+			return null;
+		switch (expr.def) {
+			case EValue(_) | EIdent(_) | EEReg(_, _) | EBreak | EContinue | EPackage(_) | EImport(_, _) | EUsing(_) | EEnum(_, _, _) | ETypedef(_, _):
+				return expr;
+			case EVar(name, type, e, isFinal, meta):
+				var embedded = ResourceCompiler.processResource(interp, meta, type, e == null ? null : embedASTResources(e), expr.pos, null);
+				expr.def = EVar(name, type, embedded, isFinal, stripResourceMeta(meta));
+			case EAssign(target, e):
+				expr.def = EAssign(embedASTResources(target), embedASTResources(e));
+			case EBinop(op, e1, e2):
+				expr.def = EBinop(op, embedASTResources(e1), embedASTResources(e2));
+			case EUnop(op, e):
+				expr.def = EUnop(op, embedASTResources(e));
+			case EField(e, field):
+				expr.def = EField(embedASTResources(e), field);
+			case ESafeField(e, field):
+				expr.def = ESafeField(embedASTResources(e), field);
+			case ECall(e, args):
+				expr.def = ECall(embedASTResources(e), embedASTResourceArray(args));
+			case ENew(type, args):
+				expr.def = ENew(type, embedASTResourceArray(args));
+			case EArrayDecl(values):
+				expr.def = EArrayDecl(embedASTResourceArray(values));
+			case EObjectDecl(fields):
+				expr.def = EObjectDecl([for (f in fields) {name: f.name, expr: embedASTResources(f.expr)}]);
+			case EMapDecl(values):
+				expr.def = EMapDecl([for (v in values) {key: embedASTResources(v.key), value: embedASTResources(v.value)}]);
+			case EClass(name, fields, methods, parent, interfaces, params, meta, isExtern):
+				expr.def = EClass(name, [
+					for (f in fields)
+						{
+							name: f.name,
+							type: f.type,
+							expr: ResourceCompiler.processResource(interp, f.meta, f.type, f.expr == null ? null : embedASTResources(f.expr), expr.pos, null),
+							isStatic: f.isStatic,
+							isPublic: f.isPublic,
+							isFinal: f.isFinal,
+							property: f.property,
+							meta: stripResourceMeta(f.meta),
+							isExtern: f.isExtern
+						}
+				], [
+					for (m in methods)
+						{
+							name: m.name,
+							args: m.args,
+							retType: m.retType,
+							body: embedASTResources(m.body),
+							isStatic: m.isStatic,
+							isPublic: m.isPublic,
+							isOverride: m.isOverride,
+							isAbstract: m.isAbstract,
+							params: m.params,
+							meta: m.meta,
+							isExtern: m.isExtern
+						}
+				], parent, interfaces, params, meta, isExtern);
+			case EAbstract(name, underlyingType, fields, methods, params, meta):
+				expr.def = EAbstract(name, underlyingType, [
+					for (f in fields)
+						{
+							name: f.name,
+							type: f.type,
+							expr: ResourceCompiler.processResource(interp, f.meta, f.type, f.expr == null ? null : embedASTResources(f.expr), expr.pos, null),
+							isStatic: f.isStatic,
+							isPublic: f.isPublic,
+							isFinal: f.isFinal,
+							property: f.property,
+							meta: stripResourceMeta(f.meta)
+						}
+				], [
+					for (m in methods)
+						{
+							name: m.name,
+							args: m.args,
+							retType: m.retType,
+							body: embedASTResources(m.body),
+							isStatic: m.isStatic,
+							isPublic: m.isPublic,
+							params: m.params,
+							meta: m.meta
+						}
+				], params, meta);
+			case EInterface(name, fields, methods, parents, params, meta):
+				expr.def = EInterface(name, fields, [
+					for (m in methods)
+						{
+							name: m.name,
+							args: m.args,
+							retType: m.retType,
+							body: embedASTResources(m.body),
+							params: m.params,
+							meta: m.meta
+						}
+				], parents, params, meta);
+			case EBlock(exprs):
+				expr.def = EBlock(embedASTResourceArray(exprs));
+			case EFunction(name, args, retType, body, params):
+				expr.def = EFunction(name, args, retType, embedASTResources(body), params);
+			case EIf(cond, e1, e2):
+				expr.def = EIf(embedASTResources(cond), embedASTResources(e1), embedASTResources(e2));
+			case EWhile(cond, e):
+				expr.def = EWhile(embedASTResources(cond), embedASTResources(e));
+			case EDoWhile(cond, e):
+				expr.def = EDoWhile(embedASTResources(cond), embedASTResources(e));
+			case EFor(v, it, e):
+				expr.def = EFor(v, embedASTResources(it), embedASTResources(e));
+			case ESwitch(switchExpr, cases, defExpr):
+				expr.def = ESwitch(embedASTResources(switchExpr), [
+					for (c in cases)
+						{values: embedASTResourceArray(c.values), guard: embedASTResources(c.guard), expr: embedASTResources(c.expr)}
+				], embedASTResources(defExpr));
+			case EReturn(e):
+				expr.def = EReturn(embedASTResources(e));
+			case EThrow(e):
+				expr.def = EThrow(embedASTResources(e));
+			case ETry(tryExpr, catches):
+				expr.def = ETry(embedASTResources(tryExpr), [
+					for (c in catches)
+						{pattern: embedASTResources(c.pattern), type: c.type, guard: embedASTResources(c.guard), body: embedASTResources(c.body)}
+				]);
+			case ECast(e, type):
+				expr.def = ECast(embedASTResources(e), type);
+			case EMeta(meta, e):
+				expr.def = EMeta(meta, embedASTResources(e));
+		}
+		return expr;
+	}
+
+	function embedASTResourceArray(values:Array<haxiom.AST.Expr>):Array<haxiom.AST.Expr> {
+		return values == null ? null : [for (v in values) embedASTResources(v)];
+	}
+
+	function stripResourceMeta(meta:Null<Array<{name:String, params:Array<haxiom.AST.Expr>}>>):Null<Array<{name:String, params:Array<haxiom.AST.Expr>}>> {
+		if (meta == null)
+			return null;
+		var filtered = [
+			for (m in meta)
+				if (m == null || (m.name != ":haxiom.resource" && m.name != "haxiom.resource" && m.name != "@:haxiom.resource"))
+					m
+		];
+		return filtered.length == 0 ? null : filtered;
 	}
 
 	/**
@@ -1144,6 +1310,17 @@ class Haxiom {
 				var cls = Type.resolveClass(fqName);
 				if (cls != null) {
 					registerClassRuntime(fqName, cls);
+				}
+			}
+		}
+
+		var staticFieldsRes = haxe.Resource.getString("haxiom_exposed_static_fields");
+		if (staticFieldsRes != null) {
+			var obj:Dynamic = haxe.Json.parse(staticFieldsRes);
+			for (className in Reflect.fields(obj)) {
+				var fieldsObj:Dynamic = Reflect.field(obj, className);
+				for (fieldName in Reflect.fields(fieldsObj)) {
+					registerStaticField(className, fieldName, Reflect.field(fieldsObj, fieldName));
 				}
 			}
 		}

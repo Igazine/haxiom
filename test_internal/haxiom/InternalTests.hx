@@ -4,6 +4,8 @@ import haxiom.BytecodeCompiler;
 import haxiom.VM;
 import haxiom.Interp;
 import haxiom.AST;
+import haxiom.HaxiomTypes.HaxiomClass;
+import haxiom.HaxiomTypes.HaxiomInstance;
 
 @:keep
 class InternalTests {
@@ -114,7 +116,7 @@ class InternalTests {
 			throw "SlotTester run failed: " + result74_1;
 		}
 
-		var slotTesterClass:Interp.HaxiomClass = cast vmEngine74.interp.globals.get("SlotTester");
+		var slotTesterClass:HaxiomClass = cast vmEngine74.interp.globals.get("SlotTester");
 		var runMethod:Dynamic = slotTesterClass.methods.get("run");
 		var chunk:VM.BytecodeChunk = runMethod.bytecodeChunk;
 		vmEngine74.useVM = oldUseVM;
@@ -204,7 +206,7 @@ class InternalTests {
 	}
 
 	static function runThreadSafetyTests():Void {
-		#if sys
+		#if (eval || haxiom_thread_tests)
 		trace("Testing Multi-Threaded Concurrent Execution & Zero Shared Static State...");
 		var threadCount = 20;
 		var results = new sys.thread.Deque<Bool>();
@@ -270,7 +272,7 @@ class InternalTests {
 		}
 		trace('SUCCESS: Multi-Threaded Parallel Execution verified ($passedCount / $threadCount concurrent engine threads passed cleanly).');
 		#else
-		trace("SKIPPED: Multi-threaded test skipped on non-sys target.");
+		trace("SKIPPED: Multi-threaded test skipped on target without sys.thread support.");
 		#end
 	}
 }

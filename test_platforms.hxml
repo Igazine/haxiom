@@ -1,0 +1,20 @@
+-L haxiom
+--class-path test
+--class-path test_internal
+--macro haxiom.macro.FFIMacro.exposePackage("haxiom.autofiffi")
+--main haxiom.TestFailureIsolation
+--debug
+
+--each
+
+--next
+--cpp test/haxiom/bin/native
+--cmd ./test/haxiom/bin/native/TestFailureIsolation-debug
+
+--next
+--js test/haxiom/bin/js/TestHaxiom.js
+--cmd node test/haxiom/bin/js/TestHaxiom.js
+
+--next
+--neko test/haxiom/bin/neko/TestHaxiom.n
+--cmd neko test/haxiom/bin/neko/TestHaxiom.n
