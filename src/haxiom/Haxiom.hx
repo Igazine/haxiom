@@ -4,6 +4,13 @@ import haxiom.Lexer;
 import haxiom.Parser;
 import haxiom.Interp;
 import haxiom.HXBCInfo;
+import haxiom.HaxiomTypes.HaxiomClass;
+import haxiom.HaxiomTypes.HaxiomInterface;
+import haxiom.HaxiomTypes.HaxiomInstance;
+import haxiom.HaxiomTypes.HaxiomEnum;
+import haxiom.HaxiomTypes.HaxiomEnumInstance;
+import haxiom.HaxiomTypes.HaxiomAbstract;
+import haxiom.HaxiomTypes.HaxiomAbstractInstance;
 #if macro
 import haxe.macro.Context;
 import haxe.macro.Expr;
@@ -493,7 +500,13 @@ class Haxiom {
 	 * @return Serialized AST bytes.
 	 */
 	public function compileToASTBytes(source:String, ?filename:String):haxe.io.Bytes {
+		var prevDCE = enableDCE;
+		var prevCache = enableAstCache;
+		enableDCE = false;
+		enableAstCache = false;
 		var ast = compile(source, filename);
+		enableDCE = prevDCE;
+		enableAstCache = prevCache;
 		if (ast == null)
 			return null;
 		return Serializer.serializeToBytes(ast);
@@ -1144,6 +1157,17 @@ class Haxiom {
 				var cls = Type.resolveClass(fqName);
 				if (cls != null) {
 					registerClassRuntime(fqName, cls);
+				}
+			}
+		}
+
+		var staticFieldsRes = haxe.Resource.getString("haxiom_exposed_static_fields");
+		if (staticFieldsRes != null) {
+			var obj:Dynamic = haxe.Json.parse(staticFieldsRes);
+			for (className in Reflect.fields(obj)) {
+				var fieldsObj:Dynamic = Reflect.field(obj, className);
+				for (fieldName in Reflect.fields(fieldsObj)) {
+					registerStaticField(className, fieldName, Reflect.field(fieldsObj, fieldName));
 				}
 			}
 		}

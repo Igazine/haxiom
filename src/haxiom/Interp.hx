@@ -1,6 +1,14 @@
 package haxiom;
 
 import haxiom.AST;
+import haxiom.HaxiomTypes.ClassMethodInfo;
+import haxiom.HaxiomTypes.HaxiomClass;
+import haxiom.HaxiomTypes.HaxiomInterface;
+import haxiom.HaxiomTypes.HaxiomInstance;
+import haxiom.HaxiomTypes.HaxiomEnum;
+import haxiom.HaxiomTypes.HaxiomEnumInstance;
+import haxiom.HaxiomTypes.HaxiomAbstract;
+import haxiom.HaxiomTypes.HaxiomAbstractInstance;
 
 enum ControlFlow {
 	Return(val:Dynamic);
@@ -14,18 +22,21 @@ class Scope {
 	var types:Map<String, TypeDecl> = new Map();
 	var finals:Map<String, Bool> = new Map();
 	var parent:Scope;
+	var owner:Interp;
 	var isCaptured:Bool = false;
 	var isInPool:Bool = false;
 
 	static function create(?parent:Scope, ?interp:Interp):Scope {
-		if (interp != null && interp.enablePooling && interp.scopePool.length > 0) {
-			var s = interp.scopePool.pop();
+		var owner = interp != null ? interp : (parent != null ? parent.owner : null);
+		if (owner != null && owner.enablePooling && owner.scopePool.length > 0) {
+			var s = owner.scopePool.pop();
 			s.parent = parent;
+			s.owner = owner;
 			s.isCaptured = false;
 			s.isInPool = false;
 			return s;
 		}
-		return new Scope(parent);
+		return new Scope(parent, owner);
 	}
 
 	static function recycle(s:Scope, ?interp:Interp):Void {
@@ -36,11 +47,13 @@ class Scope {
 		s.variables.clear();
 		s.types.clear();
 		s.finals.clear();
+		var owner = interp != null ? interp : s.owner;
 		s.parent = null;
 		s.isCaptured = false;
 		s.isInPool = true;
-		if (interp != null && interp.enablePooling) {
-			interp.scopePool.push(s);
+		if (owner != null && owner.enablePooling) {
+			s.owner = owner;
+			owner.scopePool.push(s);
 		}
 	}
 
@@ -53,8 +66,9 @@ class Scope {
 		}
 	}
 
-	function new(?parent:Scope) {
+	function new(?parent:Scope, ?owner:Interp) {
 		this.parent = parent;
+		this.owner = owner != null ? owner : (parent != null ? parent.owner : null);
 	}
 
 	function get(name:String):Dynamic {
@@ -115,156 +129,6 @@ class Scope {
 	}
 }
 
-typedef ClassMethodInfo = {
-	name:String,
-	args:Array<FunctionArg>,
-	retType:Null<TypeDecl>,
-	body:Null<Expr>,
-	isStatic:Bool,
-	isPublic:Bool,
-	?isOverride:Bool,
-	?isAbstract:Bool,
-	?bytecodeChunk:haxiom.VM.BytecodeChunk,
-	?meta:Array<{name:String, params:Array<Dynamic>}>
-};
-
-@:allow(haxiom)
-class HaxiomClass {
-	var name:String;
-	var params:Array<TypeParamDef> = [];
-	var parentType:TypeDecl;
-	var parent:HaxiomClass;
-	var isAbstract:Bool = false;
-	var fields:Map<String, {
-		name:String,
-		type:Null<TypeDecl>,
-		expr:Expr,
-		isStatic:Bool,
-		isPublic:Bool,
-		isFinal:Bool,
-		?property:{get:String, set:String},
-		?meta:Array<{name:String, params:Array<Dynamic>}>
-	}> = new Map();
-	var methods:Map<String, ClassMethodInfo> = new Map();
-	var staticFields:Map<String, Dynamic> = new Map();
-	var interfaces:Array<TypeDecl> = [];
-	var meta:Array<{name:String, params:Array<Dynamic>}> = [];
-
-	function new(name:String, ?parent:HaxiomClass) {
-		this.name = name;
-		this.parent = parent;
-	}
-}
-
-@:allow(haxiom)
-class HaxiomInterface {
-	var name:String;
-	var params:Array<TypeParamDef> = [];
-	var fields:Map<String, {
-		name:String,
-		type:Null<TypeDecl>,
-		?property:{get:String, set:String},
-		?meta:Array<{name:String, params:Array<Dynamic>}>
-	}> = new Map();
-	var methods:Map<String, {
-		name:String,
-		args:Array<FunctionArg>,
-		retType:Null<TypeDecl>,
-		?body:Null<Expr>,
-		?params:Array<TypeParamDef>,
-		?meta:Array<{name:String, params:Array<Dynamic>}>
-	}> = new Map();
-	var parents:Array<TypeDecl> = [];
-	var meta:Array<{name:String, params:Array<Dynamic>}> = [];
-
-	function new(name:String, ?parents:Array<TypeDecl>) {
-		this.name = name;
-		this.parents = parents != null ? parents : [];
-	}
-}
-
-@:allow(haxiom)
-class HaxiomInstance {
-	var cls:HaxiomClass;
-	var fields:Map<String, Dynamic> = new Map();
-	var genericBindings:Map<String, TypeDecl> = new Map();
-
-	function new(cls:HaxiomClass) {
-		this.cls = cls;
-	}
-}
-
-@:allow(haxiom)
-class HaxiomEnum {
-	var name:String;
-	var constructors:Map<String, Array<{name:String, type:Null<TypeDecl>}>> = new Map();
-	var params:Array<TypeParamDef> = [];
-
-	function new(name:String) {
-		this.name = name;
-	}
-}
-
-@:allow(haxiom)
-class HaxiomEnumInstance {
-	var enumType:HaxiomEnum;
-	var constructorName:String;
-	var args:Array<Dynamic>;
-
-	function new(enumType:HaxiomEnum, constructorName:String, args:Array<Dynamic>) {
-		this.enumType = enumType;
-		this.constructorName = constructorName;
-		this.args = args;
-	}
-
-	private function toString():String {
-		if (args == null || args.length == 0)
-			return constructorName;
-		return constructorName + "(" + args.join(", ") + ")";
-	}
-}
-
-@:allow(haxiom)
-class HaxiomAbstract {
-	var name:String;
-	var params:Array<TypeParamDef> = [];
-	var underlyingType:TypeDecl;
-	var fields:Map<String, {
-		name:String,
-		type:Null<TypeDecl>,
-		expr:Expr,
-		isStatic:Bool,
-		isPublic:Bool,
-		isFinal:Bool,
-		?property:{get:String, set:String},
-		?meta:Array<{name:String, params:Array<Dynamic>}>
-	}> = new Map();
-	var methods:Map<String, ClassMethodInfo> = new Map();
-	var staticFields:Map<String, Dynamic> = new Map();
-	var meta:Array<{name:String, params:Array<Dynamic>}> = [];
-	var fromTypes:Array<String> = [];
-	var toTypes:Array<String> = [];
-
-	function new(name:String, underlyingType:TypeDecl) {
-		this.name = name;
-		this.underlyingType = underlyingType;
-	}
-}
-
-@:allow(haxiom)
-class HaxiomAbstractInstance {
-	var abstractType:HaxiomAbstract;
-	var underlyingValue:Dynamic;
-
-	function new(abstractType:HaxiomAbstract, underlyingValue:Dynamic) {
-		this.abstractType = abstractType;
-		this.underlyingValue = underlyingValue;
-	}
-
-	private function toString():String {
-		return Std.string(underlyingValue);
-	}
-}
 
 @:allow(haxiom)
 class HaxiomMeta {
@@ -490,43 +354,45 @@ class HaxiomAnchor {
 
 @:allow(haxiom)
 class Interp {
-	private static var defaultWhitelist:Array<String> = [
-		"Date",
-		"DateTools",
-		"StringBuf",
-		"Xml",
-		"haxe.Timer",
-		"haxe.Json",
-		"haxe.io.Bytes",
-		"haxe.io.BytesBuffer",
-		"haxe.io.Path",
-		"haxe.ds.List",
-		"haxe.ds.StringMap",
-		"haxe.ds.IntMap",
-		"haxe.ds.ObjectMap",
-		"StringTools",
-		"Lambda",
-		"Std",
-		"Math",
-		"haxe.crypto.Md5",
-		"haxe.crypto.Sha1",
-		"haxe.crypto.Adler32",
-		"haxe.crypto.*",
-		"haxe.ds.*",
-		"haxe.io.*",
-		"haxe.iterators.*",
-		"haxe.rtti.*",
-		"haxe.xml.*",
-		"haxe.Timer",
-		"haxe.Constructible",
-		"haxe.Exception",
-		"haxe.ValueException",
-		"haxe.IMap",
-		"haxe.DynamicAccess",
-		"haxiom.HostRef"
-	];
+	private static function createDefaultWhitelist():Array<String> {
+		return [
+			"Date",
+			"DateTools",
+			"StringBuf",
+			"Xml",
+			"haxe.Timer",
+			"haxe.Json",
+			"haxe.io.Bytes",
+			"haxe.io.BytesBuffer",
+			"haxe.io.Path",
+			"haxe.ds.List",
+			"haxe.ds.StringMap",
+			"haxe.ds.IntMap",
+			"haxe.ds.ObjectMap",
+			"StringTools",
+			"Lambda",
+			"Std",
+			"Math",
+			"haxe.crypto.Md5",
+			"haxe.crypto.Sha1",
+			"haxe.crypto.Adler32",
+			"haxe.crypto.*",
+			"haxe.ds.*",
+			"haxe.io.*",
+			"haxe.iterators.*",
+			"haxe.rtti.*",
+			"haxe.xml.*",
+			"haxe.Timer",
+			"haxe.Constructible",
+			"haxe.Exception",
+			"haxe.ValueException",
+			"haxe.IMap",
+			"haxe.DynamicAccess",
+			"haxiom.HostRef"
+		];
+	}
 
-	private var globals:Scope = new Scope();
+	private var globals:Scope;
 	private var ffi:FFIRegistry = new FFIRegistry();
 	private var externClasses:Map<String, Bool> = new Map();
 
@@ -534,7 +400,7 @@ class Interp {
 
 	private var currentPackage:Array<String> = [];
 	private var moduleResolver:String->String = null;
-	private var importWhitelist:Array<String> = defaultWhitelist.copy();
+	private var importWhitelist:Array<String> = createDefaultWhitelist();
 	private var importedModules:Map<String, Scope> = new Map();
 	private var functionSignatures:FunctionSignatures = new FunctionSignatures();
 
@@ -666,7 +532,7 @@ class Interp {
 		disposeHandlers = [];
 		disposed = true;
 		state = DISPOSED;
-		globals = new Scope(null); // Clear root scope and references
+		globals = new Scope(null, this); // Clear root scope and references
 		importedModules.clear();
 		externClasses.clear();
 		haltedNamespaces.clear();
@@ -758,6 +624,7 @@ class Interp {
 	}
 
 	private function new() {
+		globals = new Scope(null, this);
 		initDefaultFlags();
 		// Core standard print/trace redirection with PosInfos
 		globals.declare("trace", Reflect.makeVarArgs((args:Array<Dynamic>) -> {
@@ -1283,7 +1150,6 @@ class Interp {
 			}
 		} catch (e:Dynamic) {
 			state = HALTED;
-			trace("DEBUG ORIGINAL CALL STACK: " + haxe.CallStack.toString(haxe.CallStack.exceptionStack()));
 			var traceLines = [];
 			var isScriptException = Std.isOfType(e, haxiom.ScriptException);
 
@@ -2121,19 +1987,9 @@ class Interp {
 		try {
 			f = Reflect.getProperty(obj, field);
 		} catch (e:Dynamic) {}
-		#if haxiom_debug
-		if (field == "addEventListener") {
-			trace("DEBUG evalField native addEventListener: getProperty=" + f);
-		}
-		#end
 		if (f == null) {
 			f = safeField(obj, field);
 		}
-		#if haxiom_debug
-		if (field == "addEventListener") {
-			trace("DEBUG evalField native addEventListener end: f=" + f);
-		}
-		#end
 
 		// Check if this is an abstract method or property redirection closure/getter
 		for (absName in this.ffi.exposedAbstracts.keys()) {
@@ -3862,7 +3718,7 @@ class Interp {
 
 				// Register constructors as builders or constants
 				for (c in constructors) {
-					if (c.args == null) {
+					if (c.args == null || c.args.length == 0) {
 						var instance = new HaxiomEnumInstance(haxiomEnum, c.name, []);
 						scope.declare(c.name, instance);
 						if (globals != scope) {
@@ -3906,13 +3762,6 @@ class Interp {
 				var fqName = path.join(".");
 				var shortName = alias != null ? alias : path[path.length - 1];
 				var targetName = path[path.length - 1];
-				/*
-					haxe.Log.trace("DEBUG EImport fqName: " + fqName, null);
-					haxe.Log.trace("DEBUG importWhitelist: " + importWhitelist, null);
-					haxe.Log.trace("DEBUG Type.resolveClass: " + Type.resolveClass(fqName), null);
-					haxe.Log.trace("DEBUG isImportWhitelisted: " + isImportWhitelisted(fqName), null);
-					haxe.Log.trace("DEBUG resolveNativeClass: " + resolveNativeClass(fqName), null);
-				 */
 
 				if (shortName == "*") {
 					var parentPath = path.slice(0, path.length - 1).join(".");
@@ -4222,12 +4071,18 @@ class Interp {
 				return eval(expr, scope);
 
 			case ECast(expr, type):
-				var val = eval(expr, scope);
+				var val:Dynamic = null;
+				switch (expr.def) {
+					case EIdent(name) if (scope.exists(name)):
+						val = scope.get(name);
+					default:
+						val = eval(expr, scope);
+				}
 				if (type != null) {
 					try {
 						val = castOrCheckType(val, type, scope);
 					} catch (err:Dynamic) {
-						throw 'Class cast error: expected ${typeToString(type)} but got ${val}';
+						throw 'Class cast error: expected ${typeToString(type)} but got ${val} (inner error: ${err})';
 					}
 				}
 				return val;
@@ -5552,8 +5407,12 @@ class Interp {
 	function isInterfaceCompatible(implName:String, targetItfName:String, scope:Scope):Bool {
 		if (implName == targetItfName)
 			return true;
-		var itfVal = scope.get(implName);
-		if (itfVal != null && Std.isOfType(itfVal, HaxiomInterface)) {
+		var itfVal = resolveTypePath([implName], scope);
+		if (itfVal == null && scope.exists(implName))
+			itfVal = scope.get(implName);
+		if (itfVal == null)
+			itfVal = globals.get(implName);
+		if (itfVal != null && TypeSystem.isHaxiomInterface(itfVal)) {
 			var itf:HaxiomInterface = cast itfVal;
 			for (p in itf.parents) {
 				switch (p) {
@@ -5885,7 +5744,7 @@ class Interp {
 
 		if (val != null) {
 			var fq = path.join(".");
-			if (isManualImportRequired(fq)) {
+			if (!TypeSystem.isHaxiomGuestType(val) && isManualImportRequired(fq)) {
 				if (!isClassInScope(val, scope))
 					return null;
 			}

@@ -2,6 +2,13 @@ package haxiom;
 
 import haxiom.AST;
 import haxiom.Interp;
+import haxiom.HaxiomTypes.HaxiomClass;
+import haxiom.HaxiomTypes.HaxiomInterface;
+import haxiom.HaxiomTypes.HaxiomInstance;
+import haxiom.HaxiomTypes.HaxiomEnum;
+import haxiom.HaxiomTypes.HaxiomEnumInstance;
+import haxiom.HaxiomTypes.HaxiomAbstract;
+import haxiom.HaxiomTypes.HaxiomAbstractInstance;
 import haxe.DynamicAccess;
 
 enum abstract Opcode(Int) from Int to Int {
@@ -1847,16 +1854,6 @@ class VM {
 	}
 
 	static function registerAwait(val:Dynamic, onResolve:Dynamic->Void, onReject:Dynamic->Void):Void {
-		var cls = Type.getClass(val);
-		var clsName = cls != null ? Type.getClassName(cls) : "null";
-		var hasThenField = Reflect.field(val, "then") != null;
-		#if js
-		var isInstance = js.Syntax.code("({0} instanceof haxiom_guest_Future)", val);
-		var ctorStr = js.Syntax.code("({0} && {0}.constructor ? {0}.constructor.toString() : 'null')", val);
-		// haxe.Log.trace("DEBUG registerAwait: val=" + val + " class=" + clsName + " hasThen=" + hasThenField + " instanceof=" + isInstance + " ctor=" + ctorStr, null);
-		#else
-		// haxe.Log.trace("DEBUG registerAwait: val=" + val + " class=" + clsName + " hasThen=" + hasThenField, null);
-		#end
 		if (Std.isOfType(val, haxiom.guest.Future)) {
 			var f:haxiom.guest.Future<Dynamic> = cast val;
 			f.then(onResolve, onReject);

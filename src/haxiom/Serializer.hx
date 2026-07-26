@@ -24,12 +24,11 @@ class Serializer {
 	}
 
 	static function serializeToBytes(expr:Expr):Bytes {
-		var str = serialize(expr);
-		return Bytes.ofString(str);
+		return PortableASTSerializer.serializeToBytes(expr);
 	}
 
 	static function deserializeFromBytes(bytes:Bytes):Expr {
-		return deserialize(bytes.toString());
+		return PortableASTSerializer.deserializeFromBytes(bytes);
 	}
 
 	static function crypt(data:Bytes, key:HXBCKey):Bytes {

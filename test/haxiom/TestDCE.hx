@@ -56,7 +56,8 @@ class TestDCE {
 
         // Returns byte size of compiled AST
         function byteSize(h:Haxiom, src:String):Int {
-            var bytes = h.compileToASTBytes(src, "dce_test");
+            var ast = h.compile(src, "dce_test");
+            var bytes = ast == null ? null : Serializer.serializeToBytes(ast);
             return bytes == null ? -1 : bytes.length;
         }
 

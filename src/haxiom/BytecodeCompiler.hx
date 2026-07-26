@@ -1130,12 +1130,14 @@ class BytecodeCompiler {
 		}
 	}
 
-	static var dummyPos:Pos = {line: 1, col: 1, file: "script"};
+	static function dummyPos():Pos {
+		return {line: 1, col: 1, file: "script"};
+	}
 
 	static function stripPositions(expr:Expr):Void {
 		if (expr == null)
 			return;
-		expr.pos = dummyPos;
+		expr.pos = dummyPos();
 		switch (expr.def) {
 			case EClass(_, fields, methods, _, _, _, meta):
 				for (f in fields) {

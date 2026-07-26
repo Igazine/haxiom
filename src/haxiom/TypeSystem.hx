@@ -2,39 +2,71 @@ package haxiom;
 
 import haxiom.AST.TypeDecl;
 import haxiom.Interp.Scope;
-import haxiom.Interp.HaxiomClass;
-import haxiom.Interp.HaxiomInstance;
-import haxiom.Interp.HaxiomInterface;
-import haxiom.Interp.HaxiomEnum;
-import haxiom.Interp.HaxiomEnumInstance;
-import haxiom.Interp.HaxiomAbstract;
-import haxiom.Interp.HaxiomAbstractInstance;
+import haxiom.HaxiomTypes.ClassMethodInfo;
+import haxiom.HaxiomTypes.HaxiomClass;
+import haxiom.HaxiomTypes.HaxiomInstance;
+import haxiom.HaxiomTypes.HaxiomInterface;
+import haxiom.HaxiomTypes.HaxiomEnum;
+import haxiom.HaxiomTypes.HaxiomEnumInstance;
+import haxiom.HaxiomTypes.HaxiomAbstract;
+import haxiom.HaxiomTypes.HaxiomAbstractInstance;
 
 @:allow(haxiom)
 class TypeSystem {
+	static function isHaxiomInstance(val:Dynamic):Bool {
+		return val != null && (Std.isOfType(val, HaxiomInstance) || (Reflect.hasField(val, "cls") && Reflect.hasField(val, "fields")
+			&& Std.isOfType(Reflect.field(val, "cls"), HaxiomClass)));
+	}
+
+	static function isHaxiomAbstractInstance(val:Dynamic):Bool {
+		return val != null && (Std.isOfType(val, HaxiomAbstractInstance) || (Reflect.hasField(val, "abstractType") && Reflect.hasField(val, "underlyingValue")
+			&& Std.isOfType(Reflect.field(val, "abstractType"), HaxiomAbstract)));
+	}
+
+	static function isHaxiomEnumInstance(val:Dynamic):Bool {
+		return val != null && (Std.isOfType(val, HaxiomEnumInstance) || (Reflect.hasField(val, "enumType") && Reflect.hasField(val, "constructorName")
+			&& Std.isOfType(Reflect.field(val, "enumType"), HaxiomEnum)));
+	}
+
+	static function isHaxiomGuestType(val:Dynamic):Bool {
+		return val != null && (isHaxiomClass(val) || isHaxiomInterface(val) || isHaxiomEnum(val) || isHaxiomAbstract(val));
+	}
+
+	static function isHaxiomClass(val:Dynamic):Bool {
+		return val != null && (Std.isOfType(val, HaxiomClass) || (Reflect.hasField(val, "name") && Reflect.hasField(val, "methods")
+			&& Reflect.hasField(val, "staticFields") && Reflect.hasField(val, "interfaces")));
+	}
+
+	static function isHaxiomInterface(val:Dynamic):Bool {
+		return val != null && (Std.isOfType(val, HaxiomInterface) || (Reflect.hasField(val, "name") && Reflect.hasField(val, "methods")
+			&& Reflect.hasField(val, "parents") && !Reflect.hasField(val, "staticFields")));
+	}
+
+	static function isHaxiomEnum(val:Dynamic):Bool {
+		return val != null && (Std.isOfType(val, HaxiomEnum) || (Reflect.hasField(val, "name") && Reflect.hasField(val, "constructors")
+			&& Reflect.hasField(val, "params")));
+	}
+
+	static function isHaxiomAbstract(val:Dynamic):Bool {
+		return val != null && (Std.isOfType(val, HaxiomAbstract) || (Reflect.hasField(val, "name") && Reflect.hasField(val, "underlyingType")
+			&& Reflect.hasField(val, "staticFields")));
+	}
+
 	static function isString(v:Dynamic):Bool {
 		if (v == null)
 			return false;
-		var isOf = Std.isOfType(v, String);
 		var t = Type.typeof(v);
-		var isCls = false;
 		switch (t) {
 			case TClass(c):
-				isCls = (c == String || Type.getClassName(c) == "String");
+				return c == String || Type.getClassName(c) == "String";
 			default:
+				return false;
 		}
-		#if haxiom_debug
-		trace("DEBUG isString val=" + Std.string(v) + " isOf=" + isOf + " type=" + Std.string(t) + " isCls=" + isCls);
-		#end
-		return isOf || isCls;
 	}
 
 	static function isInt(v:Dynamic):Bool {
 		if (v == null)
 			return false;
-		#if haxiom_debug
-		trace("DEBUG isInt val=" + Std.string(v) + " typeof=" + Std.string(Type.typeof(v)) + " isOfType=" + Std.isOfType(v, Int));
-		#end
 		if (Std.isOfType(v, Int))
 			return true;
 		var t = Type.typeof(v);
@@ -94,16 +126,8 @@ class TypeSystem {
 			case TPath(path, params):
 				var typeName = path.join(".");
 
-				var resolvedTypePathVal = interp.resolveTypePath(path, scope);
-				var isGuestType = false;
-				if (resolvedTypePathVal != null) {
-					if (Std.isOfType(resolvedTypePathVal, haxiom.Interp.HaxiomClass)
-						|| Std.isOfType(resolvedTypePathVal, haxiom.Interp.HaxiomInterface)
-						|| Std.isOfType(resolvedTypePathVal, haxiom.Interp.HaxiomEnum)
-						|| Std.isOfType(resolvedTypePathVal, haxiom.Interp.HaxiomAbstract)) {
-						isGuestType = true;
-					}
-				}
+				var resolvedTypePathVal:Dynamic = interp.resolveTypePath(path, scope);
+				var isGuestType = isHaxiomGuestType(resolvedTypePathVal);
 
 				if (!isGuestType) {
 					switch (typeName) {
@@ -112,7 +136,7 @@ class TypeSystem {
 							if (val != null)
 								throw "Type mismatch: expected Void";
 							return val;
-						case "Int":
+						case "Int" | "std.Int":
 							if (Std.isOfType(val, HaxiomAbstractInstance)) {
 								var inst:HaxiomAbstractInstance = cast val;
 								if (canAbstractCastTo(inst.abstractType, "Int", interp, scope)) {
@@ -128,7 +152,7 @@ class TypeSystem {
 								throw 'Type mismatch: expected Int but got ${val == null ? "null" : valClassName != null ? valClassName : Std.string(val)}';
 							}
 							return val;
-						case "Float":
+						case "Float" | "std.Float":
 							if (Std.isOfType(val, HaxiomAbstractInstance)) {
 								var inst:HaxiomAbstractInstance = cast val;
 								if (canAbstractCastTo(inst.abstractType, "Float", interp, scope)) {
@@ -141,7 +165,7 @@ class TypeSystem {
 							if (!isFloat(val))
 								throw 'Type mismatch: expected Float but got ${val == null ? "null" : Std.string(val)}';
 							return val;
-						case "String":
+						case "String" | "std.String":
 							if (Std.isOfType(val, HaxiomAbstractInstance)) {
 								var inst:HaxiomAbstractInstance = cast val;
 								if (canAbstractCastTo(inst.abstractType, "String", interp, scope)) {
@@ -154,7 +178,7 @@ class TypeSystem {
 							if (!isString(val))
 								throw 'Type mismatch: expected String but got ${val == null ? "null" : Std.string(val)}';
 							return val;
-						case "Bool":
+						case "Bool" | "std.Bool":
 							if (Std.isOfType(val, HaxiomAbstractInstance)) {
 								var inst:HaxiomAbstractInstance = cast val;
 								if (canAbstractCastTo(inst.abstractType, "Bool", interp, scope)) {
@@ -167,7 +191,7 @@ class TypeSystem {
 							if (!isBool(val))
 								throw 'Type mismatch: expected Bool but got ${val == null ? "null" : Std.string(val)}';
 							return val;
-						case "Array":
+						case "Array" | "std.Array":
 							if (val == null)
 								return null;
 							if (!Std.isOfType(val, Array))
@@ -225,20 +249,23 @@ class TypeSystem {
 					}
 				}
 
-				var cls = resolvedTypePathVal;
-				if (cls == null && scope.exists(typeName)) {
+				var cls:Dynamic = resolvedTypePathVal;
+				if (cls == null && scope.exists(typeName))
 					cls = scope.get(typeName);
-				}
+				if (cls == null && interp.globals != null)
+					cls = interp.globals.get(typeName);
+				if (cls == null && interp.globals != null && interp.globals.types != null && interp.globals.types.exists(typeName))
+					cls = interp.globals.types.get(typeName);
 
 				if (cls != null) {
-					if (Std.isOfType(cls, haxiom.Interp.HaxiomAbstract)) {
+					if (isHaxiomAbstract(cls)) {
 						var abs:HaxiomAbstract = cast cls;
 						if (val == null)
 							return null;
 
-						if (Std.isOfType(val, HaxiomAbstractInstance)) {
+						if (isHaxiomAbstractInstance(val)) {
 							var inst:HaxiomAbstractInstance = cast val;
-							if (inst.abstractType == abs)
+							if (inst.abstractType == abs || (inst.abstractType != null && abs != null && inst.abstractType.name == abs.name))
 								return val;
 						}
 
@@ -255,55 +282,66 @@ class TypeSystem {
 						throw 'Type mismatch: expected abstract $typeName but got ${val == null ? "null" : Std.string(val)}';
 					}
 
-					if (Std.isOfType(cls, haxiom.Interp.HaxiomClass)) {
+					if (isHaxiomClass(cls)) {
 						if (val == null)
 							return null;
-						if (!Std.isOfType(val, HaxiomInstance))
+						var isHaxInst = isHaxiomInstance(val);
+						var valClass = Type.getClass(val);
+						var valClassName = valClass != null ? Type.getClassName(valClass) : "null";
+						if (!isHaxInst)
 							throw 'Type mismatch: expected $typeName but got ${val == null ? "null" : Std.string(val)}';
-						var inst:HaxiomInstance = cast val;
-						var curr = inst.cls;
+						var targetClass:HaxiomClass = cast cls;
+						var instCls:HaxiomClass = cast Reflect.field(val, "cls");
+						var curr:HaxiomClass = instCls;
 						var isSub = false;
 						while (curr != null) {
-							if (curr == cls) {
+							if (curr == targetClass || (curr != null && targetClass != null && curr.name == targetClass.name)) {
 								isSub = true;
 								break;
 							}
 							curr = curr.parent;
 						}
-						if (!isSub)
-							throw 'Type mismatch: expected $typeName but got ${inst.cls.name}';
-						if (params != null && params.length > 0 && cls.params != null) {
-							for (i in 0...Std.int(Math.min(params.length, cls.params.length))) {
-								var expectedParam = params[i];
-								var pName = cls.params[i].name;
-								var actualParam = inst.genericBindings.get(cls.name + "." + pName);
-								if (actualParam != null && !interp.typesEqual(actualParam, expectedParam)) {
-									throw 'Type mismatch: expected type parameter ${pName} to be ${interp.typeToString(expectedParam)} but got ${interp.typeToString(actualParam)}';
+						if (!isSub) {
+							var instClsName:String = instCls != null ? instCls.name : "unknown";
+							throw 'Type mismatch: expected $typeName but got $instClsName';
+						}
+						if (params != null && params.length > 0 && targetClass.params != null) {
+							var genericBindingsVal:Map<String, TypeDecl> = cast Reflect.field(val, "genericBindings");
+							if (genericBindingsVal != null) {
+								for (i in 0...Std.int(Math.min(params.length, targetClass.params.length))) {
+									var expectedParam = params[i];
+									var pName:String = targetClass.params[i].name;
+									var actualParam = genericBindingsVal.get(targetClass.name + "." + pName);
+									if (actualParam != null && !interp.typesEqual(actualParam, expectedParam)) {
+										throw 'Type mismatch: expected type parameter ${pName} to be ${interp.typeToString(expectedParam)} but got ${interp.typeToString(actualParam)}';
+									}
 								}
 							}
 						}
 						return val;
 					}
 
-					if (Std.isOfType(cls, haxiom.Interp.HaxiomInterface)) {
+					if (isHaxiomInterface(cls)) {
 						if (val == null)
 							return null;
-						if (!Std.isOfType(val, HaxiomInstance))
+						if (!isHaxiomInstance(val))
 							throw 'Type mismatch: expected $typeName but got ${val == null ? "null" : Std.string(val)}';
 						var inst:HaxiomInstance = cast val;
 						var itf:HaxiomInterface = cast cls;
-						var curr = inst.cls;
+						var curr:HaxiomClass = inst.cls;
 						var matchedItf:TypeDecl = null;
 						while (curr != null) {
-							for (itfDecl in curr.interfaces) {
-								switch (itfDecl) {
-									case TPath(itfPath, _):
-										var itfName = itfPath.join(".");
-										if (interp.isInterfaceCompatible(itfName, itf.name, scope)) {
-											matchedItf = itfDecl;
-											break;
-										}
-									default:
+							if (curr.interfaces != null) {
+								for (itfDecl in curr.interfaces) {
+									switch (itfDecl) {
+										case TPath(itfPath, _):
+											var curItfName = itfPath.join(".");
+											if (interp.isInterfaceCompatible(curItfName, itf.name, scope)) {
+												matchedItf = itfDecl;
+												break;
+											}
+										default:
+									}
 								}
 							}
 							if (matchedItf != null)
@@ -311,29 +349,32 @@ class TypeSystem {
 							curr = curr.parent;
 						}
 						if (matchedItf == null) {
-							throw 'Type mismatch: expected interface $typeName but got ${inst.cls.name}';
+							var instClsName:String = (inst != null && inst.cls != null) ? inst.cls.name : "unknown";
+							throw 'Type mismatch: expected interface $typeName but got $instClsName';
 						}
 						if (params != null && params.length > 0 && itf.params != null) {
-							for (i in 0...Std.int(Math.min(params.length, itf.params.length))) {
-								var expectedParam = params[i];
-								var pName = itf.params[i].name;
-								var actualParam = inst.genericBindings.get(itf.name + "." + pName);
-								if (actualParam != null && !interp.typesEqual(actualParam, expectedParam)) {
-									throw 'Type mismatch: expected interface type parameter ${pName} to be ${interp.typeToString(expectedParam)} but got ${interp.typeToString(actualParam)}';
+							if (inst.genericBindings != null) {
+								for (i in 0...Std.int(Math.min(params.length, itf.params.length))) {
+									var expectedParam = params[i];
+									var pName:String = itf.params[i].name;
+									var actualParam = inst.genericBindings.get(itf.name + "." + pName);
+									if (actualParam != null && !interp.typesEqual(actualParam, expectedParam)) {
+										throw 'Type mismatch: expected interface type parameter ${pName} to be ${interp.typeToString(expectedParam)} but got ${interp.typeToString(actualParam)}';
+									}
 								}
 							}
 						}
 						return val;
 					}
 
-					if (Std.isOfType(cls, haxiom.Interp.HaxiomEnum)) {
+					if (isHaxiomEnum(cls)) {
 						if (val == null)
 							return null;
-						if (!Std.isOfType(val, HaxiomEnumInstance))
+						if (!isHaxiomEnumInstance(val))
 							throw 'Type mismatch: expected $typeName';
 						var inst:HaxiomEnumInstance = cast val;
 						var enumCls:HaxiomEnum = cast cls;
-						if (inst.enumType == enumCls)
+						if (inst.enumType == enumCls || (inst.enumType != null && enumCls != null && inst.enumType.name == enumCls.name))
 							return val;
 						throw 'Type mismatch: expected enum $typeName but got ${inst.enumType.name}';
 					}
@@ -367,10 +408,7 @@ class TypeSystem {
 
 				var nativeClass:Dynamic = null;
 				if (resolvedTypePathVal != null) {
-					if (!Std.isOfType(resolvedTypePathVal, HaxiomClass)
-						&& !Std.isOfType(resolvedTypePathVal, HaxiomInterface)
-						&& !Std.isOfType(resolvedTypePathVal, HaxiomEnum)
-						&& !Std.isOfType(resolvedTypePathVal, HaxiomAbstract)) {
+					if (!isHaxiomGuestType(resolvedTypePathVal)) {
 						nativeClass = resolvedTypePathVal;
 					}
 				}
@@ -397,7 +435,21 @@ class TypeSystem {
 					}
 					#end
 
-					if (!Std.isOfType(val, nativeClass)) {
+					var isMatch = false;
+					var nName = nativeClass != null ? Type.getClassName(nativeClass) : null;
+					if (nName == "String") {
+						isMatch = isString(val);
+					} else if (nName == "Int") {
+						isMatch = isInt(val);
+					} else if (nName == "Float") {
+						isMatch = isFloat(val);
+					} else if (nName == "Bool") {
+						isMatch = isBool(val);
+					} else {
+						isMatch = Std.isOfType(val, nativeClass);
+					}
+
+					if (!isMatch) {
 						var valClass = Type.getClass(val);
 						var valClassName = valClass != null ? Type.getClassName(valClass) : null;
 						throw 'Type mismatch: expected $typeName but got ${val == null ? "null" : valClassName != null ? valClassName : Std.string(val)}';
