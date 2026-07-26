@@ -387,7 +387,16 @@ class TypeSystem {
 				if (fqAbstractName == null && exposedAbs != null) {
 					if (exposedAbs.exists(typeName)) {
 						fqAbstractName = typeName;
-					} else if (resolvedTypePathVal != null) {
+					} else {
+						for (k in exposedAbs.keys()) {
+							var shortName = k.split(".").pop();
+							if (shortName == typeName) {
+								fqAbstractName = k;
+								break;
+							}
+						}
+					}
+					if (fqAbstractName == null && resolvedTypePathVal != null) {
 						var resolvedClassName = interp.safeGetClassName(resolvedTypePathVal);
 						if (resolvedClassName != null) {
 							for (k in exposedAbs.keys()) {
