@@ -4,6 +4,7 @@ package haxiom;
  * TestDCE — verifies Dead Code Elimination (DCE) in Optimizer.eliminateDeadCode().
  *
  * Tests cover:
+ *   0.  DCE is enabled by default
  *   1.  Dead statements after return are removed
  *   2.  Dead statements after throw are removed
  *   3.  Dead statements after break are removed (inside a while)
@@ -60,6 +61,18 @@ class TestDCE {
             var bytes = ast == null ? null : Serializer.serializeToBytes(ast);
             return bytes == null ? -1 : bytes.length;
         }
+
+        // ---------------------------------------------------------------
+        // Test 0: DCE is enabled by default
+        // ---------------------------------------------------------------
+        var h0 = new Haxiom();
+        var h0off = new Haxiom(); h0off.enableDCE = false;
+        var len0default = blockLen(h0, 'var dead = 42;\ntrace("hi");');
+        var len0off = blockLen(h0off, 'var dead = 42;\ntrace("hi");');
+        if (h0.enableDCE && len0default < len0off)
+            ok('0. DCE enabled by default (${len0off} → ${len0default} stmts)');
+        else
+            fail("0. DCE enabled by default", 'enableDCE=${h0.enableDCE}, default len=$len0default, disabled len=$len0off');
 
         // ---------------------------------------------------------------
         // Test 1: Dead statements after return removed
