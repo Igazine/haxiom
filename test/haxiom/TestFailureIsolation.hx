@@ -127,6 +127,29 @@ class TestFailureIsolation {
 		if (astResult.switchRes != "hundred")
 			throw "AST persistence execution failed: switchRes=" + astResult.switchRes;
 
+		var virtualResourceBytes = haxe.io.Bytes.alloc(6);
+		var virtualResourceValues = [0, 1, 127, 128, 254, 255];
+		for (i in 0...virtualResourceValues.length)
+			virtualResourceBytes.set(i, virtualResourceValues[i]);
+		persistEngine.addResource("virtual_binary_payload.bin", virtualResourceBytes);
+
+		var virtualResourceScript = '
+			import haxe.io.Bytes;
+			class VirtualResourceDemo {
+				@:haxiom.resource("virtual_binary_payload.bin")
+				public var binAsset:Bytes;
+				public function new() {}
+			}
+			var demo = new VirtualResourceDemo();
+			demo.binAsset.length + "|" + demo.binAsset.get(0) + "|" + demo.binAsset.get(2) + "|" + demo.binAsset.get(3) + "|" + demo.binAsset.get(4) + "|" + demo.binAsset.get(5);
+		';
+		var virtualAstPayload = persistEngine.compileToASTBytes(virtualResourceScript, "virtual_ast_resource_test.hx");
+		if (virtualAstPayload == null)
+			throw "Failed to compile virtual AST resource script to bytes";
+		var virtualAstResult:String = new Haxiom().executeASTBytes(virtualAstPayload);
+		if (virtualAstResult != "6|0|127|128|254|255")
+			throw "AST virtual binary resource persistence failed: " + virtualAstResult;
+
 		#if sys
 		var astResourcePath = "./test_tmp_ast_resource.bin";
 		var astResourceBytes = haxe.io.Bytes.alloc(5);
