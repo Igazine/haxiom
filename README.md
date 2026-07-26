@@ -5,7 +5,7 @@ Haxiom is a secure, sandboxed Haxe-in-Haxe interpreter, scripting engine, and by
 Designed for game engines, desktop/mobile applications, UI systems, and plugin/modding frameworks, Haxiom provides a high-performance scripting layer with static type checking, Ahead-of-Time (AOT) compilation, sandboxed security, and sub-second live hot-reloading.
 
 > [!IMPORTANT]
-> Haxiom is currently in developer preview. It is stable for testing, integration, and development; however, public APIs may evolve prior to version 1.0.
+> Haxiom is currently in developer preview. Certain features may break on certain Haxe targets
 
 ---
 
