@@ -1,4 +1,5 @@
---class-path .
---library haxiom
+--class-path test/haxiom/interfacing
+-L haxiom
 --main host.Host
---neko bin/Host.n
+--neko test/haxiom/interfacing/bin/Host.n
+--cmd neko test/haxiom/interfacing/bin/Host.n

@@ -9,7 +9,7 @@ class Host {
 		haxiom.importWhitelist = ["interfaces.*"];
 
 		// 1. Test source construction
-		var source = sys.io.File.getContent("plugin/Plugin.hx");
+		var source = sys.io.File.getContent("test/haxiom/interfacing/plugin/Plugin.hx");
 		haxiom.interpret(source);
 		var plugin = haxiom.construct(IPlugin, "Plugin");
 		plugin.doSomething();
@@ -17,10 +17,10 @@ class Host {
 
 		// 2. Test bytecode construction
 		var bytes = haxiom.compileToBytecodeBytes(source, "plugin/Plugin.hx");
-		if (!sys.FileSystem.exists("bin")) {
-			sys.FileSystem.createDirectory("bin");
+		if (!sys.FileSystem.exists("test/haxiom/interfacing/bin")) {
+			sys.FileSystem.createDirectory("test/haxiom/interfacing/bin");
 		}
-		sys.io.File.saveBytes("bin/Plugin.hxbc", bytes);
+		sys.io.File.saveBytes("test/haxiom/interfacing/bin/Plugin.hxbc", bytes);
 
 		final haxiom2 = new Haxiom();
 		haxiom2.importWhitelist = ["interfaces.*"];

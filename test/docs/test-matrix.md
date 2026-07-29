@@ -17,6 +17,7 @@ This matrix describes the intended test coverage shape for the developer preview
 | --- | --- |
 | `haxe test/haxiom/compile_example.hxml` | Runs the bytecode compilation example without leaving generated files behind. |
 | `haxe test/haxiom/bundle/run_bundle.hxml` | Compiles and executes the bytecode bundle fixture from an isolated temp workspace. |
+| `haxe test/haxiom/interfacing/build.hxml` | Compiles and runs the host/interface bytecode construction smoke. |
 
 ## Coverage Groups
 
