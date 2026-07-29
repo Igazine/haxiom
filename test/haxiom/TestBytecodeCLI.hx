@@ -10,7 +10,7 @@ class TestBytecodeCLI {
 		trace("Haxiom Bytecode CLI Verification Suite");
 		trace("---------------------------------------");
 
-		var tempDir = "test/haxiom/tmp_cli";
+		var tempDir = "test/haxiom/tmp_cli_" + Std.int(haxe.Timer.stamp() * 1000000) + "_" + Std.random(1000000);
 		deleteDirRecursive(tempDir);
 		FileSystem.createDirectory(tempDir);
 
