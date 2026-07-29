@@ -735,8 +735,9 @@ class TestHaxiom {
 
 		#if sys
 		// 23i. Embedded Script Resources (@:haxiom.resource)
-		var tmpResTextPath = "./test_tmp_resource.txt";
-		var tmpResBinPath = "./test_tmp_resource.bin";
+		var tmpResPrefix = "test/haxiom/tmp_resource_" + Std.int(haxe.Timer.stamp() * 1000000) + "_" + Std.random(1000000);
+		var tmpResTextPath = tmpResPrefix + ".txt";
+		var tmpResBinPath = tmpResPrefix + ".bin";
 		sys.io.File.saveContent(tmpResTextPath, "Haxiom Embedded Resource Content Hello World!");
 		var testBinBytes = haxe.io.Bytes.alloc(8);
 		for (i in 0...8)
@@ -748,10 +749,10 @@ class TestHaxiom {
 			var script23i = '
                 import haxe.io.Bytes;
                 class ResourceDemo {
-                    @:haxiom.resource("./test_tmp_resource.txt")
+                    @:haxiom.resource("' + tmpResTextPath + '")
                     public var textAsset:String;
 
-                    @:haxiom.resource("./test_tmp_resource.bin")
+                    @:haxiom.resource("' + tmpResBinPath + '")
                     public var binAsset:Bytes;
 
                     public function new() {}
@@ -766,7 +767,7 @@ class TestHaxiom {
 			var foundBinResource = false;
 			if (resInfo.embeddedResources != null) {
 				for (r in resInfo.embeddedResources) {
-					if (r.path == "./test_tmp_resource.bin" && r.size == 8) {
+					if (r.path == tmpResBinPath && r.size == 8) {
 						foundBinResource = true;
 						break;
 					}
@@ -790,7 +791,7 @@ class TestHaxiom {
 
 			// Validation 1: Explicit initializer check
 			try {
-				var badScript1 = '@:haxiom.resource("./test_tmp_resource.txt") var pic:String = "hello";';
+				var badScript1 = '@:haxiom.resource("' + tmpResTextPath + '") var pic:String = "hello";';
 				hRes.compileToBytecodeBytes(badScript1, "Bad1.hx");
 				throw "FAILURE: Explicit initializer on @:haxiom.resource should have thrown compile error";
 			} catch (e:Dynamic) {

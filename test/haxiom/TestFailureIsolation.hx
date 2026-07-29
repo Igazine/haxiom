@@ -182,7 +182,7 @@ class TestFailureIsolation {
 			throw "Bytecode virtual binary resource persistence failed: " + virtualBytecodeResult;
 
 		#if sys
-		var astResourcePath = "./test_tmp_ast_resource.bin";
+		var astResourcePath = "test/haxiom/tmp_ast_resource_" + Std.int(haxe.Timer.stamp() * 1000000) + "_" + Std.random(1000000) + ".bin";
 		var astResourceBytes = haxe.io.Bytes.alloc(5);
 		for (i in 0...5)
 			astResourceBytes.set(i, i * 17);
@@ -191,7 +191,7 @@ class TestFailureIsolation {
 		var resourceScript = '
 			import haxe.io.Bytes;
 			class ResourceDemo {
-				@:haxiom.resource("./test_tmp_ast_resource.bin")
+				@:haxiom.resource("' + astResourcePath + '")
 				public var binAsset:Bytes;
 				public function new() {}
 			}
