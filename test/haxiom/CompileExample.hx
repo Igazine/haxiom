@@ -1,6 +1,7 @@
 package haxiom;
 
 import haxe.io.Bytes;
+import sys.FileSystem;
 import sys.io.File;
 
 class MockEvent {
@@ -55,9 +56,34 @@ class CompileExample {
 		var bytes2 = engine.compileToBytecodeBytes(script, "example2.hx", key, false);
 		trace("Saved example2.hxbc (" + bytes2.length + " bytes)");
 
-		var content = File.getBytes('./test/haxiom/openfl/scripts/Bytecode.hx');
-		var bytes3 = engine.compileToBytecodeBytes(content.toString(), null, null, false);
-		File.saveBytes("./test/haxiom/openfl/scripts/Bytecode.hxbc", bytes3);
-		trace("Saved Bytecode.hxbc (" + bytes3.length + " bytes)");
+		var tempDir = "test/haxiom/tmp_compile_example_" + Std.int(haxe.Timer.stamp() * 1000000) + "_" + Std.random(1000000);
+		deleteDirRecursive(tempDir);
+		FileSystem.createDirectory(tempDir);
+		try {
+			var content = File.getBytes('./test/haxiom/openfl/scripts/Bytecode.hx');
+			var bytes3 = engine.compileToBytecodeBytes(content.toString(), null, null, false);
+			var bytecodePath = tempDir + "/Bytecode.hxbc";
+			File.saveBytes(bytecodePath, bytes3);
+			trace("Saved " + bytecodePath + " (" + bytes3.length + " bytes)");
+			deleteDirRecursive(tempDir);
+		} catch (e:Dynamic) {
+			deleteDirRecursive(tempDir);
+			throw e;
+		}
+	}
+
+	static function deleteDirRecursive(path:String):Void {
+		if (!FileSystem.exists(path)) {
+			return;
+		}
+		for (entry in FileSystem.readDirectory(path)) {
+			var child = path + "/" + entry;
+			if (FileSystem.isDirectory(child)) {
+				deleteDirRecursive(child);
+			} else {
+				FileSystem.deleteFile(child);
+			}
+		}
+		FileSystem.deleteDirectory(path);
 	}
 }

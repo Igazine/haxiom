@@ -11,6 +11,12 @@ This matrix describes the intended test coverage shape for the developer preview
 | `haxe test_platforms.hxml` | Active CPP, JavaScript, and Neko platform gate. |
 | `haxe test_cli.hxml` | Bytecode CLI compile, inspect, and compressed bytecode smoke test. |
 
+## Supporting Gates
+
+| Gate | Purpose |
+| --- | --- |
+| `haxe test/haxiom/compile_example.hxml` | Runs the bytecode compilation example without leaving generated files behind. |
+
 ## Coverage Groups
 
 | Group | Existing Coverage | Desired Direction |
@@ -40,4 +46,3 @@ Regression samples should be small scripts that prove one behavior through all s
 - compressed HXBC bytecode
 
 Samples should avoid host filesystem access unless the test is explicitly `#if sys`. Cross-target samples should be pure guest scripts with deterministic scalar or string results.
-
