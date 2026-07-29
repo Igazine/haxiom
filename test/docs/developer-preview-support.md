@@ -50,6 +50,6 @@ A developer-preview build should pass:
 - `haxe build.hxml`
 - `haxe test_full.hxml`
 - `haxe test_platforms.hxml`
+- `haxe test_supporting.hxml`
 
 The active gates must not contain intentionally commented-out test calls or temporary try/catch masking around failing internal tests.
-
