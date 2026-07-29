@@ -24,6 +24,7 @@ class TestFailureIsolation {
 		runSync("Follow-up suite: externs", () -> TestExterns.runTests());
 		runSync("Follow-up suite: caller identification", () -> TestCallerIdentification.runTests());
 		runSync("Runtime static state scan", () -> TestRuntimeStaticState.runTests());
+		runSync("Release-bar source audit", () -> TestReleaseBarAudit.runTests());
 		runSync("Low-level VM state transitions", testVMStateTransitions);
 		runSync("HaxiomHost.await host guard", testHostAwaitGuard);
 

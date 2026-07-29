@@ -37,6 +37,7 @@ This matrix describes the intended test coverage shape for the developer preview
 | Optimizer and DCE | `TestDCE`, `InternalTests` | Keep optimizer behavior tested structurally and through runtime equivalence. |
 | Async and fibers | `TestAsyncVM` | Keep VM async tests isolated from synchronous platform gates where target support differs. |
 | Security and sandbox | `TestHXBCSecurityDebug`, `TestSafeguardsTCO`, `TestNSConflict`, `TestCallerIdentification` | Keep sandbox tests explicit: blocked APIs, namespace halting, caller identity, limits, debug leakage. |
+| Release-bar integrity | `TestReleaseBarAudit` | Keep source-level guards for accidentally commented-out core test calls in the release gate. |
 | Target parity | `test_platforms.hxml` | Add smaller target-specific hxml gates once the large suites are split. |
 | OpenFL integration | `test/haxiom/openfl` | Keep as integration smoke, separate from core engine gates. |
 

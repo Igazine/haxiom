@@ -57,3 +57,4 @@ This aggregate runs the individual release-bar gates:
 - `haxe test_supporting.hxml`
 
 The active gates must not contain intentionally commented-out test calls or temporary try/catch masking around failing internal tests.
+`TestReleaseBarAudit` enforces the commented-out-call portion of this rule for the current high-risk `TestHaxiom.hx` calls.
