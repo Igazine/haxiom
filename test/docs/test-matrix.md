@@ -16,6 +16,7 @@ This matrix describes the intended test coverage shape for the developer preview
 | Gate | Purpose |
 | --- | --- |
 | `haxe test/haxiom/compile_example.hxml` | Runs the bytecode compilation example without leaving generated files behind. |
+| `haxe test/haxiom/bundle/run_bundle.hxml` | Compiles and executes the bytecode bundle fixture from an isolated temp workspace. |
 
 ## Coverage Groups
 
