@@ -47,6 +47,10 @@ Haxiom runtime state must remain instance-based. Runtime mutable state must not 
 
 A developer-preview build should pass:
 
+- `haxe test_release.hxml`
+
+This aggregate runs the individual release-bar gates:
+
 - `haxe build.hxml`
 - `haxe test_full.hxml`
 - `haxe test_platforms.hxml`
