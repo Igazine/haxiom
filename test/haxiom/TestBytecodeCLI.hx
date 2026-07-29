@@ -17,14 +17,16 @@ class TestBytecodeCLI {
 		try {
 			var scriptPath = tempDir + "/CliSmoke.hx";
 			var bytecodePath = tempDir + "/CliSmoke.hxbc";
+			var bytecodeKey = "cli_obfuscation_key";
 			File.saveContent(scriptPath, "
 				class CliSmoke {
-					public static function main() {
+					public static function main():Int {
 						var total = 0;
 						for (i in 0...5) {
 							total += i;
 						}
 						if (total != 10) throw 'bad total: ' + total;
+						return total;
 					}
 				}
 			");
@@ -38,6 +40,13 @@ class TestBytecodeCLI {
 			assertExists(bytecodePath, "compressed bytecode output");
 			assertValidInspection(bytecodePath, true);
 
+			FileSystem.deleteFile(bytecodePath);
+			runProcess(["run", "haxiom", "bc", scriptPath, bytecodeKey, "-c"], "keyed compressed bytecode compile");
+			assertExists(bytecodePath, "keyed compressed bytecode output");
+			assertEncryptedInspection(bytecodePath, true);
+			assertValidInspection(bytecodePath, true, bytecodeKey, true);
+			assertExecutableBytecode(bytecodePath, bytecodeKey, 10);
+
 			deleteDirRecursive(tempDir);
 		} catch (e:Dynamic) {
 			deleteDirRecursive(tempDir);
@@ -46,8 +55,13 @@ class TestBytecodeCLI {
 		trace("ALL BYTECODE CLI TESTS PASSED!");
 	}
 
-	static function assertValidInspection(bytecodePath:String, expectedCompressed:Bool):Void {
-		var output = runProcess(["run", "haxiom", "inspect", bytecodePath, "--json"], "bytecode inspect json");
+	static function assertValidInspection(bytecodePath:String, expectedCompressed:Bool, ?key:String, expectedEncrypted:Bool = false):Void {
+		var args = ["run", "haxiom", "inspect", bytecodePath];
+		if (key != null) {
+			args.push(key);
+		}
+		args.push("--json");
+		var output = runProcess(args, "bytecode inspect json");
 		var info:Dynamic = Json.parse(output);
 		if (info.status != "VALID") {
 			throw 'inspect status failed: ${info.status} ${info.error}';
@@ -66,6 +80,32 @@ class TestBytecodeCLI {
 		}
 		if (info.isCompressed != expectedCompressed) {
 			throw 'inspect compression mismatch: expected ${expectedCompressed}, got ${info.isCompressed}';
+		}
+		if (info.isEncrypted != expectedEncrypted) {
+			throw 'inspect encryption mismatch: expected ${expectedEncrypted}, got ${info.isEncrypted}';
+		}
+	}
+
+	static function assertEncryptedInspection(bytecodePath:String, expectedCompressed:Bool):Void {
+		var output = runProcess(["run", "haxiom", "inspect", bytecodePath, "--json"], "encrypted bytecode inspect json without key");
+		var info:Dynamic = Json.parse(output);
+		if (info.status != "ENCRYPTED") {
+			throw 'inspect should report ENCRYPTED without key, got ${info.status} ${info.error}';
+		}
+		if (info.isEncrypted != true) {
+			throw 'inspect failed to report encrypted payload';
+		}
+		if (info.isCompressed != expectedCompressed) {
+			throw 'inspect encrypted compression mismatch: expected ${expectedCompressed}, got ${info.isCompressed}';
+		}
+	}
+
+	static function assertExecutableBytecode(bytecodePath:String, key:String, expected:Int):Void {
+		var haxiom = new Haxiom();
+		haxiom.useVM = true;
+		var result:Int = haxiom.executeBytecodeBytes(File.getBytes(bytecodePath), null, new HXBCKey(key));
+		if (result != expected) {
+			throw 'keyed bytecode execution mismatch: expected ${expected}, got ${result}';
 		}
 	}
 
