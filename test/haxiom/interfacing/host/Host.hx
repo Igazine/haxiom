@@ -17,7 +17,10 @@ class Host {
 
 		// 2. Test bytecode construction
 		var bytes = haxiom.compileToBytecodeBytes(source, "plugin/Plugin.hx");
-		sys.io.File.saveBytes("plugin/Plugin.hxbc", bytes);
+		if (!sys.FileSystem.exists("bin")) {
+			sys.FileSystem.createDirectory("bin");
+		}
+		sys.io.File.saveBytes("bin/Plugin.hxbc", bytes);
 
 		final haxiom2 = new Haxiom();
 		haxiom2.importWhitelist = ["interfaces.*"];
