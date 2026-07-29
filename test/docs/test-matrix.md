@@ -10,6 +10,7 @@ This matrix describes the intended test coverage shape for the developer preview
 | `haxe test_full.hxml` | Full interpreter gate plus bytecode CLI smoke tests. |
 | `haxe test_platforms.hxml` | Active CPP, JavaScript, and Neko platform gate. |
 | `haxe test_cli.hxml` | Bytecode CLI compile, inspect, and compressed bytecode smoke test. |
+| `haxe test_supporting.hxml` | Sequential aggregate for the supporting example and integration smoke gates. |
 
 ## Supporting Gates
 

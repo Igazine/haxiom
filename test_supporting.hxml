@@ -1,0 +1,4 @@
+--cmd haxe test/haxiom/compile_example.hxml
+--cmd haxe test/haxiom/bundle/run_bundle.hxml
+--cmd haxe test/haxiom/interfacing/build.hxml
+--cmd haxe test/haxiom/build_cpp.hxml
