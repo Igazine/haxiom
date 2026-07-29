@@ -789,7 +789,7 @@ class TestCompilationFeatures {
     }
 
     static function testModularity() {
-        var tempDir = "temp_test_modularity";
+        var tempDir = "test/haxiom/tmp_modularity_" + Std.int(haxe.Timer.stamp() * 1000000) + "_" + Std.random(1000000);
         
         // Clean any leftover from previous runs
         deleteDirRecursive(tempDir);
@@ -1038,4 +1038,3 @@ class TestCompilationFeatures {
     }
     #end
 }
-
