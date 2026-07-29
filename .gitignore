@@ -2,7 +2,7 @@
 ignored/
 wiki/
 **/bin
-test/haxiom/tmp_*/
+test/haxiom/tmp_*
 *.code-workspace
 .DS_Store
 /.agents
