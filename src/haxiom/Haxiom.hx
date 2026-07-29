@@ -688,7 +688,7 @@ class Haxiom {
 		enableAstCache = prevCache;
 		if (ast == null)
 			return null;
-		var chunk = BytecodeCompiler.compile(ast, null, true, false, debugMode);
+		var chunk = BytecodeCompiler.compile(ast, null, true, false, debugMode, null, interp);
 		return Serializer.serializeBytecode(chunk, key, compress);
 	}
 
@@ -704,7 +704,7 @@ class Haxiom {
 	public function compileASTToBytecodeBytes(ast:haxiom.AST.Expr, ?key:HXBCKey, ?debugMode:Bool = false, ?compress:Bool = false):haxe.io.Bytes {
 		if (ast == null)
 			return null;
-		var chunk = BytecodeCompiler.compile(ast, null, true, false, debugMode);
+		var chunk = BytecodeCompiler.compile(ast, null, true, false, debugMode, null, interp);
 		return Serializer.serializeBytecode(chunk, key, compress);
 	}
 

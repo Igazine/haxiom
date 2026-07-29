@@ -151,6 +151,35 @@ class TestFailureIsolation {
 		if (virtualAstResult != "6|0|127|128|254|255")
 			throw "AST virtual binary resource persistence failed: " + virtualAstResult;
 
+		var virtualBytecodeKey:HXBCKey = "virtual_binary_resource_key";
+		var virtualBytecodePayload = persistEngine.compileToBytecodeBytes(virtualResourceScript, "virtual_bytecode_resource_test.hx", virtualBytecodeKey, false, true);
+		if (virtualBytecodePayload == null)
+			throw "Failed to compile virtual bytecode resource script to bytes";
+		var encryptedInfo = Haxiom.inspectBytecode(virtualBytecodePayload);
+		if (encryptedInfo.status != "ENCRYPTED")
+			throw "Expected encrypted virtual binary resource bytecode inspection without key, got: " + encryptedInfo.status;
+		if (!encryptedInfo.isCompressed)
+			throw "Expected virtual binary resource bytecode to be compressed";
+		var decryptedInfo = Haxiom.inspectBytecode(virtualBytecodePayload, virtualBytecodeKey);
+		if (decryptedInfo.status != "VALID")
+			throw "Expected valid virtual binary resource bytecode inspection with key, got: " + decryptedInfo.status + " " + decryptedInfo.error;
+		if (!decryptedInfo.isEncrypted)
+			throw "Expected virtual binary resource bytecode to report encrypted flag";
+		var foundVirtualBytecodeResource = false;
+		if (decryptedInfo.embeddedResources != null) {
+			for (resource in decryptedInfo.embeddedResources) {
+				if (resource.path == "virtual_binary_payload.bin" && resource.size == 6) {
+					foundVirtualBytecodeResource = true;
+					break;
+				}
+			}
+		}
+		if (!foundVirtualBytecodeResource)
+			throw "Bytecode inspection failed to preserve virtual binary resource metadata";
+		var virtualBytecodeResult:String = new Haxiom().executeBytecodeBytes(virtualBytecodePayload, null, virtualBytecodeKey);
+		if (virtualBytecodeResult != "6|0|127|128|254|255")
+			throw "Bytecode virtual binary resource persistence failed: " + virtualBytecodeResult;
+
 		#if sys
 		var astResourcePath = "./test_tmp_ast_resource.bin";
 		var astResourceBytes = haxe.io.Bytes.alloc(5);
