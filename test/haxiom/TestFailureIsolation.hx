@@ -17,6 +17,7 @@ class TestFailureIsolation {
 		runSync("Follow-up suite: HXBC security debug", () -> TestHXBCSecurityDebug.runTests());
 		runSync("Follow-up suite: static type checker", () -> TestStaticTypeChecker.runTests());
 		runSync("Follow-up suite: DCE", () -> TestDCE.runTests());
+		runSync("Follow-up suite: regression samples", () -> TestRegressionSamples.runTests());
 		runSync("Follow-up suite: inline cache", () -> TestInlineCache.main());
 		runSync("Follow-up suite: safeguards and TCO", () -> TestSafeguardsTCO.runTests());
 		runSync("Follow-up suite: namespace conflicts", () -> TestNSConflict.main());
