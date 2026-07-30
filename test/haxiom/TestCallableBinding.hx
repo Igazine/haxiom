@@ -34,9 +34,22 @@ class TestCallableBinding {
 		var engine = new Haxiom();
 		engine.registerClass("CallableBindingHost", CallableBindingHost);
 		engine.registerClass("CallableBindingHostFactory", CallableBindingHostFactory);
-		var actual = Std.string(run(engine));
+		var traceLines:Array<String> = [];
+		var previousTrace = haxe.Log.trace;
+		haxe.Log.trace = (value:Dynamic, ?infos:haxe.PosInfos) -> traceLines.push(Std.string(value));
+		var actual:String = null;
+		try {
+			actual = Std.string(run(engine));
+		} catch (e:Dynamic) {
+			haxe.Log.trace = previousTrace;
+			throw e;
+		}
+		haxe.Log.trace = previousTrace;
 		if (actual != EXPECTED)
 			throw 'Callable binding failed via $path: expected $EXPECTED, got $actual';
+		var expectedTrace = ["one", "two, 2", "many, 1, 2, 3, 4, 5"];
+		if (traceLines.join("|") != expectedTrace.join("|"))
+			throw 'Variadic trace failed via $path: expected ${expectedTrace.join("|")}, got ${traceLines.join("|")}';
 	}
 
 	static function source():String {
@@ -105,6 +118,9 @@ class TestCallableBinding {
 
 			class CallableBindingMain {
 				static public function main():String {
+					trace("one");
+					trace("two", 2);
+					trace("many", 1, 2, 3, 4, 5);
 					return new CallableTarget(10).run();
 				}
 			}
