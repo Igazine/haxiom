@@ -100,6 +100,7 @@ class TestExterns {
 	static function testExternClassAST() {
 		var engine = new Haxiom();
 		engine.useVM = false;
+		engine.currentFilename = "Main.hx";
 		engine.registerClass("HostHelper", HostHelper);
 
 		var script = "
@@ -124,6 +125,7 @@ class TestExterns {
 	static function testExternClassVM() {
 		var engine = new Haxiom();
 		engine.useVM = true;
+		engine.currentFilename = "Main.hx";
 		engine.registerClass("HostHelper", HostHelper);
 
 		var script = "
@@ -148,6 +150,7 @@ class TestExterns {
 	static function testClassLevelExternMember() {
 		var engine = new Haxiom();
 		engine.useVM = true;
+		engine.currentFilename = "Main.hx";
 		engine.setGlobal("myHostFunc", function(val:Int):Int return val + 10);
 
 		var script = "
@@ -209,6 +212,7 @@ class TestExterns {
 	static function testUnboundHostExternError() {
 		var engine = new Haxiom();
 		engine.useVM = false;
+		engine.currentFilename = "Main.hx";
 
 		var script = "
 			extern class MissingHost {
@@ -241,6 +245,7 @@ class TestExterns {
 
 	static function testStaticTypeCheckingWithExterns() {
 		var engine = new Haxiom();
+		engine.currentFilename = "Main.hx";
 		engine.registerClass("HostHelper", HostHelper);
 
 		var script = "

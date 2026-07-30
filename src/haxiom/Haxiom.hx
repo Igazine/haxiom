@@ -369,7 +369,7 @@ class Haxiom {
 				var maxIdx = idx > idx2 ? idx : idx2;
 				clean = filename.substring(maxIdx + 1);
 			}
-			var dotIdx = clean.indexOf(".");
+			var dotIdx = clean.lastIndexOf(".");
 			if (dotIdx != -1) {
 				fileBaseName = clean.substring(0, dotIdx);
 			} else {
@@ -1065,8 +1065,6 @@ class Haxiom {
 					break;
 				}
 			}
-		} else {
-			mainClass = mainClasses[0];
 		}
 
 		if (mainClass == null)

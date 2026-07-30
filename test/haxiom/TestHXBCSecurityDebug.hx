@@ -217,6 +217,7 @@ class TestHXBCSecurityDebug {
             }
         ";
 
+        engine.currentFilename = "AutoMainDemo.hx";
         engine.interpret(script);
 
         var clsVal = engine.getGlobal("AutoMainDemo");
@@ -228,6 +229,7 @@ class TestHXBCSecurityDebug {
         // Test AST mode as well
         var engineAST = new Haxiom();
         engineAST.useVM = false;
+        engineAST.currentFilename = "AutoMainDemo.hx";
         engineAST.interpret(script);
 
         var clsValAST = engineAST.getGlobal("AutoMainDemo");
@@ -374,6 +376,45 @@ class TestHXBCSecurityDebug {
             throw "Incorrectly executed Basic.main under override AnotherClass";
         }
 
+        // Test 3: A source string without a script name has no implicit entry point
+        for (useVM in [false, true]) {
+            var unnamedEngine = new Haxiom();
+            unnamedEngine.enableDCE = false;
+            unnamedEngine.useVM = useVM;
+            unnamedEngine.interpret(script);
+            assertMainRouting(unnamedEngine, false, false, 'unnamed ${useVM ? "VM" : "AST"} source');
+        }
+
+        // Test 4: Entry-point selection survives both serialized representations
+        var astCompiler = new Haxiom();
+        astCompiler.useVM = false;
+        var astBytes = astCompiler.compileToASTBytes(script, "Basic.hx");
+        var astRuntime = new Haxiom();
+        astRuntime.useVM = false;
+        astRuntime.executeASTBytes(astBytes);
+        assertMainRouting(astRuntime, true, false, "AST bytes");
+
+        for (compress in [false, true]) {
+            var bytecodeCompiler = new Haxiom();
+            bytecodeCompiler.useVM = true;
+            var bytecodeBytes = bytecodeCompiler.compileToBytecodeBytes(script, "Basic.hx", null, false, compress);
+            var bytecodeRuntime = new Haxiom();
+            bytecodeRuntime.useVM = true;
+            bytecodeRuntime.executeBytecodeBytes(bytecodeBytes);
+            assertMainRouting(bytecodeRuntime, true, false, compress ? "compressed HXBC" : "raw HXBC");
+        }
+
         trace("SUCCESS: Main class routing verified.");
+    }
+
+    static function assertMainRouting(engine:Haxiom, basicRan:Bool, anotherRan:Bool, context:String) {
+        var basicClass = engine.getGlobal("Basic");
+        var anotherClass = engine.getGlobal("AnotherClass");
+        if (engine.resolveField(basicClass, "ran") != basicRan) {
+            throw 'Basic.main routing mismatch for $context';
+        }
+        if (engine.resolveField(anotherClass, "ran") != anotherRan) {
+            throw 'AnotherClass.main routing mismatch for $context';
+        }
     }
 }

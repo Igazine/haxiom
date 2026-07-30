@@ -81,7 +81,7 @@ class InternalTests {
 				}
 			}
 		";
-		var ast72 = bcLoaderEngine.compile(script72);
+		var ast72 = bcLoaderEngine.compile(script72, "Main.hx");
 		var chunk72 = BytecodeCompiler.compile(ast72);
 		var chunkBytes = chunk72.getBytes();
 		var deserializedChunk = VM.BytecodeChunk.fromBytes(chunkBytes);
