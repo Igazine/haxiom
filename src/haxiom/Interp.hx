@@ -411,7 +411,7 @@ class Interp {
 
 	private var callStack:Array<{method:String, pos:Pos}> = [];
 	private var activeVMCallFrames:Dynamic = null;
-	private var currentFilename:String = null;
+	private var activeSourceLabel:String = null;
 	private var onRuntimeError:Null<ScriptException->Void> = null;
 
 	private function getCallerInfo():Null<ScriptStackFrame> {
@@ -423,7 +423,7 @@ class Interp {
 				var fullMethod:String = chunk != null
 					&& chunk.name != null ? chunk.name : (frame.methodName != null ? frame.methodName : "anonymous");
 				var fileName:String = chunk != null
-					&& chunk.scriptName != null ? chunk.scriptName : (currentFilename != null ? currentFilename : "script");
+					&& chunk.scriptName != null ? chunk.scriptName : (activeSourceLabel != null ? activeSourceLabel : "script");
 				var clsName:String = "";
 				var mName:String = fullMethod;
 				var dotIdx = fullMethod.lastIndexOf(".");
@@ -454,7 +454,7 @@ class Interp {
 			var topFrame = callStack[callStack.length - 1];
 			var fullMethod = topFrame.method != null ? topFrame.method : "anonymous";
 			var framePos = (lastEvalPos != null) ? lastEvalPos : topFrame.pos;
-			var fileName = (framePos != null && framePos.file != null) ? framePos.file : (currentFilename != null ? currentFilename : "script");
+			var fileName = (framePos != null && framePos.file != null) ? framePos.file : (activeSourceLabel != null ? activeSourceLabel : "script");
 			var clsName:String = "";
 			var mName:String = fullMethod;
 			var dotIdx = fullMethod.lastIndexOf(".");
@@ -1021,6 +1021,19 @@ class Interp {
 	}
 
 	private function execute(expr:Expr):Dynamic {
+		var previousSourceLabel = activeSourceLabel;
+		activeSourceLabel = expr != null && expr.pos != null ? expr.pos.file : null;
+		try {
+			var result = executeInternal(expr);
+			activeSourceLabel = previousSourceLabel;
+			return result;
+		} catch (e:Dynamic) {
+			activeSourceLabel = previousSourceLabel;
+			throw e;
+		}
+	}
+
+	private function executeInternal(expr:Expr):Dynamic {
 		if (disposed || state == DISPOSED) {
 			throw "Cannot execute on disposed Haxiom engine instance";
 		}
@@ -1100,6 +1113,19 @@ class Interp {
 	}
 
 	private function executeChunk(chunk:haxiom.VM.BytecodeChunk):Dynamic {
+		var previousSourceLabel = activeSourceLabel;
+		activeSourceLabel = chunk.scriptName;
+		try {
+			var result = executeChunkInternal(chunk);
+			activeSourceLabel = previousSourceLabel;
+			return result;
+		} catch (e:Dynamic) {
+			activeSourceLabel = previousSourceLabel;
+			throw e;
+		}
+	}
+
+	private function executeChunkInternal(chunk:haxiom.VM.BytecodeChunk):Dynamic {
 		if (disposed || state == DISPOSED) {
 			throw "Cannot execute on disposed Haxiom engine instance";
 		}
@@ -4984,7 +5010,13 @@ class Interp {
 				if (Std.isOfType(e, ScriptException)) {
 					se = cast e;
 				} else {
-					se = new ScriptException(e, callStack.copy(), "Runtime Error: " + Std.string(e), 1, 1, className + "." + method.name);
+					var errPos = lastEvalPos != null ? lastEvalPos : (method.body != null ? method.body.pos : null);
+					var errFile = errPos != null && errPos.file != null ? errPos.file : (activeSourceLabel != null ? activeSourceLabel : "script");
+					var errLine = errPos != null ? errPos.line : 1;
+					var errCol = errPos != null ? errPos.col : 1;
+					var formatted = 'Runtime Error: ${Std.string(e)} at $errFile:$errLine:$errCol'
+						+ '\n    at $className.${method.name} ($errFile:$errLine:$errCol)';
+					se = new ScriptException(e, callStack.copy(), formatted, errLine, errCol, errFile);
 				}
 
 				haltNamespace(className);

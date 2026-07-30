@@ -54,29 +54,27 @@ class TestExterns {
 		for (useVM in [false, true]) {
 			var engine = externConstructorEngine();
 			engine.useVM = useVM;
-			engine.currentFilename = "Main.hx";
-			assertExternConstructor(useVM ? "VM interpret" : "AST interpret", engine.interpret(source));
+			assertExternConstructor(useVM ? "VM interpret" : "AST interpret", engine.interpret(source, new ScriptContext("Main")));
 		}
 
 		var astEngine = externConstructorEngine();
-		var astBytes = astEngine.compileToASTBytes(source, "Main.hx");
+		var astBytes = astEngine.compileToASTBytes(source, new ScriptContext("Main"));
 		assertExternConstructor("AST bytes", astEngine.executeASTBytes(astBytes, source));
 
 		for (compress in [false, true]) {
 			var bytecodeEngine = externConstructorEngine();
-			var bytecode = bytecodeEngine.compileToBytecodeBytes(source, "Main.hx", null, false, compress);
+			var bytecode = bytecodeEngine.compileToBytecodeBytes(source, new ScriptContext("Main"), null, false, compress);
 			assertExternConstructor(compress ? "compressed HXBC" : "HXBC", bytecodeEngine.executeBytecodeBytes(bytecode, source));
 		}
 
 		var staticEngine = externConstructorEngine();
-		staticEngine.currentFilename = "Main.hx";
-		assertExternConstructor("static checking", staticEngine.interpret(source, null, true));
+		assertExternConstructor("static checking", staticEngine.interpret(source, new ScriptContext("Main", null, null, true)));
 
 		var invalidSource = StringTools.replace(source, "new ExternConstructible(40)", 'new ExternConstructible("invalid")');
 		var invalidRejected = false;
 		var invalidError:Null<String> = null;
 		try {
-			externConstructorEngine().interpret(invalidSource, null, true);
+			externConstructorEngine().interpret(invalidSource, new ScriptContext("Main", null, null, true));
 		} catch (e:Dynamic) {
 			invalidError = Std.string(e);
 			invalidRejected = invalidError.indexOf("new ExternConstructible argument 1") != -1;
@@ -100,7 +98,6 @@ class TestExterns {
 	static function testExternClassAST() {
 		var engine = new Haxiom();
 		engine.useVM = false;
-		engine.currentFilename = "Main.hx";
 		engine.registerClass("HostHelper", HostHelper);
 
 		var script = "
@@ -116,7 +113,7 @@ class TestExterns {
 			}
 		";
 
-		var res = engine.interpret(script);
+		var res = engine.interpret(script, new ScriptContext("Main"));
 		if (res != 84) {
 			throw 'testExternClassAST failed: expected 84, got $res';
 		}
@@ -125,7 +122,6 @@ class TestExterns {
 	static function testExternClassVM() {
 		var engine = new Haxiom();
 		engine.useVM = true;
-		engine.currentFilename = "Main.hx";
 		engine.registerClass("HostHelper", HostHelper);
 
 		var script = "
@@ -141,7 +137,7 @@ class TestExterns {
 			}
 		";
 
-		var res = engine.interpret(script);
+		var res = engine.interpret(script, new ScriptContext("Main"));
 		if (res != 126) {
 			throw 'testExternClassVM failed: expected 126, got $res';
 		}
@@ -150,7 +146,6 @@ class TestExterns {
 	static function testClassLevelExternMember() {
 		var engine = new Haxiom();
 		engine.useVM = true;
-		engine.currentFilename = "Main.hx";
 		engine.setGlobal("myHostFunc", function(val:Int):Int return val + 10);
 
 		var script = "
@@ -162,7 +157,7 @@ class TestExterns {
 			}
 		";
 
-		var res = engine.interpret(script);
+		var res = engine.interpret(script, new ScriptContext("Main"));
 		if (res != 60) {
 			throw 'testClassLevelExternMember failed: expected 60, got $res';
 		}
@@ -212,7 +207,6 @@ class TestExterns {
 	static function testUnboundHostExternError() {
 		var engine = new Haxiom();
 		engine.useVM = false;
-		engine.currentFilename = "Main.hx";
 
 		var script = "
 			extern class MissingHost {
@@ -228,7 +222,7 @@ class TestExterns {
 
 		var caught = false;
 		try {
-			engine.interpret(script);
+			engine.interpret(script, new ScriptContext("Main"));
 		} catch (e:ScriptException) {
 			if (e.message.indexOf("Unbound Host Extern") != -1) {
 				caught = true;
@@ -245,7 +239,6 @@ class TestExterns {
 
 	static function testStaticTypeCheckingWithExterns() {
 		var engine = new Haxiom();
-		engine.currentFilename = "Main.hx";
 		engine.registerClass("HostHelper", HostHelper);
 
 		var script = "
@@ -260,7 +253,7 @@ class TestExterns {
 			}
 		";
 
-		var res:Dynamic = engine.interpret(script, null, true);
+		var res:Dynamic = engine.interpret(script, new ScriptContext("Main", null, null, true));
 		if (res != 200) {
 			throw 'testStaticTypeCheckingWithExterns failed: expected 200, got $res';
 		}

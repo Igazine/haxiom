@@ -60,15 +60,26 @@ class Haxiom {
 		return Std.string(value.length) + ":" + value;
 	}
 
-	function makeAstCacheKey(source:String, ?filename:String, ?customPackage:String):String {
+	function makeAstCacheKey(source:String, ?context:ScriptContext):String {
 		var flags = [for (name in interp.preprocessorFlags.keys()) name + "=" + (interp.preprocessorFlags.get(name) == true ? "1" : "0")];
 		flags.sort(Reflect.compare);
 		return cachePart(source)
-			+ cachePart(filename != null ? filename : "script")
-			+ cachePart(customPackage)
-			+ cachePart(mainClassOverride)
+			+ cachePart(context != null ? context.name : null)
+			+ cachePart(resolveSourceLabel(context))
+			+ cachePart(context != null ? context.packageName : null)
+			+ cachePart(context != null && context.staticTypes == true ? "static=1" : "static=0")
 			+ cachePart(enableDCE ? "dce=1" : "dce=0")
 			+ cachePart(flags.join("|"));
+	}
+
+	static function resolveSourceLabel(?context:ScriptContext):String {
+		if (context != null) {
+			if (context.sourceLabel != null)
+				return context.sourceLabel;
+			if (context.name != null)
+				return context.name;
+		}
+		return "script";
 	}
 
 	/**
@@ -271,22 +282,6 @@ class Haxiom {
 		return interp.maxMemory = v;
 
 	/**
-	 * Override parameter to force main execution routing to a specific class name.
-	 */
-	public var mainClassOverride:String = null;
-
-	/**
-	 * Contextual filename representing the active script execution path (used for error stack traces).
-	 */
-	public var currentFilename(get, set):String;
-
-	inline function get_currentFilename()
-		return interp.currentFilename;
-
-	inline function set_currentFilename(v)
-		return interp.currentFilename = v;
-
-	/**
 	 * Identifies the active script caller (file, className, methodName, line, column)
 	 * during an active FFI host function call. Returns `null` if the call originated natively from host code
 	 * or if the engine is idle.
@@ -339,19 +334,21 @@ class Haxiom {
 	 * Tokenizes, parses, expands macros, and optimizes a raw script string into a compiled Haxiom AST expression.
 	 * 
 	 * @param source The script source code string to compile.
-	 * @param filename Optional filename path to associate with parsed symbols (used for error reporting).
+	 * @param context Optional logical identity and compilation settings for this script.
 	 * @return The optimized AST node root representation, or null if compilation failed.
 	 */
-	public function compile(source:String, ?filename:String, ?staticTypes:Bool = false, ?customPackage:String):haxiom.AST.Expr {
-		if (customPackage != null) {
-			if (!isValidNamespace(customPackage)) {
-				throw "Invalid custom package namespace format: " + customPackage;
+	public function compile(source:String, ?context:ScriptContext):haxiom.AST.Expr {
+		var packageName = context != null ? context.packageName : null;
+		var staticTypes = context != null && context.staticTypes == true;
+		if (packageName != null) {
+			if (!isValidNamespace(packageName)) {
+				throw "Invalid package namespace format: " + packageName;
 			}
-			interp.currentPackage = customPackage.split(".");
+			interp.currentPackage = packageName.split(".");
 		} else {
 			interp.currentPackage = [];
 		}
-		var cacheKey = makeAstCacheKey(source, filename, customPackage);
+		var cacheKey = makeAstCacheKey(source, context);
 		if (enableAstCache && astCache.exists(cacheKey)) {
 			var folded = astCache.get(cacheKey);
 			if (staticTypes || enableStaticTypes) {
@@ -359,30 +356,15 @@ class Haxiom {
 			}
 			return folded;
 		}
-		var fileInfo = filename != null ? filename : "script";
-		var fileBaseName:String = null;
-		if (filename != null && filename != "script") {
-			var idx = filename.lastIndexOf("/");
-			var idx2 = filename.lastIndexOf("\\");
-			var clean = filename;
-			if (idx != -1 || idx2 != -1) {
-				var maxIdx = idx > idx2 ? idx : idx2;
-				clean = filename.substring(maxIdx + 1);
-			}
-			var dotIdx = clean.lastIndexOf(".");
-			if (dotIdx != -1) {
-				fileBaseName = clean.substring(0, dotIdx);
-			} else {
-				fileBaseName = clean;
-			}
-		}
+		var fileInfo = resolveSourceLabel(context);
+		var scriptName = context != null ? context.name : null;
 		interp.lastSource = source;
 		try {
 			var lexer = new Lexer(source, fileInfo, interp.preprocessorFlags);
 			var tokens = lexer.tokenize();
 			var parser = new Parser(tokens, fileInfo);
 			var ast = parser.parse();
-			ast = appendMainCallIfPresent(ast, mainClassOverride != null ? mainClassOverride : fileBaseName);
+			ast = appendMainCallIfPresent(ast, scriptName);
 
 			// Pass 1: Scan and register macro definitions in interpreter scope
 			haxiom.MacroExpander.registerMacros(ast, interp);
@@ -442,15 +424,16 @@ class Haxiom {
 	 * Runs in VM mode if `useVM = true`, or AST evaluation mode if `useVM = false`.
 	 * 
 	 * @param ast The root AST node representation of the script to execute.
-	 * @param customPackage Optional custom package namespace to execute within.
+	 * @param context Optional package context to execute within.
 	 * @return The computed return value from script execution.
 	 */
-	public function execute<T>(ast:haxiom.AST.Expr, ?customPackage:String):T {
-		if (customPackage != null) {
-			if (!isValidNamespace(customPackage)) {
-				throw "Invalid custom package namespace format: " + customPackage;
+	public function execute<T>(ast:haxiom.AST.Expr, ?context:ScriptContext):T {
+		var packageName = context != null ? context.packageName : null;
+		if (packageName != null) {
+			if (!isValidNamespace(packageName)) {
+				throw "Invalid package namespace format: " + packageName;
 			}
-			interp.currentPackage = customPackage.split(".");
+			interp.currentPackage = packageName.split(".");
 		} else {
 			interp.currentPackage = [];
 		}
@@ -462,16 +445,15 @@ class Haxiom {
 	 * Compiles, parses, and evaluates a raw script string and returns the execution result.
 	 * 
 	 * @param source The raw script source code string to interpret.
+	 * @param context Optional logical identity and compilation settings for this script.
 	 * @param onDone Optional callback invoked with the execution result upon success.
-	 * @param staticTypes Enable compile-time static type checking.
-	 * @param customPackage Optional custom package namespace to isolate classes compiled/executed.
 	 * @return The computed execution result.
 	 */
-	public function interpret<T>(source:String, ?onDone:T->Void, ?staticTypes:Bool = false, ?customPackage:String):T {
-		var ast = compile(source, currentFilename, staticTypes, customPackage);
+	public function interpret<T>(source:String, ?context:ScriptContext, ?onDone:T->Void):T {
+		var ast = compile(source, context);
 		if (ast == null)
 			return null;
-		var result:T = execute(ast, customPackage);
+		var result:T = execute(ast, context);
 		if (onDone != null)
 			onDone(result);
 		return result;
@@ -482,16 +464,16 @@ class Haxiom {
 	 * Depending on `useVM`, generates either AST bytes or VM bytecode bytes.
 	 * 
 	 * @param source The script source code string.
-	 * @param filename Optional filename path parameter.
+	 * @param context Optional logical identity and compilation settings for this script.
 	 * @param key Optional encryption key to obfuscate/secure the bytecode payload (VM mode only).
 	 * @param debugMode If true, embeds variable symbol lifespan tables and positions (VM mode only).
 	 * @return The serialized binary bytes representing the compiled output.
 	 */
-	public function compileToBytes(source:String, ?filename:String, ?key:HXBCKey, ?debugMode:Bool = false):haxe.io.Bytes {
+	public function compileToBytes(source:String, ?context:ScriptContext, ?key:HXBCKey, ?debugMode:Bool = false):haxe.io.Bytes {
 		if (useVM) {
-			return compileToBytecodeBytes(source, filename, key, debugMode);
+			return compileToBytecodeBytes(source, context, key, debugMode);
 		}
-		return compileToASTBytes(source, filename);
+		return compileToASTBytes(source, context);
 	}
 
 	/**
@@ -514,16 +496,16 @@ class Haxiom {
 	 * Compiles and serializes a script into AST-based binary bytes.
 	 * 
 	 * @param source The script source code string.
-	 * @param filename Optional filename path context.
+	 * @param context Optional logical identity and compilation settings for this script.
 	 * @return Serialized AST bytes.
 	 */
-	public function compileToASTBytes(source:String, ?filename:String):haxe.io.Bytes {
+	public function compileToASTBytes(source:String, ?context:ScriptContext):haxe.io.Bytes {
 		var prevDCE = enableDCE;
 		var prevCache = enableAstCache;
 		enableDCE = false;
 		enableAstCache = false;
 		var ast = try {
-			compile(source, filename);
+			compile(source, context);
 		} catch (e:Dynamic) {
 			enableDCE = prevDCE;
 			enableAstCache = prevCache;
@@ -687,12 +669,12 @@ class Haxiom {
 	 * Compiles and serializes a script into VM bytecode bytes (HXBC format).
 	 * 
 	 * @param source The script source code string.
-	 * @param filename Optional filename path context.
+	 * @param context Optional logical identity and compilation settings for this script.
 	 * @param key Optional encryption key to obfuscate/secure the bytecode payload.
 	 * @param debugMode If true, embeds debug symbols for local variables and positions.
 	 * @return Serialized HXBC VM bytecode bytes.
 	 */
-	public function compileToBytecodeBytes(source:String, ?filename:String, ?key:HXBCKey, ?debugMode:Bool = false, ?compress:Bool = false):haxe.io.Bytes {
+	public function compileToBytecodeBytes(source:String, ?context:ScriptContext, ?key:HXBCKey, ?debugMode:Bool = false, ?compress:Bool = false):haxe.io.Bytes {
 		// In debug mode, disable DCE and the AST cache so all local variables are preserved
 		// for debug symbol capture. The DCE'd (release) AST must not bleed through the cache.
 		var prevDCE = enableDCE;
@@ -702,7 +684,7 @@ class Haxiom {
 			enableAstCache = false;
 		}
 		var ast = try {
-			compile(source, filename);
+			compile(source, context);
 		} catch (e:Dynamic) {
 			enableDCE = prevDCE;
 			enableAstCache = prevCache;
@@ -712,7 +694,7 @@ class Haxiom {
 		enableAstCache = prevCache;
 		if (ast == null)
 			return null;
-		var chunk = BytecodeCompiler.compile(ast, null, true, false, debugMode, null, interp, filename);
+		var chunk = BytecodeCompiler.compile(ast, null, true, false, debugMode, null, interp, resolveSourceLabel(context));
 		return Serializer.serializeBytecode(chunk, key, compress);
 	}
 
@@ -720,16 +702,17 @@ class Haxiom {
 	 * Compiles and serializes an existing AST expression tree directly into VM bytecode bytes.
 	 * 
 	 * @param ast The root AST node representation of the script.
+	 * @param context Optional logical identity and compilation settings for this script.
 	 * @param key Optional encryption key to obfuscate/secure the bytecode payload.
 	 * @param debugMode If true, embeds debug symbols for local variables and positions.
 	 * @param compress If true, applies LZ4 compression to the serialized bytecode payload.
-	 * @param scriptName Optional script filename metadata for diagnostics after bytecode deserialization.
 	 * @return Serialized HXBC VM bytecode bytes.
 	 */
-	public function compileASTToBytecodeBytes(ast:haxiom.AST.Expr, ?key:HXBCKey, ?debugMode:Bool = false, ?compress:Bool = false, ?scriptName:String):haxe.io.Bytes {
+	public function compileASTToBytecodeBytes(ast:haxiom.AST.Expr, ?context:ScriptContext, ?key:HXBCKey, ?debugMode:Bool = false,
+			?compress:Bool = false):haxe.io.Bytes {
 		if (ast == null)
 			return null;
-		var chunk = BytecodeCompiler.compile(ast, null, true, false, debugMode, null, interp, scriptName);
+		var chunk = BytecodeCompiler.compile(ast, null, true, false, debugMode, null, interp, resolveSourceLabel(context));
 		return Serializer.serializeBytecode(chunk, key, compress);
 	}
 

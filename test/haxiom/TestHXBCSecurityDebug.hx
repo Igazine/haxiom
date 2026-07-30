@@ -17,6 +17,7 @@ class TestHXBCSecurityDebug {
         testNativeClassCasting();
         testClassRedefinitionBlockage();
         testMainClassRouting();
+        testScriptContextSourceLabelFallback();
         
         trace("SUCCESS: All HXBC Security and Debug Symbols tests passed!");
     }
@@ -34,7 +35,7 @@ class TestHXBCSecurityDebug {
         var key:HXBCKey = "my_secret_encryption_salt_123";
 
         // Compile with key
-        var bytes = engine.compileToBytecodeBytes(script, "test_file", key);
+        var bytes = engine.compileToBytecodeBytes(script, new ScriptContext(null, "test_file"), key);
         if (bytes == null) throw "Failed to compile bytecode with key";
 
         // 1. Run with correct key
@@ -67,7 +68,7 @@ class TestHXBCSecurityDebug {
         if (!caughtNoKey) throw "Expected error for missing encryption key";
 
         // 4. Compile without key, try to run with key
-        var plainBytes = engine.compileToBytecodeBytes(script, "test_file", null);
+        var plainBytes = engine.compileToBytecodeBytes(script, new ScriptContext(null, "test_file"), null);
         var caughtKeyOnPlain = false;
         try {
             engine2.executeBytecodeBytes(plainBytes, script, key);
@@ -102,7 +103,7 @@ class TestHXBCSecurityDebug {
         var targetHex = bytesToHex(Bytes.ofString(targetStr));
 
         // 1. Compile plain bytecode (no key)
-        var plainBytes = engine.compileToBytecodeBytes(script, "test_file", null);
+        var plainBytes = engine.compileToBytecodeBytes(script, new ScriptContext(null, "test_file"), null);
         var plainHex = bytesToHex(plainBytes);
         // Since it's plain serialization, the string constants (including the variable name) should be visible in the hex representation
         if (plainHex.indexOf(targetHex) == -1) {
@@ -111,7 +112,7 @@ class TestHXBCSecurityDebug {
 
         // 2. Compile encrypted bytecode (with key)
         var key:HXBCKey = "obfuscation_key";
-        var encBytes = engine.compileToBytecodeBytes(script, "test_file", key);
+        var encBytes = engine.compileToBytecodeBytes(script, new ScriptContext(null, "test_file"), key);
         var encHex = bytesToHex(encBytes);
         // The strings should be completely scrambled and invisible
         if (encHex.indexOf(targetHex) != -1) {
@@ -136,7 +137,7 @@ class TestHXBCSecurityDebug {
         ";
 
         // 1. Compile without debug symbols, check no local state is dumped
-        var releaseBytes = engine.compileToBytecodeBytes(script, "test_file", null, false);
+        var releaseBytes = engine.compileToBytecodeBytes(script, new ScriptContext(null, "test_file"), null, false);
         var caughtRelease = false;
         try {
             engine.executeBytecodeBytes(releaseBytes, script);
@@ -151,7 +152,7 @@ class TestHXBCSecurityDebug {
         if (!caughtRelease) throw "Expected exception to be thrown by release bytecode";
 
         // 2. Compile with debug symbols, check local state is present and formatted
-        var debugBytes = engine.compileToBytecodeBytes(script, "test_file", null, true);
+        var debugBytes = engine.compileToBytecodeBytes(script, new ScriptContext(null, "test_file"), null, true);
         var caughtDebug = false;
         try {
             engine.executeBytecodeBytes(debugBytes, script);
@@ -217,8 +218,7 @@ class TestHXBCSecurityDebug {
             }
         ";
 
-        engine.currentFilename = "AutoMainDemo.hx";
-        engine.interpret(script);
+        engine.interpret(script, new ScriptContext("AutoMainDemo"));
 
         var clsVal = engine.getGlobal("AutoMainDemo");
         var ranVal = engine.resolveField(clsVal, "ran");
@@ -229,8 +229,7 @@ class TestHXBCSecurityDebug {
         // Test AST mode as well
         var engineAST = new Haxiom();
         engineAST.useVM = false;
-        engineAST.currentFilename = "AutoMainDemo.hx";
-        engineAST.interpret(script);
+        engineAST.interpret(script, new ScriptContext("AutoMainDemo"));
 
         var clsValAST = engineAST.getGlobal("AutoMainDemo");
         var ranValAST = engineAST.resolveField(clsValAST, "ran");
@@ -348,8 +347,7 @@ class TestHXBCSecurityDebug {
         // Test 1: Prioritize Basic based on filename matching "Basic.hx"
         var engine1 = new Haxiom();
         engine1.useVM = true;
-        engine1.currentFilename = "Basic.hx";
-        engine1.interpret(script);
+        engine1.interpret(script, new ScriptContext("Basic", "Basic.hx"));
         
         var clsAnother1 = engine1.getGlobal("AnotherClass");
         var clsBasic1 = engine1.getGlobal("Basic");
@@ -363,9 +361,7 @@ class TestHXBCSecurityDebug {
         // Test 2: Prioritize AnotherClass based on override flag
         var engine2 = new Haxiom();
         engine2.useVM = true;
-        engine2.mainClassOverride = "AnotherClass";
-        engine2.currentFilename = "Basic.hx";
-        engine2.interpret(script);
+        engine2.interpret(script, new ScriptContext("AnotherClass", "Basic.hx"));
 
         var clsAnother2 = engine2.getGlobal("AnotherClass");
         var clsBasic2 = engine2.getGlobal("Basic");
@@ -388,7 +384,7 @@ class TestHXBCSecurityDebug {
         // Test 4: Entry-point selection survives both serialized representations
         var astCompiler = new Haxiom();
         astCompiler.useVM = false;
-        var astBytes = astCompiler.compileToASTBytes(script, "Basic.hx");
+        var astBytes = astCompiler.compileToASTBytes(script, new ScriptContext("Basic", "Basic.hx"));
         var astRuntime = new Haxiom();
         astRuntime.useVM = false;
         astRuntime.executeASTBytes(astBytes);
@@ -397,7 +393,7 @@ class TestHXBCSecurityDebug {
         for (compress in [false, true]) {
             var bytecodeCompiler = new Haxiom();
             bytecodeCompiler.useVM = true;
-            var bytecodeBytes = bytecodeCompiler.compileToBytecodeBytes(script, "Basic.hx", null, false, compress);
+            var bytecodeBytes = bytecodeCompiler.compileToBytecodeBytes(script, new ScriptContext("Basic", "Basic.hx"), null, false, compress);
             var bytecodeRuntime = new Haxiom();
             bytecodeRuntime.useVM = true;
             bytecodeRuntime.executeBytecodeBytes(bytecodeBytes);
@@ -416,5 +412,52 @@ class TestHXBCSecurityDebug {
         if (engine.resolveField(anotherClass, "ran") != anotherRan) {
             throw 'AnotherClass.main routing mismatch for $context';
         }
+    }
+
+    static function testScriptContextSourceLabelFallback() {
+        var script = '
+            class ContextNameOnly {
+                static public function main() {
+                    throw "context-label-fallback";
+                }
+            }
+        ';
+        var context = new ScriptContext("ContextNameOnly");
+
+        for (useVM in [false, true]) {
+            var engine = new Haxiom();
+            engine.useVM = useVM;
+            assertContextLabel(() -> engine.interpret(script, context), useVM ? "VM interpret" : "AST interpret");
+        }
+
+        var astCompiler = new Haxiom();
+        astCompiler.useVM = false;
+        var astBytes = astCompiler.compileToASTBytes(script, context);
+        var astRuntime = new Haxiom();
+        astRuntime.useVM = false;
+        assertContextLabel(() -> astRuntime.executeASTBytes(astBytes, script), "AST bytes");
+
+        for (compress in [false, true]) {
+            var bytecode = new Haxiom().compileToBytecodeBytes(script, context, null, false, compress);
+            assertContextLabel(() -> new Haxiom().executeBytecodeBytes(bytecode, script),
+                compress ? "compressed HXBC" : "raw HXBC");
+        }
+
+        trace("SUCCESS: ScriptContext source-label fallback verified.");
+    }
+
+    static function assertContextLabel(run:Void->Void, path:String) {
+        try {
+            run();
+        } catch (e:ScriptException) {
+            if (e.file != "ContextNameOnly") {
+                throw 'ScriptContext name fallback failed via $path: ${e.file}';
+            }
+            if (e.formattedStackTrace.indexOf("ContextNameOnly") == -1) {
+                throw 'ScriptContext name fallback missing from stack trace via $path';
+            }
+            return;
+        }
+        throw 'Expected ScriptContext fallback error via $path';
     }
 }

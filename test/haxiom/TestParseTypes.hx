@@ -1,4 +1,5 @@
 import haxiom.Haxiom;
+import haxiom.ScriptContext;
 import sys.io.File;
 
 class TestParseTypes {
@@ -6,7 +7,7 @@ class TestParseTypes {
         var engine = new Haxiom();
         try {
             var content = File.getContent("test/haxiom/openfl/scripts/Types.hx");
-            var ast = engine.compile(content, "test/haxiom/openfl/scripts/Types.hx");
+            var ast = engine.compile(content, new ScriptContext("Types", "test/haxiom/openfl/scripts/Types.hx"));
             trace("Parsed successfully!");
         } catch (e:Dynamic) {
             trace("Parsing failed: " + Std.string(e));

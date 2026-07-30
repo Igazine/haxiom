@@ -72,7 +72,7 @@ class TestCallerIdentification {
 			throw "Test 3b Failed: Expected currentCaller to reset to null after VM execution";
 		}
 
-		// Test 4: Serialized bytecode preserves caller filename without source/currentFilename side channels.
+		// Test 4: Serialized bytecode preserves its source label without execution-time side channels.
 		var compileEngine = new Haxiom();
 		var bytecodeScript = '
             class BytecodeCaller {
@@ -81,7 +81,8 @@ class TestCallerIdentification {
                 }
             }
         ';
-		var bytecodeBytes = compileEngine.compileToBytecodeBytes(bytecodeScript, "BytecodeCaller.hx", null, true);
+		var bytecodeBytes = compileEngine.compileToBytecodeBytes(bytecodeScript,
+			new ScriptContext("BytecodeCaller", "BytecodeCaller.hx"), null, true);
 
 		var bytecodeEngine = new Haxiom();
 		bytecodeEngine.useVM = true;
@@ -110,7 +111,8 @@ class TestCallerIdentification {
                 }
             }
         ';
-		var releaseErrorBytes = compileEngine.compileToBytecodeBytes(releaseErrorScript, "ReleaseBytecodeError.hx", null, false);
+		var releaseErrorBytes = compileEngine.compileToBytecodeBytes(releaseErrorScript,
+			new ScriptContext("ReleaseBytecodeError", "ReleaseBytecodeError.hx"), null, false);
 		var caughtReleaseError = false;
 		try {
 			new Haxiom().executeBytecodeBytes(releaseErrorBytes);

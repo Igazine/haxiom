@@ -59,6 +59,7 @@ Include Haxiom in your project build file (`build.hxml` or `project.xml`):
 
 ```haxe
 import haxiom.Haxiom;
+import haxiom.ScriptContext;
 
 class Main {
     static function main() {
@@ -66,10 +67,14 @@ class Main {
         engine.useVM = true; // Use the high-performance Bytecode VM
         
         var result:Float = engine.interpret("
-            var total = 0.0;
-            for (item in [10.5, 20.0, 30.25]) total += item;
-            total;
-        ");
+            class GuestScript {
+                static public function main() {
+                    var total = 0.0;
+                    for (item in [10.5, 20.0, 30.25]) total += item;
+                    return total;
+                }
+            }
+        ", new ScriptContext("GuestScript"));
         
         trace('Result: $result'); // Result: 60.75
     }
@@ -80,6 +85,7 @@ class Main {
 
 ```haxe
 import haxiom.Haxiom;
+import haxiom.ScriptContext;
 
 class Main {
     static function main() {
@@ -92,11 +98,20 @@ class Main {
         });
         
         engine.interpret("
-            logMessage('Guest script running with host value: ' + hostValue);
-        ");
+            class HostBridge {
+                static public function main() {
+                    logMessage('Guest script running with host value: ' + hostValue);
+                }
+            }
+        ", new ScriptContext("HostBridge", "embedded/HostBridge.hx"));
     }
 }
 ```
+
+`ScriptContext.name` is the logical module name and is required for automatic
+`main()` execution. `sourceLabel` is optional diagnostic metadata; when omitted,
+errors and stack traces use `name`. Source without a context remains an unnamed
+snippet and does not receive an implicit entry-point call.
 
 ---
 

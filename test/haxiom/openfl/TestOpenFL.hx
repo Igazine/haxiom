@@ -20,6 +20,7 @@ import feathers.style.Theme;
 import haxe.Timer;
 import haxe.io.Bytes;
 import haxiom.Haxiom;
+import haxiom.ScriptContext;
 import openfl.events.Event;
 
 class TestOpenFL extends Application {
@@ -203,8 +204,9 @@ class TestOpenFL extends Application {
 			if (scriptArea.currentScript.isBytecode) {
 				haxiom.executeBytecodeBytes(scriptArea.currentScriptContent);
 			} else {
-				haxiom.currentFilename = scriptArea.currentScript.id;
-				haxiom.interpret(scriptArea.currentScriptContent.toString());
+				var sourceLabel = scriptArea.currentScript.id;
+				var scriptName = StringTools.endsWith(sourceLabel, ".hx") ? sourceLabel.substr(0, sourceLabel.length - 3) : sourceLabel;
+				haxiom.interpret(scriptArea.currentScriptContent.toString(), new ScriptContext(scriptName, sourceLabel));
 			}
 		} catch (err:Dynamic) {
 			trace("SCRIPT EXCEPTION ERROR: " + err);

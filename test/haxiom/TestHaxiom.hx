@@ -674,8 +674,8 @@ class TestHaxiom {
             var b = new BigData();
             b.computeSum();
         ';
-		var rawBytes = hLz4.compileToBytecodeBytes(script23g, "test23g", null, false, false);
-		var compressedBytes = hLz4.compileToBytecodeBytes(script23g, "test23g", null, false, true);
+		var rawBytes = hLz4.compileToBytecodeBytes(script23g, new ScriptContext("test23g"), null, false, false);
+		var compressedBytes = hLz4.compileToBytecodeBytes(script23g, new ScriptContext("test23g"), null, false, true);
 		if (compressedBytes.length >= rawBytes.length) {
 			throw 'LZ4 compression failed to reduce payload size (${compressedBytes.length} >= ${rawBytes.length})';
 		}
@@ -701,7 +701,7 @@ class TestHaxiom {
             }
             var p = new Player("Hero");
         ';
-		var inspectBytes = hInspect.compileToBytecodeBytes(script23h, "TestInspect.hx", null, true, true);
+		var inspectBytes = hInspect.compileToBytecodeBytes(script23h, new ScriptContext("TestInspect", "TestInspect.hx"), null, true, true);
 		var info = Haxiom.inspectBytecode(inspectBytes);
 		if (info.status != "VALID") {
 			throw "inspectBytecode status failed: " + info.status + " - " + info.error;
@@ -763,7 +763,7 @@ class TestHaxiom {
                 demo.textAsset + "|" + demo.binAsset.length;
             ';
 			trace("23i Step 1: compileToBytecodeBytes");
-			var compiledResBytes = hRes.compileToBytecodeBytes(script23i, "TestResource.hx", null, true, true);
+			var compiledResBytes = hRes.compileToBytecodeBytes(script23i, new ScriptContext("TestResource", "TestResource.hx"), null, true, true);
 			trace("23i Step 2: inspectBytecode");
 			var resInfo = Haxiom.inspectBytecode(compiledResBytes);
 			var foundBinResource = false;
@@ -794,7 +794,7 @@ class TestHaxiom {
 			// Validation 1: Explicit initializer check
 			try {
 				var badScript1 = '@:haxiom.resource("' + tmpResTextPath + '") var pic:String = "hello";';
-				hRes.compileToBytecodeBytes(badScript1, "Bad1.hx");
+				hRes.compileToBytecodeBytes(badScript1, new ScriptContext("Bad1", "Bad1.hx"));
 				throw "FAILURE: Explicit initializer on @:haxiom.resource should have thrown compile error";
 			} catch (e:Dynamic) {
 				var errStr = Std.string(e);
@@ -805,7 +805,7 @@ class TestHaxiom {
 
 			try {
 				var badScriptExact = '@:haxiom.resource("' + tmpResTextPath + '") var pic:String = "Haxiom Embedded Resource Content Hello World!";';
-				hRes.compileToBytecodeBytes(badScriptExact, "BadExact.hx");
+				hRes.compileToBytecodeBytes(badScriptExact, new ScriptContext("BadExact", "BadExact.hx"));
 				throw "FAILURE: Exact-content initializer on @:haxiom.resource should have thrown compile error";
 			} catch (e:Dynamic) {
 				var errStr = Std.string(e);
@@ -817,7 +817,7 @@ class TestHaxiom {
 			// Validation 2: Missing resource file check
 			try {
 				var badScript2 = '@:haxiom.resource("./non_existent_file_xyz_9999.png") var pic:String;';
-				hRes.compileToBytecodeBytes(badScript2, "Bad2.hx");
+				hRes.compileToBytecodeBytes(badScript2, new ScriptContext("Bad2", "Bad2.hx"));
 				throw "FAILURE: Missing resource file should have thrown compile error";
 			} catch (e:Dynamic) {
 				var errStr = Std.string(e);
@@ -1050,7 +1050,7 @@ class TestHaxiom {
                 return count;
             }
         ';
-		var ast = haxiom.compile(source28, "physics_tick.hx");
+		var ast = haxiom.compile(source28, new ScriptContext("physics_tick", "physics_tick.hx"));
 		haxiom.execute(ast); // Initial load
 		var runTick:Int = haxiom.interpret('tick();');
 		trace("tick 1: " + runTick);
@@ -1059,7 +1059,7 @@ class TestHaxiom {
 
 		// 29. Strongly Typed Generic Return Values & Callbacks
 		var callbackVal:String = null;
-		var name:String = haxiom.interpret("return 'Alice';", (val:String) -> {
+		var name:String = haxiom.interpret("return 'Alice';", null, (val:String) -> {
 			callbackVal = val;
 		});
 		trace("strongly typed name: " + name);
@@ -3049,7 +3049,7 @@ class TestHaxiom {
             throw 'Bytecode Explicit Error!';
         ";
 		var errCompileEngine = new haxiom.Haxiom();
-		var errBytes = errCompileEngine.compileToBytecodeBytes(script72_error, "error_bytecode.hx", null, true);
+		var errBytes = errCompileEngine.compileToBytecodeBytes(script72_error, new ScriptContext(null, "error_bytecode.hx"), null, true);
 
 		var errRunEngine = new haxiom.Haxiom();
 		errRunEngine.useVM = true;
@@ -3147,7 +3147,7 @@ class TestHaxiom {
 		errEngine73.useVM = true;
 		var errOccurred73 = false;
 		try {
-			var ast = errEngine73.compile(script73_error, "error_producer.hx");
+			var ast = errEngine73.compile(script73_error, new ScriptContext(null, "error_producer.hx"));
 			errEngine73.execute(ast);
 		} catch (e:haxiom.ScriptException) {
 			errOccurred73 = true;

@@ -47,13 +47,13 @@ class CompileExample {
 		engine.registerClass("haxiom.MockEvent", MockEvent);
 
 		// Compile without key (unencrypted)
-		var bytes1 = engine.compileToBytecodeBytes(script, "example1.hx", null, false);
+		var bytes1 = engine.compileToBytecodeBytes(script, new ScriptContext("example1", "example1.hx"), null, false);
 		trace("Saved example1.hxbc (" + bytes1.length + " bytes)");
 		engine.executeBytes(bytes1);
 
 		// Compile with 'this_is_my_secret' key (encrypted)
 		var key = new HXBCKey("this_is_my_secret");
-		var bytes2 = engine.compileToBytecodeBytes(script, "example2.hx", key, false);
+		var bytes2 = engine.compileToBytecodeBytes(script, new ScriptContext("example2", "example2.hx"), key, false);
 		trace("Saved example2.hxbc (" + bytes2.length + " bytes)");
 
 		var tempDir = "test/haxiom/tmp_compile_example_" + Std.int(haxe.Timer.stamp() * 1000000) + "_" + Std.random(1000000);

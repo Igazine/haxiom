@@ -635,7 +635,8 @@ class LibRun {
 			StaticTypeChecker.check(optimizedAst, haxiom.interp);
 		}
 
-		final bytes = haxiom.compileASTToBytecodeBytes(optimizedAst, key != null ? new HXBCKey(key) : null, false, compress, input);
+		final bytes = haxiom.compileASTToBytecodeBytes(optimizedAst, new ScriptContext(mainModuleName, input),
+			key != null ? new HXBCKey(key) : null, false, compress);
 
 		final output = haxe.io.Path.withoutExtension(input) + '.hxbc';
 		File.saveBytes(workingDir + output, bytes);

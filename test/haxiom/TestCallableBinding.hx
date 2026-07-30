@@ -6,24 +6,22 @@ class TestCallableBinding {
 	public static function runTests():Void {
 		assertResult("AST interpret", engine -> {
 			engine.useVM = false;
-			engine.currentFilename = "CallableBindingMain.hx";
-			return engine.interpret(source());
+			return engine.interpret(source(), new ScriptContext("CallableBindingMain"));
 		});
 		assertResult("VM interpret", engine -> {
 			engine.useVM = true;
-			engine.currentFilename = "CallableBindingMain.hx";
-			return engine.interpret(source());
+			return engine.interpret(source(), new ScriptContext("CallableBindingMain"));
 		});
 		assertResult("AST bytes", engine -> {
-			var bytes = engine.compileToASTBytes(source(), "CallableBindingMain.hx");
+			var bytes = engine.compileToASTBytes(source(), new ScriptContext("CallableBindingMain", "CallableBindingMain.hx"));
 			return engine.executeASTBytes(bytes, source());
 		});
 		assertResult("HXBC bytes", engine -> {
-			var bytes = engine.compileToBytecodeBytes(source(), "CallableBindingMain.hx", null, false, false);
+			var bytes = engine.compileToBytecodeBytes(source(), new ScriptContext("CallableBindingMain", "CallableBindingMain.hx"), null, false, false);
 			return engine.executeBytecodeBytes(bytes, source());
 		});
 		assertResult("compressed HXBC bytes", engine -> {
-			var bytes = engine.compileToBytecodeBytes(source(), "CallableBindingMain.hx", null, false, true);
+			var bytes = engine.compileToBytecodeBytes(source(), new ScriptContext("CallableBindingMain", "CallableBindingMain.hx"), null, false, true);
 			return engine.executeBytecodeBytes(bytes, source());
 		});
 

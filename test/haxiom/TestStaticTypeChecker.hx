@@ -1,7 +1,7 @@
 package haxiom;
 
 /**
- * TestStaticTypeChecker — verifies that Haxiom.compile(src, file, true) catches
+ * TestStaticTypeChecker — verifies that ScriptContext static checking catches
  * type-mismatch errors at compile time rather than runtime.
  * 
  * Tests cover:
@@ -28,7 +28,7 @@ class TestStaticTypeChecker {
         // Helper: expect the script to throw a CompileException when staticTypes=true
         function expectTypeError(label:String, src:String):Void {
             try {
-                haxiom.compile(src, label, true);
+                haxiom.compile(src, new ScriptContext(null, label, null, true));
                 trace('FAILURE: $label — expected CompileException but none was thrown');
                 failed++;
             } catch (e:haxiom.CompileException) {
@@ -43,7 +43,7 @@ class TestStaticTypeChecker {
         // Helper: expect the script to compile cleanly (no errors)
         function expectNoError(label:String, src:String):Void {
             try {
-                haxiom.compile(src, label, true);
+                haxiom.compile(src, new ScriptContext(null, label, null, true));
                 trace('SUCCESS: $label — compiled without errors');
                 passed++;
             } catch (e:Dynamic) {
@@ -350,7 +350,7 @@ class TestStaticTypeChecker {
         trace("--- Testing static checking is OFF by default ---");
         try {
             // This WOULD fail with staticTypes=true, but should succeed without it
-            haxiom.compile('var a:Array<Int> = [];\na.push("hello");', "default_check");
+            haxiom.compile('var a:Array<Int> = [];\na.push("hello");', new ScriptContext(null, "default_check"));
             trace("SUCCESS: Default compile (no staticTypes) passes with type errors — checking is opt-in");
             passed++;
         } catch (e:Dynamic) {

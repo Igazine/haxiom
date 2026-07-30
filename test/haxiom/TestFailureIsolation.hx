@@ -149,7 +149,7 @@ class TestFailureIsolation {
 			var demo = new VirtualResourceDemo();
 			demo.binAsset.length + "|" + demo.binAsset.get(0) + "|" + demo.binAsset.get(2) + "|" + demo.binAsset.get(3) + "|" + demo.binAsset.get(4) + "|" + demo.binAsset.get(5);
 		';
-		var virtualAstPayload = persistEngine.compileToASTBytes(virtualResourceScript, "virtual_ast_resource_test.hx");
+		var virtualAstPayload = persistEngine.compileToASTBytes(virtualResourceScript, new ScriptContext(null, "virtual_ast_resource_test.hx"));
 		if (virtualAstPayload == null)
 			throw "Failed to compile virtual AST resource script to bytes";
 		var virtualAstResult:String = new Haxiom().executeASTBytes(virtualAstPayload);
@@ -160,10 +160,12 @@ class TestFailureIsolation {
 		var badResourceInitializerScript = '@:haxiom.resource("virtual_text_payload.txt") var textAsset:String = "same content";';
 		var badAstResourceEngine = new Haxiom();
 		badAstResourceEngine.addResource("virtual_text_payload.txt", virtualTextBytes);
-		assertResourceInitializerRejected(() -> badAstResourceEngine.compileToASTBytes(badResourceInitializerScript, "bad_ast_resource_initializer.hx"), "AST resource initializer");
+		assertResourceInitializerRejected(() -> badAstResourceEngine.compileToASTBytes(badResourceInitializerScript,
+			new ScriptContext(null, "bad_ast_resource_initializer.hx")), "AST resource initializer");
 
 		var virtualBytecodeKey:HXBCKey = "virtual_binary_resource_key";
-		var virtualBytecodePayload = persistEngine.compileToBytecodeBytes(virtualResourceScript, "virtual_bytecode_resource_test.hx", virtualBytecodeKey, false, true);
+		var virtualBytecodePayload = persistEngine.compileToBytecodeBytes(virtualResourceScript,
+			new ScriptContext(null, "virtual_bytecode_resource_test.hx"), virtualBytecodeKey, false, true);
 		if (virtualBytecodePayload == null)
 			throw "Failed to compile virtual bytecode resource script to bytes";
 		var encryptedInfo = Haxiom.inspectBytecode(virtualBytecodePayload);
@@ -193,7 +195,8 @@ class TestFailureIsolation {
 
 		var badBytecodeResourceEngine = new Haxiom();
 		badBytecodeResourceEngine.addResource("virtual_text_payload.txt", virtualTextBytes);
-		assertResourceInitializerRejected(() -> badBytecodeResourceEngine.compileToBytecodeBytes(badResourceInitializerScript, "bad_bytecode_resource_initializer.hx"), "bytecode resource initializer");
+		assertResourceInitializerRejected(() -> badBytecodeResourceEngine.compileToBytecodeBytes(badResourceInitializerScript,
+			new ScriptContext(null, "bad_bytecode_resource_initializer.hx")), "bytecode resource initializer");
 
 		#if sys
 		var astResourcePath = "test/haxiom/tmp_ast_resource_" + Std.int(haxe.Timer.stamp() * 1000000) + "_" + Std.random(1000000) + ".bin";
@@ -213,7 +216,7 @@ class TestFailureIsolation {
 			var demo = new ResourceDemo();
 			demo.binAsset.length + "|" + demo.binAsset.get(3);
 		';
-		var astResourcePayload = persistEngine.compileToASTBytes(resourceScript, "ast_resource_test.hx");
+		var astResourcePayload = persistEngine.compileToASTBytes(resourceScript, new ScriptContext(null, "ast_resource_test.hx"));
 		if (astResourcePayload == null)
 			throw "Failed to compile AST resource script to bytes";
 		var astResourceResult:String = new Haxiom().executeASTBytes(astResourcePayload);
@@ -262,7 +265,7 @@ class TestFailureIsolation {
 			throw 'Bytecode Explicit Error!';
 		";
 		var errCompileEngine = new Haxiom();
-		var errBytes = errCompileEngine.compileToBytecodeBytes(scriptError, "error_bytecode.hx", null, true);
+		var errBytes = errCompileEngine.compileToBytecodeBytes(scriptError, new ScriptContext(null, "error_bytecode.hx"), null, true);
 		var errRunEngine = new Haxiom();
 		errRunEngine.useVM = true;
 		var persistErrorOccurred = false;
@@ -299,7 +302,7 @@ class TestFailureIsolation {
 
 		var compileFailed = false;
 		try {
-			engine.compileToBytecodeBytes("var broken = ;", "debug_bytecode_compile_failure.hx", null, true);
+			engine.compileToBytecodeBytes("var broken = ;", new ScriptContext(null, "debug_bytecode_compile_failure.hx"), null, true);
 		} catch (e:Dynamic) {
 			compileFailed = true;
 		}
@@ -320,7 +323,6 @@ class TestFailureIsolation {
 
 		var resourceEngine = new Haxiom();
 		resourceEngine.useVM = true;
-		resourceEngine.currentFilename = "VirtualResourceMain.hx";
 		resourceEngine.addResource("vm_virtual_payload.bin", virtualPayload);
 		var resourceScript = '
 			import haxe.io.Bytes;
@@ -332,13 +334,13 @@ class TestFailureIsolation {
 				}
 			}
 		';
-		var resourceResult:String = resourceEngine.interpret(resourceScript);
+		var resourceResult:String = resourceEngine.interpret(resourceScript,
+			new ScriptContext("VirtualResourceMain", "VirtualResourceMain.hx"));
 		if (resourceResult != "4|11|44")
 			throw "VM virtual resource context propagation failed: " + resourceResult;
 
 		var errorEngine = new Haxiom();
 		errorEngine.useVM = true;
-		errorEngine.currentFilename = "VmFilenameError.hx";
 		var errorScript = '
 			class VmFilenameError {
 				static public function main() {
@@ -348,13 +350,13 @@ class TestFailureIsolation {
 		';
 		var caught = false;
 		try {
-			errorEngine.interpret(errorScript);
+			errorEngine.interpret(errorScript, new ScriptContext("VmFilenameError", "VmFilenameError.hx"));
 		} catch (e:ScriptException) {
 			caught = true;
 			if (e.file != "VmFilenameError.hx")
-				throw 'VM currentFilename diagnostic propagation failed: ${e.file}';
+				throw 'VM ScriptContext diagnostic propagation failed: ${e.file}';
 			if (e.formattedStackTrace.indexOf("VmFilenameError.hx") == -1)
-				throw 'VM currentFilename formatted stack trace missing filename: ${e.formattedStackTrace}';
+				throw 'VM ScriptContext formatted stack trace missing source label: ${e.formattedStackTrace}';
 		}
 		if (!caught)
 			throw "Expected VM filename context error";

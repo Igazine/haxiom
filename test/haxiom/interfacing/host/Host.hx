@@ -16,7 +16,7 @@ class Host {
 		trace(plugin.calc(1, 2));
 
 		// 2. Test bytecode construction
-		var bytes = haxiom.compileToBytecodeBytes(source, "plugin/Plugin.hx");
+		var bytes = haxiom.compileToBytecodeBytes(source, new ScriptContext("Plugin", "plugin/Plugin.hx"));
 		if (!sys.FileSystem.exists("test/haxiom/interfacing/bin")) {
 			sys.FileSystem.createDirectory("test/haxiom/interfacing/bin");
 		}

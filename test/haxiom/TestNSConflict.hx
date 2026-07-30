@@ -107,8 +107,8 @@ class TestNSConflict {
         ";
 
         // Load both into different namespaces
-        engine.interpret(scriptA, null, false, "mod_a");
-        engine.interpret(scriptB, null, false, "mod_b");
+        engine.interpret(scriptA, new ScriptContext(null, null, "mod_a"));
+        engine.interpret(scriptB, new ScriptContext(null, null, "mod_b"));
 
         // Instantiate both dynamically at runtime
         var instA:Dynamic = engine.interpret("new mod_a.Main();");
@@ -167,7 +167,7 @@ class TestNSConflict {
             }
         ";
         
-        errorEngine.interpret(runtimeErrScript, null, false, "buggy_ns");
+        errorEngine.interpret(runtimeErrScript, new ScriptContext(null, null, "buggy_ns"));
         
         runtimeErrorCaught = false;
         var crashRes = errorEngine.interpret("buggy_ns.BuggyMod.doCrash();");

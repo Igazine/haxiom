@@ -48,7 +48,7 @@ class TestDCE {
 
         // Returns the number of top-level exprs in the compiled EBlock
         function blockLen(h:Haxiom, src:String):Int {
-            var ast = h.compile(src, "dce_test");
+            var ast = h.compile(src, new ScriptContext("dce_test"));
             switch (ast.def) {
                 case EBlock(exprs): return exprs.length;
                 default: return -1;
@@ -57,7 +57,7 @@ class TestDCE {
 
         // Returns byte size of compiled AST
         function byteSize(h:Haxiom, src:String):Int {
-            var ast = h.compile(src, "dce_test");
+            var ast = h.compile(src, new ScriptContext("dce_test"));
             var bytes = ast == null ? null : Serializer.serializeToBytes(ast);
             return bytes == null ? -1 : bytes.length;
         }
@@ -87,7 +87,7 @@ class TestDCE {
             f();
         ';
         // Get the function body block length after DCE
-        var ast1 = h.compile(src, "t1");
+        var ast1 = h.compile(src, new ScriptContext("t1"));
         // Find the function body and count its statements
         var fnBodyLen = -1;
         switch (ast1.def) {
@@ -117,7 +117,7 @@ class TestDCE {
                 var nope = 5;
             }
         ';
-        var ast2 = h2.compile(src2, "t2");
+        var ast2 = h2.compile(src2, new ScriptContext("t2"));
         var fnBodyLen2 = -1;
         switch (ast2.def) {
             case EBlock(exprs):
@@ -228,7 +228,7 @@ class TestDCE {
                 static public function main() { return 1; }
             }
         ';
-        var ast9 = h9.compile(src9, "t9");
+        var ast9 = h9.compile(src9, new ScriptContext("t9"));
         var methodCount = -1;
         switch (ast9.def) {
             case EBlock(exprs):
@@ -252,7 +252,7 @@ class TestDCE {
                 static public function main() {}
             }
         ';
-        var ast10 = h10.compile(src10, "t10");
+        var ast10 = h10.compile(src10, new ScriptContext("t10"));
         var mc10 = -1;
         switch (ast10.def) {
             case EBlock(exprs):
@@ -277,7 +277,7 @@ class TestDCE {
                 static public function main() { compute(); }
             }
         ';
-        var ast11 = h11.compile(src11, "Util");
+        var ast11 = h11.compile(src11, new ScriptContext("Util"));
         var mc11 = -1;
         switch (ast11.def) {
             case EBlock(exprs):
@@ -303,7 +303,7 @@ class TestDCE {
                 static public function main() { var w = new Widget(1); }
             }
         ';
-        var ast12 = h12.compile(src12, "Widget");
+        var ast12 = h12.compile(src12, new ScriptContext("Widget"));
         var mc12 = -1;
         switch (ast12.def) {
             case EBlock(exprs):
@@ -363,7 +363,7 @@ class TestDCE {
                 public function go() { return 1; }
             }
         ';
-        var ast15 = h15.compile(src15, "t15");
+        var ast15 = h15.compile(src15, new ScriptContext("t15"));
         var classCount15 = 0;
         switch (ast15.def) {
             case EBlock(exprs):
@@ -389,7 +389,7 @@ class TestDCE {
                 public function value() { return 99; }
             }
         ';
-        var ast16 = h16.compile(src16, "t16");
+        var ast16 = h16.compile(src16, new ScriptContext("t16"));
         var classCount16 = 0;
         switch (ast16.def) {
             case EBlock(exprs):
@@ -416,7 +416,7 @@ class TestDCE {
                 static public function main() { var c = new Counter(); c.increment(); }
             }
         ';
-        var ast17 = h17.compile(src17, "Counter");
+        var ast17 = h17.compile(src17, new ScriptContext("Counter"));
         var fieldCount17 = -1;
         switch (ast17.def) {
             case EBlock(exprs):
@@ -444,7 +444,7 @@ class TestDCE {
                 static public function main() {}
             }
         ';
-        var ast18 = h18.compile(src18, "Keeper");
+        var ast18 = h18.compile(src18, new ScriptContext("Keeper"));
         var fieldCount18 = -1;
         var methodCount18 = -1;
         switch (ast18.def) {
@@ -481,7 +481,7 @@ class TestDCE {
                 static public function main() {}
             }
         ';
-        var ast19 = h19.compile(src19, "t19");
+        var ast19 = h19.compile(src19, new ScriptContext("t19"));
         var classes19 = [];
         switch (ast19.def) {
             case EBlock(exprs):

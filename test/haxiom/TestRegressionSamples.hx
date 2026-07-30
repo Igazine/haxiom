@@ -37,21 +37,21 @@ class TestRegressionSamples {
 
 		assertResult(sample, "AST bytes", () -> {
 			var h = new Haxiom();
-			var bytes = h.compileToASTBytes(sample.source, sample.name + ".hx");
+			var bytes = h.compileToASTBytes(sample.source, new ScriptContext(sample.name, sample.name + ".hx"));
 			var runner = new Haxiom();
 			return runner.executeASTBytes(bytes, sample.source);
 		});
 
 		assertResult(sample, "HXBC bytes", () -> {
 			var h = new Haxiom();
-			var bytes = h.compileToBytecodeBytes(sample.source, sample.name + ".hx", null, false, false);
+			var bytes = h.compileToBytecodeBytes(sample.source, new ScriptContext(sample.name, sample.name + ".hx"), null, false, false);
 			var runner = new Haxiom();
 			return runner.executeBytecodeBytes(bytes, sample.source);
 		});
 
 		assertResult(sample, "compressed HXBC bytes", () -> {
 			var h = new Haxiom();
-			var bytes = h.compileToBytecodeBytes(sample.source, sample.name + ".hx", null, false, true);
+			var bytes = h.compileToBytecodeBytes(sample.source, new ScriptContext(sample.name, sample.name + ".hx"), null, false, true);
 			var runner = new Haxiom();
 			return runner.executeBytecodeBytes(bytes, sample.source);
 		});
@@ -65,4 +65,3 @@ class TestRegressionSamples {
 		}
 	}
 }
-
