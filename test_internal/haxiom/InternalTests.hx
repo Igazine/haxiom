@@ -171,6 +171,9 @@ class InternalTests {
 		var validBytes = verEngine.compileToBytecodeBytes(validScript);
 		var validChunk = Serializer.deserializeBytecode(validBytes);
 
+		var validExtendedOpcodeChunk = new VM.BytecodeChunk([75, 0, 1, 34], ["a", ""], [], 0);
+		BytecodeVerifier.verify(validExtendedOpcodeChunk);
+
 		// Test invalid opcode check
 		var invalidOpcodeChunk = new VM.BytecodeChunk([99], [], [], 0);
 		var invalidOpcodeCaught = false;

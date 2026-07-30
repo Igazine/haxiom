@@ -29,7 +29,7 @@ class BytecodeVerifier {
 		var ip = 0;
 		while (ip < inst.length) {
 			var op:Int = inst[ip++];
-			if (op < 0 || op > 74) {
+			if (op < 0 || op > 76) {
 				throw 'Invalid opcode $op at instruction index ${ip - 1}';
 			}
 
