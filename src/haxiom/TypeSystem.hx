@@ -427,7 +427,6 @@ class TypeSystem {
 				if (nativeClass != null) {
 					if (val == null)
 						return null;
-					#if cpp
 					var valClass = Type.getClass(val);
 					if (valClass != null) {
 						var valClassName = Type.getClassName(valClass);
@@ -442,7 +441,6 @@ class TypeSystem {
 							currClass = Type.getSuperClass(currClass);
 						}
 					}
-					#end
 
 					var isMatch = false;
 					var nName = nativeClass != null ? Type.getClassName(nativeClass) : null;
