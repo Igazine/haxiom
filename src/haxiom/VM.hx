@@ -326,8 +326,25 @@ class VM {
 		var consts = frame.chunk.constants;
 		var posTable = frame.chunk.positions;
 
+		inline function frameFallbackFile(f:VMCallFrame):String {
+			return f != null && f.chunk != null && f.chunk.scriptName != null ? f.chunk.scriptName : "script";
+		}
+
+		inline function positionForFrame(f:VMCallFrame, ip:Int):Pos {
+			var fallbackFile = frameFallbackFile(f);
+			if (f != null && f.chunk != null && f.chunk.positions != null && ip >= 0 && ip < f.chunk.positions.length && f.chunk.positions[ip] != null) {
+				var p = f.chunk.positions[ip];
+				return {
+					file: p.file != null ? p.file : fallbackFile,
+					line: p.line,
+					col: p.col
+				};
+			}
+			return {file: fallbackFile, line: 1, col: 1};
+		}
+
 		inline function currentPos():Pos {
-			return frame.chunk.positions[frame.ip] != null ? frame.chunk.positions[frame.ip] : {line: 1, col: 1};
+			return positionForFrame(frame, frame.ip);
 		}
 
 		try {
@@ -1685,18 +1702,13 @@ class VM {
 						for (frame in callFrames) {
 							var mName = frame.chunk != null ? frame.methodName : "toplevel";
 							var errIp = frame.ip > 0 ? frame.ip - 1 : 0;
-							var fInfo = (frame.chunk != null
-								&& errIp < frame.chunk.positions.length
-								&& frame.chunk.positions[errIp] != null) ? frame.chunk.positions[errIp].file : "script";
-							var lVal = (frame.chunk != null
-								&& errIp < frame.chunk.positions.length
-								&& frame.chunk.positions[errIp] != null) ? frame.chunk.positions[errIp].line : 1;
-							var cVal = (frame.chunk != null
-								&& errIp < frame.chunk.positions.length
-								&& frame.chunk.positions[errIp] != null) ? frame.chunk.positions[errIp].col : 1;
+							var framePos = positionForFrame(frame, errIp);
+							var fInfo = framePos.file;
+							var lVal = framePos.line;
+							var cVal = framePos.col;
 							vmCallStack.push({
 								method: mName,
-								pos: {file: fInfo, line: lVal, col: cVal}
+								pos: framePos
 							});
 							fileInfo = fInfo;
 							lineVal = lVal;

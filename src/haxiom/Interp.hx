@@ -1127,6 +1127,7 @@ class Interp {
 		callStack = [];
 		activeUsings = [];
 		lastActiveLocals = null;
+		lastEvalPos = chunk.scriptName != null ? {file: chunk.scriptName, line: 1, col: 1} : null;
 		if (chunk.positions.length > 0 && chunk.positions[0] != null) {
 			lastEvalPos = chunk.positions[0];
 		}

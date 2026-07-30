@@ -102,6 +102,32 @@ class TestCallerIdentification {
 		}
 		trace('SUCCESS: Serialized bytecode currentCaller preserved filename ${capturedBytecodeCaller.file}.');
 
+		// Test 5: Release bytecode with stripped positions still reports the serialized script name.
+		var releaseErrorScript = '
+            class ReleaseBytecodeError {
+                static public function main() {
+                    throw "release-bytecode-crash";
+                }
+            }
+        ';
+		var releaseErrorBytes = compileEngine.compileToBytecodeBytes(releaseErrorScript, "ReleaseBytecodeError.hx", null, false);
+		var caughtReleaseError = false;
+		try {
+			new Haxiom().executeBytecodeBytes(releaseErrorBytes);
+		} catch (e:ScriptException) {
+			caughtReleaseError = true;
+			if (e.file != "ReleaseBytecodeError.hx") {
+				throw 'Test 5 Failed: Expected release bytecode error filename ReleaseBytecodeError.hx but got ${e.file}';
+			}
+			if (e.formattedStackTrace.indexOf("ReleaseBytecodeError.hx") == -1) {
+				throw 'Test 5 Failed: Release bytecode formatted stack trace missed serialized filename: ${e.formattedStackTrace}';
+			}
+		}
+		if (!caughtReleaseError) {
+			throw "Test 5 Failed: Expected release bytecode runtime error";
+		}
+		trace("SUCCESS: Release bytecode runtime errors preserve serialized filename.");
+
 		trace("ALL CALLER IDENTIFICATION TESTS PASSED SUCCESSFULLY!");
 	}
 }
