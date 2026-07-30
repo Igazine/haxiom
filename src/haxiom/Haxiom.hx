@@ -683,7 +683,13 @@ class Haxiom {
 			enableDCE = false;
 			enableAstCache = false;
 		}
-		var ast = compile(source, filename);
+		var ast = try {
+			compile(source, filename);
+		} catch (e:Dynamic) {
+			enableDCE = prevDCE;
+			enableAstCache = prevCache;
+			throw e;
+		}
 		enableDCE = prevDCE;
 		enableAstCache = prevCache;
 		if (ast == null)

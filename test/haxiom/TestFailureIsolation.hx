@@ -11,6 +11,7 @@ class TestFailureIsolation {
 
 		runSync("Safe casts", testSafeCasts);
 		runSync("AST and bytecode persistence", testPersistence);
+		runSync("Debug bytecode compile state restoration", testDebugBytecodeCompileStateRestoration);
 		runSync("FFI package auto-registration", testAutoFFIPackageRegistration);
 		runSync("Internal optimizer and VM tests", testInternalTests);
 		runSync("Follow-up suite: compilation features", () -> TestCompilationFeatures.runTests());
@@ -286,6 +287,25 @@ class TestFailureIsolation {
 			throw label + " failed with unexpected error: " + Std.string(e);
 		}
 		throw label + " accepted an explicit @:haxiom.resource initializer";
+	}
+
+	static function testDebugBytecodeCompileStateRestoration():Void {
+		var engine = new Haxiom();
+		engine.enableDCE = true;
+		engine.enableAstCache = true;
+
+		var compileFailed = false;
+		try {
+			engine.compileToBytecodeBytes("var broken = ;", "debug_bytecode_compile_failure.hx", null, true);
+		} catch (e:Dynamic) {
+			compileFailed = true;
+		}
+		if (!compileFailed)
+			throw "Expected debug bytecode compilation to fail";
+		if (!engine.enableDCE)
+			throw "compileToBytecodeBytes did not restore enableDCE after failed debug compilation";
+		if (!engine.enableAstCache)
+			throw "compileToBytecodeBytes did not restore enableAstCache after failed debug compilation";
 	}
 
 	static function testAutoFFIPackageRegistration():Void {
