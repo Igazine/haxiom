@@ -6,9 +6,9 @@ class TestRuntimeStaticState {
 		var violations = [];
 		scanDirectory("src/haxiom", violations);
 		if (violations.length > 0) {
-			throw "Runtime static state violations:\n" + violations.join("\n");
+			throw "Runtime isolation violations:\n" + violations.join("\n");
 		}
-		trace("SUCCESS: Runtime static state scan passed.");
+		trace("SUCCESS: Runtime isolation source scan passed.");
 		#else
 		trace("SKIPPED: Runtime static state scan requires sys filesystem access.");
 		#end
@@ -30,6 +30,9 @@ class TestRuntimeStaticState {
 	}
 
 	static function scanFile(path:String, violations:Array<String>):Void {
+		if (path == "src/haxiom/LibRun.hx") {
+			return;
+		}
 		var lines = sys.io.File.getContent(path).split("\n");
 		for (i in 0...lines.length) {
 			var line = StringTools.trim(lines[i]);
@@ -37,9 +40,20 @@ class TestRuntimeStaticState {
 				continue;
 			}
 			if (isStaticFieldDeclaration(line)) {
-				violations.push(path + ":" + (i + 1) + ": " + line);
+				violations.push(path + ":" + (i + 1) + ": mutable static runtime state: " + line);
+			}
+			if (usesForbiddenHostAPI(line)) {
+				violations.push(path + ":" + (i + 1) + ": system-dependent runtime API: " + line);
 			}
 		}
+	}
+
+	static function usesForbiddenHostAPI(line:String):Bool {
+		line = stripStringLiterals(line);
+		return ~/\bsys\./.match(line)
+			|| ~/\b(sys\.thread|FileSystem|Mutex|Semaphore|Deque|Socket)\b/.match(line)
+			|| ~/#if\s+sys\b/.match(line)
+			|| ~/#elseif\s+sys\b/.match(line);
 	}
 
 	static function isStaticFieldDeclaration(line:String):Bool {

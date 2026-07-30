@@ -585,21 +585,6 @@ class Interp {
 	}
 
 	function initDefaultFlags() {
-		#if eval preprocessorFlags.set("eval", true); #end
-		#if js preprocessorFlags.set("js", true); #end
-		#if sys preprocessorFlags.set("sys", true); #end
-		#if cpp preprocessorFlags.set("cpp", true); #end
-		#if hl preprocessorFlags.set("hl", true); #end
-		#if neko preprocessorFlags.set("neko", true); #end
-		#if flash preprocessorFlags.set("flash", true); #end
-		#if java preprocessorFlags.set("java", true); #end
-		#if cs preprocessorFlags.set("cs", true); #end
-		#if mac
-		preprocessorFlags.set("mac", true);
-		#end
-		#if windows preprocessorFlags.set("windows", true); #end
-		#if linux preprocessorFlags.set("linux", true); #end
-		#if debug preprocessorFlags.set("debug", true); #end
 		preprocessorFlags.set("haxiom", true);
 	}
 

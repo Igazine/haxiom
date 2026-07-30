@@ -463,6 +463,7 @@ class LibRun {
 		var fullInputPath = workingDir + input;
 		final haxiom = new Haxiom();
 		haxiom.enableStaticTypes = staticTypes;
+		haxiom.setResourceProvider(path -> FileSystem.exists(path) && !FileSystem.isDirectory(path) ? File.getBytes(path) : null);
 		var source = File.getContent(fullInputPath);
 
 		// Parse the main file to extract its package and start bundling

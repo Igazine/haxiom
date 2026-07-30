@@ -33,6 +33,18 @@ class TestCompilationFeatures {
         engine.setDefine("my_host_cond", true);
         engine.setDefine("custom.feature", true);
 
+        if (!engine.hasDefine("haxiom"))
+            throw "testPreprocessor expected the target-neutral haxiom define";
+        var hostTargetFlags = ["eval", "js", "sys", "cpp", "hl", "neko", "flash", "java", "cs", "mac", "windows", "linux", "debug"];
+        for (flag in hostTargetFlags) {
+            if (engine.hasDefine(flag))
+                throw 'testPreprocessor host target flag should require explicit setDefine(): ${flag}';
+        }
+        engine.setDefine("js", true);
+        if (!engine.hasDefine("js"))
+            throw "testPreprocessor explicit target-style define was not retained";
+        engine.removeDefine("js");
+
         // Test basic #if/#else with custom host define
         var script = '
             var x = 0;

@@ -200,6 +200,7 @@ class TestFailureIsolation {
 		for (i in 0...5)
 			astResourceBytes.set(i, i * 17);
 		sys.io.File.saveBytes(astResourcePath, astResourceBytes);
+		persistEngine.setResourceProvider(path -> sys.FileSystem.exists(path) && !sys.FileSystem.isDirectory(path) ? sys.io.File.getBytes(path) : null);
 
 		var resourceScript = '
 			import haxe.io.Bytes;

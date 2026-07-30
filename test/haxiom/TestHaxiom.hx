@@ -746,6 +746,7 @@ class TestHaxiom {
 
 		try {
 			var hRes = new Haxiom();
+			hRes.setResourceProvider(path -> sys.FileSystem.exists(path) && !sys.FileSystem.isDirectory(path) ? sys.io.File.getBytes(path) : null);
 			var script23i = '
                 import haxe.io.Bytes;
                 class ResourceDemo {

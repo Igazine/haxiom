@@ -12,10 +12,20 @@ import haxe.io.Bytes;
 class ResourceCompiler {
 	private static function loadResourceBytes(interp:Interp, relPath:String, pos:Pos):Bytes {
 		var pStr = pos != null ? '${pos.file != null ? pos.file : "script"}:${pos.line}:${pos.col}' : "script";
+		var contextualPath = relPath;
+		if (pos != null && pos.file != null && pos.file.length > 0) {
+			var dir = haxe.io.Path.directory(pos.file);
+			if (dir != null && dir.length > 0) {
+				contextualPath = haxe.io.Path.normalize(haxe.io.Path.join([dir, relPath]));
+			}
+		}
 
 		// 1. Check virtual resources map on interp instance
 		if (interp != null && interp.virtualResources != null && interp.virtualResources.exists(relPath)) {
 			return interp.virtualResources.get(relPath);
+		}
+		if (interp != null && interp.virtualResources != null && contextualPath != relPath && interp.virtualResources.exists(contextualPath)) {
+			return interp.virtualResources.get(contextualPath);
 		}
 
 		// 2. Check custom host resource provider on interp instance
@@ -23,6 +33,11 @@ class ResourceCompiler {
 			var res = interp.resourceProvider(relPath);
 			if (res != null)
 				return res;
+			if (contextualPath != relPath) {
+				res = interp.resourceProvider(contextualPath);
+				if (res != null)
+					return res;
+			}
 		}
 
 		// 3. Check haxe.Resource embedded items
@@ -31,26 +46,13 @@ class ResourceCompiler {
 			if (hRes != null)
 				return hRes;
 		} catch (e:Dynamic) {}
-
-		// 4. FileSystem disk loading on sys targets
-		#if sys
-		var fullPath = relPath;
-		if (pos != null && pos.file != null && pos.file.length > 0) {
-			var dir = haxe.io.Path.directory(pos.file);
-			if (dir != null && dir.length > 0) {
-				var p = haxe.io.Path.join([dir, relPath]);
-				if (sys.FileSystem.exists(p)) {
-					fullPath = p;
-				}
-			}
+		if (contextualPath != relPath) {
+			try {
+				var contextualResource = haxe.Resource.getBytes(contextualPath);
+				if (contextualResource != null)
+					return contextualResource;
+			} catch (e:Dynamic) {}
 		}
-		if (sys.FileSystem.exists(fullPath)) {
-			return sys.io.File.getBytes(fullPath);
-		}
-		if (sys.FileSystem.exists(relPath)) {
-			return sys.io.File.getBytes(relPath);
-		}
-		#end
 
 		throw 'Compile Error: Resource file not found: \'${relPath}\' at ${pStr}';
 	}
