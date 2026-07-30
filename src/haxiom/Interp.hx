@@ -2020,16 +2020,10 @@ class Interp {
 			}
 		}
 		if (Reflect.isFunction(f)) {
-			#if (cpp || hl || java || cs)
-			return f;
-			#else
 			// Wrap the method to bind `this` to the receiver object.
-			// This is required on targets like JavaScript and Neko where prototype/native methods
-			// returned by Reflect.getProperty/Reflect.field are unbound.
 			return Reflect.makeVarArgs(function(args) {
 				return Reflect.callMethod(obj, f, args);
 			});
-			#end
 		}
 		if (f != null)
 			return f;
@@ -5010,9 +5004,6 @@ class Interp {
 			}
 		}
 		var boundFunc:Dynamic = null;
-		#if (cpp || hl || java || cs)
-		boundFunc = Reflect.makeVarArgs(func);
-		#else
 		if (hasRest) {
 			boundFunc = Reflect.makeVarArgs(func);
 		} else {
@@ -5025,7 +5016,6 @@ class Interp {
 				default: Reflect.makeVarArgs(func);
 			};
 		}
-		#end
 		var signatureArgs = [];
 		for (arg in method.args) {
 			var t = arg.type != null ? arg.type : TPath(["Dynamic"], []);

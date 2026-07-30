@@ -1127,9 +1127,6 @@ class VM {
 								}
 							}
 							var boundFunc:Dynamic = null;
-							#if (cpp || hl || java || cs)
-							boundFunc = Reflect.makeVarArgs(func);
-							#else
 							if (hasRest) {
 								boundFunc = Reflect.makeVarArgs(func);
 							} else {
@@ -1142,7 +1139,6 @@ class VM {
 									default: Reflect.makeVarArgs(func);
 								};
 							}
-							#end
 
 							var signatureArgs = [];
 							for (arg in proto.args) {

@@ -21,6 +21,7 @@ class TestHaxiom {
 			TestHXBCSecurityDebug.runTests();
 			TestStaticTypeChecker.runTests();
 			TestDCE.runTests();
+			TestCallableBinding.runTests();
 			TestInlineCache.main();
 			TestSafeguardsTCO.runTests();
 			TestNSConflict.main();
