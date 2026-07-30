@@ -801,6 +801,17 @@ class TestHaxiom {
 				}
 			}
 
+			try {
+				var badScriptExact = '@:haxiom.resource("' + tmpResTextPath + '") var pic:String = "Haxiom Embedded Resource Content Hello World!";';
+				hRes.compileToBytecodeBytes(badScriptExact, "BadExact.hx");
+				throw "FAILURE: Exact-content initializer on @:haxiom.resource should have thrown compile error";
+			} catch (e:Dynamic) {
+				var errStr = Std.string(e);
+				if (errStr.indexOf("explicit initializer") == -1) {
+					throw "Unexpected error for exact-content explicit initializer: " + errStr;
+				}
+			}
+
 			// Validation 2: Missing resource file check
 			try {
 				var badScript2 = '@:haxiom.resource("./non_existent_file_xyz_9999.png") var pic:String;';

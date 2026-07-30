@@ -105,22 +105,10 @@ class ResourceCompiler {
 		// Load resource bytes via target-agnostic resolver
 		var fileBytes = loadResourceBytes(interp, relPath, pos);
 
-		// Validation 2: Explicit initializer check (verify expr matches synthesized resource value)
+		// Validation 2: explicit initializers are not allowed on resource fields.
+		// The compiler owns the initializer so binary/text resources cannot be shadowed.
 		if (expr != null) {
-			switch (expr.def) {
-				case EValue(v):
-					if (isString) {
-						if (v != fileBytes.toString()) {
-							throw 'Compile Error: Field marked with @:haxiom.resource cannot have an explicit initializer at ${pStr}';
-						}
-					} else {
-						if (!Std.isOfType(v, Bytes) && !Std.isOfType(v, BinaryResourceRefHolder)) {
-							throw 'Compile Error: Field marked with @:haxiom.resource cannot have an explicit initializer at ${pStr}';
-						}
-					}
-				default:
-					throw 'Compile Error: Field marked with @:haxiom.resource cannot have an explicit initializer at ${pStr}';
-			}
+			throw 'Compile Error: Field marked with @:haxiom.resource cannot have an explicit initializer at ${pStr}';
 		}
 
 		if (isString) {

@@ -153,6 +153,12 @@ class TestFailureIsolation {
 		if (virtualAstResult != "6|0|127|128|254|255")
 			throw "AST virtual binary resource persistence failed: " + virtualAstResult;
 
+		var virtualTextBytes = haxe.io.Bytes.ofString("same content");
+		var badResourceInitializerScript = '@:haxiom.resource("virtual_text_payload.txt") var textAsset:String = "same content";';
+		var badAstResourceEngine = new Haxiom();
+		badAstResourceEngine.addResource("virtual_text_payload.txt", virtualTextBytes);
+		assertResourceInitializerRejected(() -> badAstResourceEngine.compileToASTBytes(badResourceInitializerScript, "bad_ast_resource_initializer.hx"), "AST resource initializer");
+
 		var virtualBytecodeKey:HXBCKey = "virtual_binary_resource_key";
 		var virtualBytecodePayload = persistEngine.compileToBytecodeBytes(virtualResourceScript, "virtual_bytecode_resource_test.hx", virtualBytecodeKey, false, true);
 		if (virtualBytecodePayload == null)
@@ -181,6 +187,10 @@ class TestFailureIsolation {
 		var virtualBytecodeResult:String = new Haxiom().executeBytecodeBytes(virtualBytecodePayload, null, virtualBytecodeKey);
 		if (virtualBytecodeResult != "6|0|127|128|254|255")
 			throw "Bytecode virtual binary resource persistence failed: " + virtualBytecodeResult;
+
+		var badBytecodeResourceEngine = new Haxiom();
+		badBytecodeResourceEngine.addResource("virtual_text_payload.txt", virtualTextBytes);
+		assertResourceInitializerRejected(() -> badBytecodeResourceEngine.compileToBytecodeBytes(badResourceInitializerScript, "bad_bytecode_resource_initializer.hx"), "bytecode resource initializer");
 
 		#if sys
 		var astResourcePath = "test/haxiom/tmp_ast_resource_" + Std.int(haxe.Timer.stamp() * 1000000) + "_" + Std.random(1000000) + ".bin";
@@ -265,6 +275,17 @@ class TestFailureIsolation {
 		}
 		if (!persistErrorOccurred)
 			throw "Expected bytecode runtime error, but none occurred";
+	}
+
+	static function assertResourceInitializerRejected(run:Void->Void, label:String):Void {
+		try {
+			run();
+		} catch (e:Dynamic) {
+			if (Std.string(e).indexOf("explicit initializer") != -1)
+				return;
+			throw label + " failed with unexpected error: " + Std.string(e);
+		}
+		throw label + " accepted an explicit @:haxiom.resource initializer";
 	}
 
 	static function testAutoFFIPackageRegistration():Void {

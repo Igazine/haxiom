@@ -76,6 +76,17 @@ class BytecodeCompiler {
 		return chunk;
 	}
 
+	static function stripResourceMeta(meta:Null<Array<{name:String, params:Array<Expr>}>>):Null<Array<{name:String, params:Array<Expr>}>> {
+		if (meta == null)
+			return null;
+		var filtered = [
+			for (m in meta)
+				if (m == null || (m.name != ":haxiom.resource" && m.name != "haxiom.resource" && m.name != "@:haxiom.resource"))
+					m
+		];
+		return filtered.length == 0 ? null : filtered;
+	}
+
 	function declareLocal(name:String, type:Null<TypeDecl>, ?isFinal:Bool = false):LocalVar {
 		var slot = locals.length;
 		var loc:LocalVar = {
@@ -1023,6 +1034,7 @@ class BytecodeCompiler {
 				for (f in fields) {
 					if (f.meta != null) {
 						f.expr = ResourceCompiler.processResource(this.interp, f.meta, f.type, f.expr, e.pos, this.resources);
+						f.meta = stripResourceMeta(f.meta);
 					}
 				}
 				for (m in methods) {
@@ -1058,6 +1070,7 @@ class BytecodeCompiler {
 				for (f in fields) {
 					if (f.meta != null) {
 						f.expr = ResourceCompiler.processResource(this.interp, f.meta, f.type, f.expr, e.pos, this.resources);
+						f.meta = stripResourceMeta(f.meta);
 					}
 				}
 				for (m in methods) {
