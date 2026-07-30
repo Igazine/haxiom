@@ -1053,7 +1053,8 @@ class Interp {
 		try {
 			var res:Dynamic = null;
 			if (useVM) {
-				var chunk = BytecodeCompiler.compile(expr, null, true, false, debugMode);
+				var scriptName = expr != null && expr.pos != null ? expr.pos.file : null;
+				var chunk = BytecodeCompiler.compile(expr, null, true, false, debugMode, null, this, scriptName);
 				res = VM.runChunk(this, chunk, globals, null, "toplevel");
 			} else {
 				res = eval(expr, globals);

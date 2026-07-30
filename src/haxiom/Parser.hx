@@ -34,7 +34,7 @@ class Parser {
 			exprs.push(parseStatement());
 			skipNewlines();
 		}
-		return {def: EBlock(exprs), pos: {line: 1, col: 1}};
+		return {def: EBlock(exprs), pos: {line: 1, col: 1, file: file}};
 	}
 
 	function parseExprOnly():Expr {

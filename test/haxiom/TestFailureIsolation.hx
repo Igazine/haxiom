@@ -28,6 +28,7 @@ class TestFailureIsolation {
 		runSync("Release-bar source audit", () -> TestReleaseBarAudit.runTests());
 		runSync("Low-level VM state transitions", testVMStateTransitions);
 		runSync("HaxiomHost.await host guard", testHostAwaitGuard);
+		runSync("VM compile context propagation", testVMCompileContextPropagation);
 
 		if (failures.length > 0) {
 			throw "Failure isolation suite found " + failures.length + " synchronous failure(s):\n" + failures.join("\n\n");
@@ -306,6 +307,55 @@ class TestFailureIsolation {
 			throw "compileToBytecodeBytes did not restore enableDCE after failed debug compilation";
 		if (!engine.enableAstCache)
 			throw "compileToBytecodeBytes did not restore enableAstCache after failed debug compilation";
+	}
+
+	static function testVMCompileContextPropagation():Void {
+		var virtualPayload = haxe.io.Bytes.alloc(4);
+		virtualPayload.set(0, 11);
+		virtualPayload.set(1, 22);
+		virtualPayload.set(2, 33);
+		virtualPayload.set(3, 44);
+
+		var resourceEngine = new Haxiom();
+		resourceEngine.useVM = true;
+		resourceEngine.currentFilename = "VirtualResourceMain.hx";
+		resourceEngine.addResource("vm_virtual_payload.bin", virtualPayload);
+		var resourceScript = '
+			import haxe.io.Bytes;
+			class VirtualResourceMain {
+				@:haxiom.resource("vm_virtual_payload.bin")
+				static var payload:Bytes;
+				static public function main() {
+					return payload.length + "|" + payload.get(0) + "|" + payload.get(3);
+				}
+			}
+		';
+		var resourceResult:String = resourceEngine.interpret(resourceScript);
+		if (resourceResult != "4|11|44")
+			throw "VM virtual resource context propagation failed: " + resourceResult;
+
+		var errorEngine = new Haxiom();
+		errorEngine.useVM = true;
+		errorEngine.currentFilename = "VmFilenameError.hx";
+		var errorScript = '
+			class VmFilenameError {
+				static public function main() {
+					throw "vm-filename-context";
+				}
+			}
+		';
+		var caught = false;
+		try {
+			errorEngine.interpret(errorScript);
+		} catch (e:ScriptException) {
+			caught = true;
+			if (e.file != "VmFilenameError.hx")
+				throw 'VM currentFilename diagnostic propagation failed: ${e.file}';
+			if (e.formattedStackTrace.indexOf("VmFilenameError.hx") == -1)
+				throw 'VM currentFilename formatted stack trace missing filename: ${e.formattedStackTrace}';
+		}
+		if (!caught)
+			throw "Expected VM filename context error";
 	}
 
 	static function testAutoFFIPackageRegistration():Void {
