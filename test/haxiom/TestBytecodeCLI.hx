@@ -1,6 +1,7 @@
 package haxiom;
 
 import haxe.Json;
+import haxe.io.Bytes;
 import sys.FileSystem;
 import sys.io.File;
 import sys.io.Process;
@@ -17,16 +18,28 @@ class TestBytecodeCLI {
 		try {
 			var scriptPath = tempDir + "/CliSmoke.hx";
 			var bytecodePath = tempDir + "/CliSmoke.hxbc";
+			var resourcePath = tempDir + "/payload.bin";
 			var bytecodeKey = "cli_obfuscation_key";
+			var resourceBytes = Bytes.alloc(6);
+			var resourceValues = [0, 1, 127, 128, 254, 255];
+			for (i in 0...resourceValues.length) {
+				resourceBytes.set(i, resourceValues[i]);
+			}
+			File.saveBytes(resourcePath, resourceBytes);
 			File.saveContent(scriptPath, "
+				import haxe.io.Bytes;
+
 				class CliSmoke {
-					public static function main():Int {
+					@:haxiom.resource(\"payload.bin\")
+					static var payload:Bytes;
+
+					public static function main():String {
 						var total = 0;
 						for (i in 0...5) {
 							total += i;
 						}
 						if (total != 10) throw 'bad total: ' + total;
-						return total;
+						return total + '|' + payload.length + '|' + payload.get(0) + '|' + payload.get(3) + '|' + payload.get(4) + '|' + payload.get(5);
 					}
 				}
 			");
@@ -45,7 +58,8 @@ class TestBytecodeCLI {
 			assertExists(bytecodePath, "keyed compressed bytecode output");
 			assertEncryptedInspection(bytecodePath, true);
 			assertValidInspection(bytecodePath, true, bytecodeKey, true);
-			assertExecutableBytecode(bytecodePath, bytecodeKey, 10);
+			assertEmbeddedResource(bytecodePath, bytecodeKey, "payload.bin", resourceBytes.length);
+			assertExecutableBytecode(bytecodePath, bytecodeKey, "10|6|0|128|254|255");
 
 			deleteDirRecursive(tempDir);
 		} catch (e:Dynamic) {
@@ -100,10 +114,27 @@ class TestBytecodeCLI {
 		}
 	}
 
-	static function assertExecutableBytecode(bytecodePath:String, key:String, expected:Int):Void {
+	static function assertEmbeddedResource(bytecodePath:String, key:String, expectedPath:String, expectedSize:Int):Void {
+		var output = runProcess(["run", "haxiom", "inspect", bytecodePath, key, "--json"], "embedded resource inspect json");
+		var info:Dynamic = Json.parse(output);
+		var found = false;
+		if (info.embeddedResources != null) {
+			for (resource in cast(info.embeddedResources, Array<Dynamic>)) {
+				if (resource.path == expectedPath && resource.size == expectedSize) {
+					found = true;
+					break;
+				}
+			}
+		}
+		if (!found) {
+			throw 'inspect did not report embedded resource ${expectedPath} (${expectedSize} bytes)';
+		}
+	}
+
+	static function assertExecutableBytecode(bytecodePath:String, key:String, expected:String):Void {
 		var haxiom = new Haxiom();
 		haxiom.useVM = true;
-		var result:Int = haxiom.executeBytecodeBytes(File.getBytes(bytecodePath), null, new HXBCKey(key));
+		var result:String = haxiom.executeBytecodeBytes(File.getBytes(bytecodePath), null, new HXBCKey(key));
 		if (result != expected) {
 			throw 'keyed bytecode execution mismatch: expected ${expected}, got ${result}';
 		}
