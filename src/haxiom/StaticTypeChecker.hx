@@ -59,6 +59,10 @@ class StaticTypeChecker {
 					info.isExtern = true;
 					info.meta = meta;
 					for (m in methods) {
+						if (m.name == "new") {
+							info.ctorArgs = m.args;
+							continue;
+						}
 						var mCopy = {
 							name: m.name,
 							args: m.args,
@@ -471,7 +475,7 @@ class StaticTypeChecker {
 				}
 
 				if (objType == null) {
-					// Still recurse args
+					checkExpr(objExpr, env);
 					for (a in args)
 						checkExpr(a, env);
 					return;
@@ -540,7 +544,7 @@ class StaticTypeChecker {
 						}
 					default:
 				}
-				// Recurse into args
+				checkExpr(objExpr, env);
 				for (a in args)
 					checkExpr(a, env);
 

@@ -483,7 +483,7 @@ class Parser {
 				var mRetType = parseOptType();
 				var mBody = null;
 				if (isExternMember || isExternClass) {
-					if (mRetType == null) {
+					if (mRetType == null && mName != "new") {
 						throw new CompileException("Extern methods must explicitly define a return type", memberT.pos.line, memberT.pos.col, file);
 					}
 					expect(TSemicolon);

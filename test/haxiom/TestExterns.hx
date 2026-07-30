@@ -7,12 +7,25 @@ class HostHelper {
 	}
 }
 
+class ExternConstructible {
+	var base:Int;
+
+	public function new(base:Int) {
+		this.base = base;
+	}
+
+	public function add(value:Int):Int {
+		return base + value;
+	}
+}
+
 class TestExterns {
 	public static function runTests() {
 		trace("Running TestExterns Suite...");
 		
 		testExternClassAST();
 		testExternClassVM();
+		testExternConstructor();
 		testClassLevelExternMember();
 		testMissingReturnTypeError();
 		testRootLevelExternProhibitedError();
@@ -22,6 +35,66 @@ class TestExterns {
 		testCannotSubclassExternClass();
 
 		trace("TestExterns Suite Passed Successfully!");
+	}
+
+	static function testExternConstructor() {
+		var source = "
+			extern class ExternConstructible {
+				function new(base:Int);
+				function add(value:Int):Int;
+			}
+
+			class Main {
+				static public function main():Int {
+					return new ExternConstructible(40).add(2);
+				}
+			}
+		";
+
+		for (useVM in [false, true]) {
+			var engine = externConstructorEngine();
+			engine.useVM = useVM;
+			engine.currentFilename = "Main.hx";
+			assertExternConstructor(useVM ? "VM interpret" : "AST interpret", engine.interpret(source));
+		}
+
+		var astEngine = externConstructorEngine();
+		var astBytes = astEngine.compileToASTBytes(source, "Main.hx");
+		assertExternConstructor("AST bytes", astEngine.executeASTBytes(astBytes, source));
+
+		for (compress in [false, true]) {
+			var bytecodeEngine = externConstructorEngine();
+			var bytecode = bytecodeEngine.compileToBytecodeBytes(source, "Main.hx", null, false, compress);
+			assertExternConstructor(compress ? "compressed HXBC" : "HXBC", bytecodeEngine.executeBytecodeBytes(bytecode, source));
+		}
+
+		var staticEngine = externConstructorEngine();
+		staticEngine.currentFilename = "Main.hx";
+		assertExternConstructor("static checking", staticEngine.interpret(source, null, true));
+
+		var invalidSource = StringTools.replace(source, "new ExternConstructible(40)", 'new ExternConstructible("invalid")');
+		var invalidRejected = false;
+		var invalidError:Null<String> = null;
+		try {
+			externConstructorEngine().interpret(invalidSource, null, true);
+		} catch (e:Dynamic) {
+			invalidError = Std.string(e);
+			invalidRejected = invalidError.indexOf("new ExternConstructible argument 1") != -1;
+		}
+		if (!invalidRejected)
+			throw "Static checking accepted an invalid extern constructor argument"
+				+ (invalidError != null ? ": " + invalidError : " without reporting an error");
+	}
+
+	static function externConstructorEngine():Haxiom {
+		var engine = new Haxiom();
+		engine.registerClass("ExternConstructible", ExternConstructible);
+		return engine;
+	}
+
+	static function assertExternConstructor(path:String, actual:Dynamic):Void {
+		if (actual != 42)
+			throw 'Extern constructor failed via $path: expected 42, got $actual';
 	}
 
 	static function testExternClassAST() {
