@@ -117,6 +117,24 @@ class TestCompilationFeatures {
         var res5:Int = engine.interpret(script5);
         if (res5 != 500) throw "testPreprocessor expression && ! failed: expected 500, got " + res5;
 
+        // Test AST cache isolation across changing host defines
+        var cacheEngine = new Haxiom();
+        cacheEngine.enableAstCache = true;
+        var cacheScript = '
+            var x = 0;
+            #if cached_feature
+            x = 1;
+            #else
+            x = 2;
+            #end
+            x;
+        ';
+        var cacheOff:Int = cacheEngine.interpret(cacheScript);
+        cacheEngine.setDefine("cached_feature", true);
+        var cacheOn:Int = cacheEngine.interpret(cacheScript);
+        if (cacheOff != 2 || cacheOn != 1)
+            throw "testPreprocessor AST cache define isolation failed: expected 2 then 1, got " + cacheOff + " then " + cacheOn;
+
         // Test #error compilation failure in active branch
         var caughtError = false;
         try {

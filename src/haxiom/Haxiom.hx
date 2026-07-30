@@ -54,6 +54,23 @@ class Haxiom {
 
 	var astCacheSize:Int = 0;
 
+	function cachePart(value:String):String {
+		if (value == null)
+			return "0:";
+		return Std.string(value.length) + ":" + value;
+	}
+
+	function makeAstCacheKey(source:String, ?filename:String, ?customPackage:String):String {
+		var flags = [for (name in interp.preprocessorFlags.keys()) name + "=" + (interp.preprocessorFlags.get(name) == true ? "1" : "0")];
+		flags.sort(Reflect.compare);
+		return cachePart(source)
+			+ cachePart(filename != null ? filename : "script")
+			+ cachePart(customPackage)
+			+ cachePart(mainClassOverride)
+			+ cachePart(enableDCE ? "dce=1" : "dce=0")
+			+ cachePart(flags.join("|"));
+	}
+
 	/**
 	 * A callback invoked to resolve external dependency modules dynamically when an `import` statement is parsed.
 	 * Maps a fully-qualified module path (e.g. `helper.MathUtils`) to its source code.
@@ -334,8 +351,9 @@ class Haxiom {
 		} else {
 			interp.currentPackage = [];
 		}
-		if (enableAstCache && astCache.exists(source)) {
-			var folded = astCache.get(source);
+		var cacheKey = makeAstCacheKey(source, filename, customPackage);
+		if (enableAstCache && astCache.exists(cacheKey)) {
+			var folded = astCache.get(cacheKey);
 			if (staticTypes || enableStaticTypes) {
 				haxiom.StaticTypeChecker.check(folded, interp);
 			}
@@ -387,7 +405,7 @@ class Haxiom {
 					astCache = new Map();
 					astCacheSize = 0;
 				}
-				astCache.set(source, folded);
+				astCache.set(cacheKey, folded);
 				astCacheSize++;
 			}
 			return folded;
