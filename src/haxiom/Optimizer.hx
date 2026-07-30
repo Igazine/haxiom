@@ -972,7 +972,7 @@ class Optimizer {
 				// used as block return values.
 				case EClass(name, _, methods, _, interfaces, _, meta):
 					var useCount = usages.exists(name) ? usages.get(name) : 0;
-					var hasMain = methods.filter(m -> m.name == "main" && m.isPublic && m.isStatic).length > 0;
+					var hasMain = methods.filter(m -> m.name == "main" && m.isPublic && m.isStatic && m.args.length == 0).length > 0;
 					var keep = false;
 					if (interfaces != null && interfaces.length > 0)
 						keep = true;

@@ -1040,7 +1040,7 @@ class Haxiom {
 			switch (e.def) {
 				case EClass(name, _, methods, _, _, _, _):
 					for (m in methods) {
-						if (m.name == "main" && m.isStatic) {
+						if (m.name == "main" && m.isPublic && m.isStatic && m.args.length == 0) {
 							mainClasses.push(name);
 							break;
 						}

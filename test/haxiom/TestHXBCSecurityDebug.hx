@@ -236,6 +236,38 @@ class TestHXBCSecurityDebug {
             throw "Automatic main execution (AST) failed: AutoMainDemo.main was not run!";
         }
 
+        var invalidMainScript = "
+            class PrivateMainDemo {
+                static public var ran:Bool = false;
+                static private function main() {
+                    ran = true;
+                }
+            }
+
+            class ArgumentMainDemo {
+                static public var ran:Bool = false;
+                static public function main(required:Int) {
+                    ran = true;
+                }
+            }
+        ";
+
+        for (useVM in [false, true]) {
+            var invalidEngine = new Haxiom();
+            invalidEngine.enableDCE = false;
+            invalidEngine.useVM = useVM;
+            invalidEngine.interpret(invalidMainScript);
+
+            var privateClass = invalidEngine.getGlobal("PrivateMainDemo");
+            var argumentClass = invalidEngine.getGlobal("ArgumentMainDemo");
+            if (invalidEngine.resolveField(privateClass, "ran") != false) {
+                throw "Private static main was executed automatically";
+            }
+            if (invalidEngine.resolveField(argumentClass, "ran") != false) {
+                throw "Argument-requiring static main was executed automatically";
+            }
+        }
+
         trace("SUCCESS: Automatic main execution verified.");
     }
 
