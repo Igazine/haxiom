@@ -82,6 +82,49 @@ class Serializer {
 		var payloadOut = new BytesOutput();
 		payloadOut.bigEndian = false;
 
+		var resourcesToWrite:Map<String, Bytes> = null;
+		if (chunk.resources != null) {
+			resourcesToWrite = new Map();
+			for (k => v in chunk.resources)
+				resourcesToWrite.set(k, v);
+		}
+
+		// Byte constants are stored as resource references so they survive string-based
+		// serialization. Prepare them before building the string pool.
+		var wrappedConstants:Array<Dynamic> = [];
+		if (chunk.constants != null) {
+			for (c in chunk.constants) {
+				if (shouldWrap(c)) {
+					var serializedBytes = BytecodeConstantSerializer.serialize(c);
+					wrappedConstants.push(new BinaryExprHolder(serializedBytes));
+				} else if (c != null && Std.isOfType(c, haxe.io.Bytes)) {
+					var bytesVal:haxe.io.Bytes = cast c;
+					var foundKey:String = null;
+					if (resourcesToWrite != null) {
+						for (k => v in resourcesToWrite) {
+							if (bytesEqual(v, bytesVal)) {
+								foundKey = k;
+								break;
+							}
+						}
+					}
+					if (foundKey == null) {
+						if (resourcesToWrite == null) {
+							resourcesToWrite = new Map<String, Bytes>();
+						}
+						var index = 0;
+						do {
+							foundKey = "__const_bytes_" + index++;
+						} while (resourcesToWrite.exists(foundKey));
+						resourcesToWrite.set(foundKey, bytesVal);
+					}
+					wrappedConstants.push(new BinaryResourceRefHolder(foundKey));
+				} else {
+					wrappedConstants.push(c);
+				}
+			}
+		}
+
 		// 1. Build string pool for filenames and variable names
 		var stringPool:Array<String> = [];
 		var stringPoolMap = new Map<String, Int>();
@@ -111,8 +154,8 @@ class Serializer {
 				addToStringPool(sym.name);
 			}
 		}
-		if (chunk.resources != null) {
-			for (k in chunk.resources.keys()) {
+		if (resourcesToWrite != null) {
+			for (k in resourcesToWrite.keys()) {
 				if (k != null) {
 					addToStringPool(k);
 				}
@@ -179,36 +222,6 @@ class Serializer {
 		}
 
 		// 4. Write constants via Serializer
-		var wrappedConstants:Array<Dynamic> = [];
-		if (chunk.constants != null) {
-			for (c in chunk.constants) {
-				if (shouldWrap(c)) {
-					var serializedBytes = BytecodeConstantSerializer.serialize(c);
-					wrappedConstants.push(new BinaryExprHolder(serializedBytes));
-				} else if (c != null && Std.isOfType(c, haxe.io.Bytes)) {
-					var bytesVal:haxe.io.Bytes = cast c;
-					var foundKey:String = null;
-					if (chunk.resources != null) {
-						for (k => v in chunk.resources) {
-							if (bytesEqual(v, bytesVal)) {
-								foundKey = k;
-								break;
-							}
-						}
-					}
-					if (foundKey == null) {
-						if (chunk.resources == null) {
-							chunk.resources = new Map<String, Bytes>();
-						}
-						foundKey = "__const_bytes_" + (chunk.resources.keys() != null ? [for (k in chunk.resources.keys()) k].length : 0);
-						chunk.resources.set(foundKey, bytesVal);
-					}
-					wrappedConstants.push(new BinaryResourceRefHolder(foundKey));
-				} else {
-					wrappedConstants.push(c);
-				}
-			}
-		}
 		var constsStr = haxe.Serializer.run(wrappedConstants);
 		var constsBytes = Bytes.ofString(constsStr);
 		writeVarInt(payloadOut, constsBytes.length);
@@ -225,10 +238,10 @@ class Serializer {
 		}
 
 		// 6. Write embedded resources
-		var resCount = chunk.resources != null ? [for (k in chunk.resources.keys()) k].length : 0;
+		var resCount = resourcesToWrite != null ? [for (k in resourcesToWrite.keys()) k].length : 0;
 		writeVarInt(payloadOut, resCount);
-		if (chunk.resources != null && resCount > 0) {
-			for (k => v in chunk.resources) {
+		if (resourcesToWrite != null && resCount > 0) {
+			for (k => v in resourcesToWrite) {
 				var keyIdx = stringPoolMap.get(k);
 				writeVarInt(payloadOut, keyIdx);
 				var resBytes = v != null ? v : Bytes.alloc(0);

@@ -6,6 +6,7 @@ import haxiom.Interp;
 import haxiom.AST;
 import haxiom.HaxiomTypes.HaxiomClass;
 import haxiom.HaxiomTypes.HaxiomInstance;
+import haxe.io.Bytes;
 
 @:keep
 class InternalTests {
@@ -90,6 +91,27 @@ class InternalTests {
 		if (directResult.switchRes != "hundred")
 			throw "Direct getBytes/fromBytes execution failed: switchRes=" + directResult.switchRes;
 		trace("SUCCESS: Direct getBytes/fromBytes serialization verified.");
+
+		var rawBytes = Bytes.alloc(4);
+		rawBytes.set(0, 0);
+		rawBytes.set(1, 127);
+		rawBytes.set(2, 128);
+		rawBytes.set(3, 255);
+		var bytesConstChunk = new VM.BytecodeChunk([1, 0, 34], [rawBytes], [], 0);
+		var bytesConstPayload = bytesConstChunk.getBytes();
+		if (bytesConstChunk.resources != null)
+			throw "Bytecode serialization mutated source chunk resources for Bytes constant";
+		var bytesConstRoundTrip = VM.BytecodeChunk.fromBytes(bytesConstPayload);
+		if (bytesConstRoundTrip.constants.length != 1 || !Std.isOfType(bytesConstRoundTrip.constants[0], Bytes))
+			throw "Bytes constant did not deserialize back to haxe.io.Bytes";
+		var roundTripBytes:Bytes = cast bytesConstRoundTrip.constants[0];
+		if (roundTripBytes.length != rawBytes.length)
+			throw "Bytes constant round-trip length mismatch: " + roundTripBytes.length;
+		for (i in 0...rawBytes.length) {
+			if (roundTripBytes.get(i) != rawBytes.get(i))
+				throw "Bytes constant round-trip mismatch at " + i + ": " + roundTripBytes.get(i);
+		}
+		trace("SUCCESS: Bytecode Bytes constant serialization verified.");
 	}
 
 	static function runSlotReuseTests(vmEngine74:Haxiom) {
