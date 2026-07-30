@@ -21,7 +21,6 @@ This matrix describes the intended test coverage shape for the developer preview
 | `haxe test/haxiom/bundle/run_bundle.hxml` | Compiles and executes the bytecode bundle fixture from an isolated temp workspace. |
 | `haxe test/haxiom/interfacing/build.hxml` | Compiles and runs the host/interface bytecode construction smoke. |
 | `haxe test/haxiom/build_cpp.hxml` | Compiles and runs the CPP multi-thread instance-isolation smoke. |
-| `haxe test/haxiom/openfl/build_html5_debug.hxml` | Optional OpenFL HTML5 integration build smoke; not part of the core release bar. |
 
 ## Coverage Groups
 
