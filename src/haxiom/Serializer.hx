@@ -161,6 +161,9 @@ class Serializer {
 				}
 			}
 		}
+		if (chunk.scriptName != null) {
+			addToStringPool(chunk.scriptName);
+		}
 
 		// Write stringPool length and items
 		writeVarInt(payloadOut, stringPool.length);
@@ -249,6 +252,9 @@ class Serializer {
 				payloadOut.write(resBytes);
 			}
 		}
+
+		var scriptNameIdx = chunk.scriptName != null ? stringPoolMap.get(chunk.scriptName) : -1;
+		writeVarInt(payloadOut, scriptNameIdx + 1);
 
 		// Compute Adler32 checksum of the unencrypted payload bytes
 		var rawPayload = payloadOut.getBytes();
@@ -433,7 +439,15 @@ class Serializer {
 			}
 		}
 
-		var chunk = new BytecodeChunk(instructions, constants, positions, maxSlots, isAsync, debugSymbols, resources);
+		var scriptName:String = null;
+		if (payloadInput.position < payloadInput.length) {
+			var scriptNameIdx = readVarInt(payloadInput) - 1;
+			if (scriptNameIdx >= 0 && scriptNameIdx < stringPool.length) {
+				scriptName = stringPool[scriptNameIdx];
+			}
+		}
+
+		var chunk = new BytecodeChunk(instructions, constants, positions, maxSlots, isAsync, debugSymbols, resources, scriptName);
 		BytecodeVerifier.verify(chunk);
 		return chunk;
 	}

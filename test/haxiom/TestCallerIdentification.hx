@@ -72,6 +72,36 @@ class TestCallerIdentification {
 			throw "Test 3b Failed: Expected currentCaller to reset to null after VM execution";
 		}
 
+		// Test 4: Serialized bytecode preserves caller filename without source/currentFilename side channels.
+		var compileEngine = new Haxiom();
+		var bytecodeScript = '
+            class BytecodeCaller {
+                static public function main() {
+                    hostLogBytecode("Hello from serialized bytecode");
+                }
+            }
+        ';
+		var bytecodeBytes = compileEngine.compileToBytecodeBytes(bytecodeScript, "BytecodeCaller.hx", null, true);
+
+		var bytecodeEngine = new Haxiom();
+		bytecodeEngine.useVM = true;
+		var capturedBytecodeCaller:ScriptStackFrame = null;
+		bytecodeEngine.exposeValue("hostLogBytecode", function(msg:String) {
+			capturedBytecodeCaller = bytecodeEngine.currentCaller;
+		});
+		bytecodeEngine.executeBytecodeBytes(bytecodeBytes);
+
+		if (capturedBytecodeCaller == null) {
+			throw "Test 4 Failed: engine.currentCaller was null inside serialized bytecode host FFI callback";
+		}
+		if (capturedBytecodeCaller.file != "BytecodeCaller.hx") {
+			throw 'Test 4 Failed: Expected serialized bytecode caller filename BytecodeCaller.hx but got ${capturedBytecodeCaller.file}';
+		}
+		if (capturedBytecodeCaller.methodName != "main") {
+			throw 'Test 4 Failed: Unexpected serialized bytecode caller method: ${capturedBytecodeCaller.methodName}';
+		}
+		trace('SUCCESS: Serialized bytecode currentCaller preserved filename ${capturedBytecodeCaller.file}.');
+
 		trace("ALL CALLER IDENTIFICATION TESTS PASSED SUCCESSFULLY!");
 	}
 }

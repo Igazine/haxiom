@@ -712,7 +712,7 @@ class Haxiom {
 		enableAstCache = prevCache;
 		if (ast == null)
 			return null;
-		var chunk = BytecodeCompiler.compile(ast, null, true, false, debugMode, null, interp);
+		var chunk = BytecodeCompiler.compile(ast, null, true, false, debugMode, null, interp, filename);
 		return Serializer.serializeBytecode(chunk, key, compress);
 	}
 
@@ -723,12 +723,13 @@ class Haxiom {
 	 * @param key Optional encryption key to obfuscate/secure the bytecode payload.
 	 * @param debugMode If true, embeds debug symbols for local variables and positions.
 	 * @param compress If true, applies LZ4 compression to the serialized bytecode payload.
+	 * @param scriptName Optional script filename metadata for diagnostics after bytecode deserialization.
 	 * @return Serialized HXBC VM bytecode bytes.
 	 */
-	public function compileASTToBytecodeBytes(ast:haxiom.AST.Expr, ?key:HXBCKey, ?debugMode:Bool = false, ?compress:Bool = false):haxe.io.Bytes {
+	public function compileASTToBytecodeBytes(ast:haxiom.AST.Expr, ?key:HXBCKey, ?debugMode:Bool = false, ?compress:Bool = false, ?scriptName:String):haxe.io.Bytes {
 		if (ast == null)
 			return null;
-		var chunk = BytecodeCompiler.compile(ast, null, true, false, debugMode, null, interp);
+		var chunk = BytecodeCompiler.compile(ast, null, true, false, debugMode, null, interp, scriptName);
 		return Serializer.serializeBytecode(chunk, key, compress);
 	}
 
@@ -855,6 +856,7 @@ class Haxiom {
 			info.constantPoolSize = chunk.constants != null ? chunk.constants.length : 0;
 			info.debugSymbolCount = chunk.debugSymbols != null ? chunk.debugSymbols.length : 0;
 			info.positionMappingCount = chunk.positions != null ? chunk.positions.length : 0;
+			info.scriptName = chunk.scriptName;
 			info.debugSymbols = chunk.debugSymbols != null ? chunk.debugSymbols.map(s -> {
 				slot: s.slot,
 				name: s.name,

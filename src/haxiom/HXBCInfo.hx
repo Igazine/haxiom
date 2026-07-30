@@ -33,6 +33,7 @@ typedef HXBCInfo = {
 	var ?constantPoolSize:Int;
 	var ?debugSymbolCount:Int;
 	var ?positionMappingCount:Int;
+	var ?scriptName:String;
 	var ?debugSymbols:Array<HXBCDebugSymbol>;
 	var ?sourceFiles:Array<String>;
 	var ?compiledTypes:Array<HXBCCompiledType>;

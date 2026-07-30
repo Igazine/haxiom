@@ -634,7 +634,7 @@ class LibRun {
 			StaticTypeChecker.check(optimizedAst, haxiom.interp);
 		}
 
-		final bytes = haxiom.compileASTToBytecodeBytes(optimizedAst, key != null ? new HXBCKey(key) : null, false, compress);
+		final bytes = haxiom.compileASTToBytecodeBytes(optimizedAst, key != null ? new HXBCKey(key) : null, false, compress, input);
 
 		final output = haxe.io.Path.withoutExtension(input) + '.hxbc';
 		File.saveBytes(workingDir + output, bytes);
@@ -694,6 +694,9 @@ class LibRun {
 			Sys.println(' Encrypted:                 ${info.isEncrypted ? "YES" : "NO"}');
 			Sys.println(' LZ4 Compressed:            ${info.isCompressed ? "YES" : "NO"}');
 			Sys.println(' Checksum:                  ${info.checksum}');
+			if (info.scriptName != null) {
+				Sys.println(' Script Name:               ${info.scriptName}');
+			}
 			Sys.println("--------------------------------------------------");
 
 			if (info.status == "ENCRYPTED") {

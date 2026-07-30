@@ -40,14 +40,17 @@ class BytecodeCompiler {
 	var args:Null<Array<FunctionArg>> = null;
 	var resources:Map<String, haxe.io.Bytes> = new Map();
 	var interp:Null<Interp> = null;
+	var scriptName:Null<String> = null;
 
-	function new(?interp:Interp, ?args:Array<FunctionArg>, ?isTopLevel:Bool = true, ?isAsync:Bool = false, ?debugMode:Bool = false, ?functionName:String) {
+	function new(?interp:Interp, ?args:Array<FunctionArg>, ?isTopLevel:Bool = true, ?isAsync:Bool = false, ?debugMode:Bool = false, ?functionName:String,
+			?scriptName:String) {
 		this.interp = interp;
 		this.args = args;
 		this.isTopLevel = isTopLevel;
 		this.isAsync = isAsync;
 		this.debugMode = debugMode;
 		this.functionName = functionName;
+		this.scriptName = scriptName;
 		if (args != null && !isTopLevel) {
 			for (arg in args) {
 				declareLocal(arg.name, arg.type);
@@ -56,9 +59,9 @@ class BytecodeCompiler {
 	}
 
 	static function compile(expr:Expr, ?args:Array<FunctionArg>, ?isTopLevel:Bool = true, ?isAsync:Bool = false, ?debugMode:Bool = false,
-			?functionName:String, ?interp:Interp):BytecodeChunk {
+			?functionName:String, ?interp:Interp, ?scriptName:String):BytecodeChunk {
 		var actualAsync = isAsync || hasAwait(expr);
-		var compiler = new BytecodeCompiler(interp, args, isTopLevel, actualAsync, debugMode, functionName);
+		var compiler = new BytecodeCompiler(interp, args, isTopLevel, actualAsync, debugMode, functionName, scriptName);
 		if (!isTopLevel) {
 			compiler.findCapturedVars(expr, new Map<String, Bool>(), compiler.capturedVars);
 		}
@@ -68,7 +71,7 @@ class BytecodeCompiler {
 		}
 		var resMap = [for (k in compiler.resources.keys()) k].length > 0 ? compiler.resources : null;
 		var chunk = new BytecodeChunk(compiler.instructions, compiler.constants, compiler.debugMode ? compiler.positions : [], compiler.maxSlots,
-			compiler.isAsync, compiler.debugMode ? compiler.debugSymbols : null, resMap);
+			compiler.isAsync, compiler.debugMode ? compiler.debugSymbols : null, resMap, compiler.scriptName);
 		optimizeChunk(chunk);
 		if (!debugMode) {
 			stripPositionsFromChunk(chunk);
@@ -639,7 +642,7 @@ class BytecodeCompiler {
 				}
 
 			case EFunction(name, args, retType, body):
-				var bodyChunk = BytecodeCompiler.compile(body, args, false, false, debugMode, name);
+				var bodyChunk = BytecodeCompiler.compile(body, args, false, false, debugMode, name, this.interp, this.scriptName);
 				// Clean the body Chunk's positions so it knows its location
 				var proto = {
 					name: name,
@@ -1049,7 +1052,7 @@ class BytecodeCompiler {
 							}
 						}
 						var mDyn:Dynamic = m;
-						mDyn.bytecodeChunk = BytecodeCompiler.compile(m.body, m.args, false, isMethodAsync, debugMode, m.name, this.interp);
+						mDyn.bytecodeChunk = BytecodeCompiler.compile(m.body, m.args, false, isMethodAsync, debugMode, m.name, this.interp, this.scriptName);
 						if (!debugMode) {
 							m.body = null;
 						}
@@ -1085,7 +1088,7 @@ class BytecodeCompiler {
 							}
 						}
 						var mDyn:Dynamic = m;
-						mDyn.bytecodeChunk = BytecodeCompiler.compile(m.body, m.args, false, isMethodAsync, debugMode, m.name);
+						mDyn.bytecodeChunk = BytecodeCompiler.compile(m.body, m.args, false, isMethodAsync, debugMode, m.name, this.interp, this.scriptName);
 						if (!debugMode) {
 							m.body = null;
 						}
@@ -1122,7 +1125,7 @@ class BytecodeCompiler {
 				if (isTargetAsync) {
 					switch (exprVal.def) {
 						case EFunction(name, args, retType, body):
-							var bodyChunk = BytecodeCompiler.compile(body, args, false, true, debugMode, name);
+							var bodyChunk = BytecodeCompiler.compile(body, args, false, true, debugMode, name, this.interp, this.scriptName);
 							var proto = {
 								name: name,
 								args: args,
