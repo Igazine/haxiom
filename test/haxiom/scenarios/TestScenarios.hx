@@ -28,8 +28,8 @@ class TestScenarios {
 	}
 
 	static function runScenario(scenario:ScenarioDefinition):Void {
-		var paths = scenario.vmInterpretOnly == true
-			? [VMInterpret]
+		var paths = scenario.vmOnly == true
+			? [VMInterpret, RawHXBC, CompressedHXBC, KeyedCompressedHXBC]
 			: PATHS;
 		for (pass in 0...2) {
 			for (path in paths) {

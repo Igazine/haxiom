@@ -403,6 +403,8 @@ class Interp {
 	private var importWhitelist:Array<String> = createDefaultWhitelist();
 	private var importedModules:Map<String, Scope> = new Map();
 	private var functionSignatures:FunctionSignatures = new FunctionSignatures();
+	private var vmGuestCallables:Array<{func:Dynamic, callable:haxiom.VM.VMGuestCallable}> = [];
+	private var vmBoundMethods:haxe.ds.ObjectMap<Dynamic, Array<{method:Dynamic, func:Dynamic}>> = new haxe.ds.ObjectMap();
 
 	var currentConstructorInstance:Dynamic = null;
 	var inAbstractMethod:Bool = false;
@@ -548,6 +550,29 @@ class Interp {
 		framePool = [];
 		stackPool = [];
 		callFramesPool = [];
+		vmGuestCallables = [];
+		vmBoundMethods = new haxe.ds.ObjectMap();
+	}
+
+	private function registerVMGuestCallable(func:Dynamic, callable:haxiom.VM.VMGuestCallable):Void {
+		for (entry in vmGuestCallables) {
+			if (entry.func == func) {
+				entry.callable = callable;
+				return;
+			}
+		}
+		vmGuestCallables.push({func: func, callable: callable});
+	}
+
+	private function getVMGuestCallable(func:Dynamic):Null<haxiom.VM.VMGuestCallable> {
+		if (func != null) {
+			for (entry in vmGuestCallables) {
+				if (entry.func == func) {
+					return entry.callable;
+				}
+			}
+		}
+		return null;
 	}
 
 	private inline function pushFrame(methodName:String, pos:Pos) {
@@ -4883,6 +4908,22 @@ class Interp {
 	}
 
 	function bindMethod(obj:Dynamic, method:ClassMethodInfo):Dynamic {
+		var initialMethodDyn:Dynamic = method;
+		var cacheVMMethod = obj != null && (useVM || initialMethodDyn.bytecodeChunk != null) && initialMethodDyn.isExtern != true;
+		var receiverMethods:Array<{method:Dynamic, func:Dynamic}> = null;
+		if (cacheVMMethod) {
+			receiverMethods = vmBoundMethods.get(obj);
+			if (receiverMethods != null) {
+				for (entry in receiverMethods) {
+					if (entry.method == method) {
+						return entry.func;
+					}
+				}
+			} else {
+				receiverMethods = [];
+				vmBoundMethods.set(obj, receiverMethods);
+			}
+		}
 		var bindings = (obj != null && Std.isOfType(obj, HaxiomInstance)) ? (cast obj : HaxiomInstance).genericBindings : null;
 		var func = (callArgs:Array<Dynamic>) -> {
 			if (disposed)
@@ -5080,6 +5121,39 @@ class Interp {
 		var signatureRet = method.retType != null ? method.retType : TPath(["Dynamic"], []);
 		var resolvedRet = resolveGenericType(signatureRet, bindings, globals);
 		functionSignatures.set(boundFunc, TFun(signatureArgs, resolvedRet));
+		var methodDyn:Dynamic = method;
+		if ((useVM || methodDyn.bytecodeChunk != null) && methodDyn.isAbstract != true && methodDyn.isExtern != true) {
+			var isMethodAsync = false;
+			if (method.meta != null) {
+				for (meta in method.meta) {
+					if (meta.name == ":haxiom.async") {
+						isMethodAsync = true;
+						break;
+					}
+				}
+			}
+			if (methodDyn.bytecodeChunk == null && method.body != null) {
+				methodDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(method.body, method.args, false, isMethodAsync, debugMode, method.name);
+			}
+			if (methodDyn.bytecodeChunk != null) {
+				var className = "toplevel";
+				if (obj != null) {
+					if (Std.isOfType(obj, HaxiomInstance)) {
+						className = (cast obj : HaxiomInstance).cls.name;
+					} else if (Std.isOfType(obj, HaxiomAbstractInstance)) {
+						className = (cast obj : HaxiomAbstractInstance).abstractType.name;
+					} else if (Std.isOfType(obj, HaxiomClass)) {
+						className = (cast obj : HaxiomClass).name;
+					}
+				}
+				registerVMGuestCallable(boundFunc,
+					new haxiom.VM.VMGuestCallable(methodDyn.bytecodeChunk, globals, method.args, method.retType, obj, className + "." + method.name,
+						method.body != null ? method.body.pos : (lastEvalPos != null ? lastEvalPos : {line: 1, col: 1}), bindings));
+			}
+		}
+		if (cacheVMMethod) {
+			receiverMethods.push({method: method, func: boundFunc});
+		}
 		return boundFunc;
 	}
 

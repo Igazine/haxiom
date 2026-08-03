@@ -179,6 +179,12 @@ class VMCallFrame {
 	var ip:Int;
 	var scope:Scope;
 	var methodName:String;
+	var thisContext:Dynamic;
+	var returnType:Null<TypeDecl>;
+	var typeBindings:Null<Map<String, TypeDecl>>;
+	var stackBase:Int = 0;
+	var callScope:Scope;
+	var ownsInterpFrame:Bool = false;
 	var tryStack:Array<{catchIp:Int, stackSize:Int, scope:Scope}> = [];
 	var locals:Array<Dynamic> = [];
 	var isInPool:Bool = false;
@@ -189,6 +195,32 @@ class VMCallFrame {
 		this.scope = scope;
 		this.methodName = methodName;
 		this.locals = [for (i in 0...chunk.maxSlots) null];
+	}
+}
+
+@:allow(haxiom)
+class VMGuestCallable {
+	var chunk:BytecodeChunk;
+	var parentScope:Scope;
+	var args:Array<FunctionArg>;
+	var returnType:Null<TypeDecl>;
+	var thisContext:Dynamic;
+	var methodName:String;
+	var creationPos:Pos;
+	var typeBindings:Null<Map<String, TypeDecl>>;
+	var prefixArgs:Array<Dynamic>;
+
+	function new(chunk:BytecodeChunk, parentScope:Scope, args:Array<FunctionArg>, returnType:Null<TypeDecl>, thisContext:Dynamic, methodName:String,
+			creationPos:Pos, ?typeBindings:Null<Map<String, TypeDecl>>, ?prefixArgs:Array<Dynamic>) {
+		this.chunk = chunk;
+		this.parentScope = parentScope;
+		this.args = args;
+		this.returnType = returnType;
+		this.thisContext = thisContext;
+		this.methodName = methodName;
+		this.creationPos = creationPos;
+		this.typeBindings = typeBindings;
+		this.prefixArgs = prefixArgs != null ? prefixArgs : [];
 	}
 }
 
@@ -207,6 +239,12 @@ class VM {
 			frame.ip = ip;
 			frame.scope = scope;
 			frame.methodName = methodName;
+			frame.thisContext = null;
+			frame.returnType = null;
+			frame.typeBindings = null;
+			frame.stackBase = 0;
+			frame.callScope = null;
+			frame.ownsInterpFrame = false;
 			#if haxe4
 			frame.tryStack.resize(0);
 			#else
@@ -249,6 +287,12 @@ class VM {
 		frame.chunk = null;
 		frame.scope = null;
 		frame.methodName = null;
+		frame.thisContext = null;
+		frame.returnType = null;
+		frame.typeBindings = null;
+		frame.stackBase = 0;
+		frame.callScope = null;
+		frame.ownsInterpFrame = false;
 		#if haxe4
 		frame.tryStack.resize(0);
 		#else
@@ -308,6 +352,7 @@ class VM {
 				callFrames = [];
 			}
 			var frame = obtainFrame(interp, chunk, 0, scope, methodName);
+			frame.thisContext = currentThis;
 			if (args != null) {
 				for (i in 0...args.length) {
 					if (i < frame.locals.length) {
@@ -349,6 +394,120 @@ class VM {
 			return positionForFrame(frame, frame.ip);
 		}
 
+		function activateFrame(next:VMCallFrame):Void {
+			frame = next;
+			inst = frame.chunk.instructions;
+			consts = frame.chunk.constants;
+			posTable = frame.chunk.positions;
+			interp.currentThis = frame.thisContext;
+		}
+
+		function releaseGuestFrame(done:VMCallFrame):Void {
+			if (done.ownsInterpFrame) {
+				interp.popFrame();
+			}
+			if (done.callScope != null) {
+				Scope.recycle(done.callScope, interp);
+				done.callScope = null;
+			}
+			recycleFrame(interp, done);
+		}
+
+		function pushGuestCall(callable:VMGuestCallable, callArgs:Array<Dynamic>):Bool {
+			if (callable == null || callable.chunk == null || callable.chunk.isAsync) {
+				return false;
+			}
+			if (interp.disposed) {
+				stack.push(null);
+				return true;
+			}
+
+			var namespace = "toplevel";
+			if (callable.thisContext != null) {
+				if (Std.isOfType(callable.thisContext, HaxiomInstance)) {
+					namespace = (cast callable.thisContext : HaxiomInstance).cls.name;
+				} else if (Std.isOfType(callable.thisContext, HaxiomClass)) {
+					namespace = (cast callable.thisContext : HaxiomClass).name;
+				}
+			}
+			if (interp.isNamespaceHalted(namespace)) {
+				stack.push(null);
+				return true;
+			}
+
+			var callScope = Scope.create(callable.parentScope, interp);
+			try {
+				if (callable.thisContext != null) {
+					callScope.declare("this", callable.thisContext);
+				}
+				var fullArgs = callable.prefixArgs.concat(callArgs);
+				var mappedArgs:Array<Dynamic> = [];
+				for (i in 0...callable.args.length) {
+					var arg = callable.args[i];
+					var value:Dynamic = null;
+					if (arg.isRest) {
+						value = fullArgs.slice(i);
+						if (arg.type != null) {
+							var rest:Array<Dynamic> = cast value;
+							for (j in 0...rest.length) {
+								rest[j] = interp.castOrCheckType(rest[j], arg.type, callScope, callable.typeBindings);
+							}
+						}
+					} else {
+						value = i < fullArgs.length ? fullArgs[i] : null;
+						value = interp.castOrCheckType(value, arg.type, callScope, callable.typeBindings);
+					}
+					callScope.declare(arg.name, value, arg.type);
+					mappedArgs.push(value);
+				}
+
+				var next = obtainFrame(interp, callable.chunk, 0, callScope, callable.methodName);
+				next.thisContext = callable.thisContext;
+				next.returnType = callable.returnType;
+				next.typeBindings = callable.typeBindings;
+				next.stackBase = stack.length;
+				next.callScope = callScope;
+				next.ownsInterpFrame = true;
+				for (i in 0...mappedArgs.length) {
+					if (i < next.locals.length) {
+						next.locals[i] = mappedArgs[i];
+					}
+				}
+				interp.pushFrame(callable.methodName, callable.creationPos);
+				callFrames.push(next);
+				activateFrame(next);
+				return true;
+			} catch (error:Dynamic) {
+				Scope.recycle(callScope, interp);
+				throw error;
+			}
+		}
+
+		function completeGuestFrame(result:Dynamic):Dynamic {
+			var done = callFrames[callFrames.length - 1];
+			if (done.returnType != null && interp.typeToString(done.returnType) == "Void") {
+				result = null;
+			} else {
+				result = interp.castOrCheckType(result, done.returnType, done.scope, done.typeBindings);
+			}
+			while (stack.length > done.stackBase) {
+				stack.pop();
+			}
+			callFrames.pop();
+			releaseGuestFrame(done);
+			activateFrame(callFrames[callFrames.length - 1]);
+			return result;
+		}
+
+		function invokeCallable(func:Dynamic, receiver:Dynamic, callArgs:Array<Dynamic>):Bool {
+			var guestCallable = interp.getVMGuestCallable(func);
+			if (guestCallable != null && pushGuestCall(guestCallable, callArgs)) {
+				return true;
+			}
+			stack.push(Reflect.callMethod(receiver, func, callArgs));
+			return false;
+		}
+
 		try {
 			while (fiber == null || !fiber.isSuspended) {
 				if (interp.maxInstructions > 0 && ++interp.instructionsCount > interp.maxInstructions) {
@@ -378,12 +537,8 @@ class VM {
 					}
 					if (frame.ip >= inst.length) {
 						if (callFrames.length > 1) {
-							var popped = callFrames.pop();
-							recycleFrame(interp, popped);
-							frame = callFrames[callFrames.length - 1];
-							inst = frame.chunk.instructions;
-							consts = frame.chunk.constants;
-							posTable = frame.chunk.positions;
+							var implicitResult = stack.length > frame.stackBase ? stack.pop() : null;
+							stack.push(completeGuestFrame(implicitResult));
 							continue;
 						}
 						break;
@@ -701,20 +856,15 @@ class VM {
 								var res = superInst.callConstructor(args);
 								stack.push(res);
 							} else {
-								var res = Reflect.callMethod(null, func, args);
-								stack.push(res);
+								if (invokeCallable(func, null, args)) {
+									continue;
+								}
 							}
 
 						case OP_RETURN:
 							var res = stack.pop();
 							if (callFrames.length > 1) {
-								var popped = callFrames.pop();
-								recycleFrame(interp, popped);
-								frame = callFrames[callFrames.length - 1];
-								inst = frame.chunk.instructions;
-								consts = frame.chunk.constants;
-								posTable = frame.chunk.positions;
-								stack.push(res);
+								stack.push(completeGuestFrame(res));
 							} else {
 								stack.push(res);
 								break;
@@ -1078,6 +1228,7 @@ class VM {
 							var closureScope = frame.scope;
 							closureScope.markCaptured();
 							var creationPos = currentPos();
+							var closureThis = interp.currentThis;
 
 							var func = (callArgs:Array<Dynamic>) -> {
 								if (interp.disposed)
@@ -1168,6 +1319,9 @@ class VM {
 							}
 							var signatureRet = proto.retType != null ? proto.retType : TPath(["Dynamic"], []);
 							interp.functionSignatures.set(boundFunc, TFun(signatureArgs, signatureRet));
+							interp.registerVMGuestCallable(boundFunc,
+								new VMGuestCallable(proto.bodyChunk, closureScope, cast proto.args, proto.retType, closureThis,
+									proto.name != null ? proto.name : "anonymous", creationPos));
 
 							if (proto.name != null) {
 								frame.scope.declare(proto.name, boundFunc);
@@ -1512,8 +1666,9 @@ class VM {
 
 							if (cacheHit) {
 								var receiver = (cache.cachedMethodDef != null || Std.isOfType(obj, HaxiomInstance)) ? null : obj;
-								var res = Reflect.callMethod(receiver, boundMethod, args);
-								stack.push(res);
+								if (invokeCallable(boundMethod, receiver, args)) {
+									continue;
+								}
 							} else {
 								if (obj != null && Std.isOfType(obj, haxiom.HaxiomSuperInstance)) {
 									var superInst:haxiom.HaxiomSuperInstance = cast obj;
@@ -1530,8 +1685,7 @@ class VM {
 										newCache.isMethod = true;
 										frame.chunk.inlineCaches.set(cacheKey, newCache);
 
-										var res = Reflect.callMethod(null, bm, args);
-										stack.push(res);
+										invokeCallable(bm, null, args);
 										continue;
 									} else {
 										throw 'Parent method or field "$fieldName" not found on class ${superInst.inst.cls.name}';
@@ -1552,8 +1706,7 @@ class VM {
 										newCache.isMethod = true;
 										frame.chunk.inlineCaches.set(cacheKey, newCache);
 
-										var res = Reflect.callMethod(null, boundMethod, args);
-										stack.push(res);
+										invokeCallable(boundMethod, null, args);
 										continue;
 									}
 								}
@@ -1573,8 +1726,7 @@ class VM {
 										newCache.isMethod = true;
 										frame.chunk.inlineCaches.set(cacheKey, newCache);
 
-										var res = Reflect.callMethod(null, boundMethod, args);
-										stack.push(res);
+										invokeCallable(boundMethod, null, args);
 										continue;
 									}
 								}
@@ -1591,8 +1743,7 @@ class VM {
 								newCache.isMethod = true;
 								frame.chunk.inlineCaches.set(cacheKey, newCache);
 
-								var res = Reflect.callMethod(obj, cast resolvedField, args);
-								stack.push(res);
+								invokeCallable(resolvedField, obj, args);
 							}
 
 						case OP_NEW_MAP:
@@ -1713,6 +1864,15 @@ class VM {
 					var fileInfo = "script";
 					var lineVal = 1;
 					var colVal = 1;
+					var errorNamespace = targetNamespace;
+					if (callFrames.length > 0) {
+						var errorThis = callFrames[callFrames.length - 1].thisContext;
+						if (Std.isOfType(errorThis, HaxiomInstance)) {
+							errorNamespace = (cast errorThis : HaxiomInstance).cls.name;
+						} else if (Std.isOfType(errorThis, HaxiomClass)) {
+							errorNamespace = (cast errorThis : HaxiomClass).name;
+						}
+					}
 
 					// Calculate position based on current frames before unwinding
 					if (callFrames.length > 0) {
@@ -1738,10 +1898,7 @@ class VM {
 						var f = callFrames[callFrames.length - 1];
 						if (f.tryStack.length > 0) {
 							var handler = f.tryStack.pop();
-							frame = f;
-							inst = frame.chunk.instructions;
-							consts = frame.chunk.constants;
-							posTable = frame.chunk.positions;
+							activateFrame(f);
 
 							// Reset stack size to pre-try size, push exception, restore scope, and jump to catch
 							while (stack.length > handler.stackSize) {
@@ -1756,7 +1913,7 @@ class VM {
 							break;
 						}
 						var popped = callFrames.pop();
-						recycleFrame(interp, popped);
+						releaseGuestFrame(popped);
 					}
 					if (foundHandler) {
 						continue;
@@ -1787,8 +1944,8 @@ class VM {
 						se = new ScriptException(e, vmCallStack, formatted, lineVal, colVal, fileInfo, interp.lastActiveLocals);
 						interp.lastActiveLocals = null;
 					}
-					if (se.runtimeNamespace == null && targetNamespace != "toplevel") {
-						se.runtimeNamespace = targetNamespace;
+					if (se.runtimeNamespace == null && errorNamespace != "toplevel") {
+						se.runtimeNamespace = errorNamespace;
 					}
 					throw se;
 				}

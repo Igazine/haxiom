@@ -6,5 +6,5 @@ typedef ScenarioDefinition = {
 	var source:String;
 	var expected:String;
 	@:optional var configure:Haxiom->Void;
-	@:optional var vmInterpretOnly:Bool;
+	@:optional var vmOnly:Bool;
 }

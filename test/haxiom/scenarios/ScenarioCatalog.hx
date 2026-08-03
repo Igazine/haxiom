@@ -358,10 +358,18 @@ class ScenarioCatalog {
 		return {
 			name: "vm-control-flow-stress",
 			moduleName: "VMStressScenario",
-			expected: "2850|false|42|boom|191949|377986|946",
-			vmInterpretOnly: true,
+			expected: "50005000|false|500500|5000|500|42|boom|191949|377986|946",
+			vmOnly: true,
 			source: '
-				class VMStressScenario {
+					class RecursiveWorker {
+						public function new() {}
+
+						public function descend(n:Int, count:Int):Int {
+							return n == 0 ? count : descend(n - 1, count + 1);
+						}
+					}
+
+					class VMStressScenario {
 					static function tail(n:Int, acc:Int):Int {
 						return n == 0 ? acc : tail(n - 1, acc + n);
 					}
@@ -372,6 +380,10 @@ class ScenarioCatalog {
 
 					static function isOdd(n:Int):Bool {
 						return n == 0 ? false : isEven(n - 1);
+					}
+
+					static function nonTail(n:Int):Int {
+						return n == 0 ? 0 : n + nonTail(n - 1);
 					}
 
 					static function accumulator(base:Int):Int->Int {
@@ -390,6 +402,11 @@ class ScenarioCatalog {
 					}
 
 					static public function main():String {
+						function closureDepth(n:Int):Int {
+							return n == 0 ? 0 : 1 + closureDepth(n - 1);
+						}
+
+						var worker = new RecursiveWorker();
 						var add = accumulator(11);
 						add(4);
 						add(8);
@@ -397,7 +414,7 @@ class ScenarioCatalog {
 
 						var caught = "none";
 						try {
-							risky(5);
+							risky(250);
 						} catch (error:Dynamic) {
 							caught = Std.string(error);
 						}
@@ -424,7 +441,8 @@ class ScenarioCatalog {
 							index += 3;
 						}
 
-						return tail(75, 0) + "|" + isEven(45) + "|" + closureTotal + "|" + caught
+						return tail(10000, 0) + "|" + isEven(10001) + "|" + nonTail(1000) + "|" + worker.descend(5000, 0)
+							+ "|" + closureDepth(500) + "|" + closureTotal + "|" + caught
 							+ "|" + loopTotal + "|" + squareTotal + "|" + mapTotal;
 					}
 				}
