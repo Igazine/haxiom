@@ -3,4 +3,5 @@
 --class-path test_internal
 --macro haxiom.macro.FFIMacro.exposePackage("haxiom.autofiffi")
 --main haxiom.TestBytecodeCLI
+--debug
 --interp

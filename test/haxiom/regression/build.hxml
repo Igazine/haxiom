@@ -1,0 +1,21 @@
+-L haxiom
+--class-path test
+--main haxiom.TestRegressionSamples
+--debug
+
+--each
+
+--next
+--interp
+
+--next
+--cpp test/haxiom/tmp_regression/cpp
+--cmd ./test/haxiom/tmp_regression/cpp/TestRegressionSamples-debug
+
+--next
+--js test/haxiom/tmp_regression/js/TestRegressionSamples.js
+--cmd node test/haxiom/tmp_regression/js/TestRegressionSamples.js
+
+--next
+--neko test/haxiom/tmp_regression/neko/TestRegressionSamples.n
+--cmd neko test/haxiom/tmp_regression/neko/TestRegressionSamples.n

@@ -499,6 +499,40 @@ class TestDCE {
         }
 
         // ---------------------------------------------------------------
+        // Test 20: Enum used through unqualified constructors is preserved
+        // ---------------------------------------------------------------
+        var h20 = new Haxiom(); h20.enableDCE = true;
+        var src20 = '
+            enum Message {
+                Empty;
+                Payload(value:Int);
+            }
+            enum DeadEnum {
+                Dead;
+            }
+            class EnumMain {
+                static public function main() {
+                    return Payload(7);
+                }
+            }
+        ';
+        var ast20 = h20.compile(src20, new ScriptContext("EnumMain"));
+        var enums20 = [];
+        switch (ast20.def) {
+            case EBlock(exprs):
+                for (e in exprs) switch (e.def) {
+                    case EEnum(name, _, _): enums20.push(name);
+                    default:
+                }
+            default:
+        }
+        if (enums20.indexOf("Message") != -1 && enums20.indexOf("DeadEnum") == -1) {
+            ok("20. Enum constructor references preserve only the owning enum");
+        } else {
+            fail("20. Enum constructor references preserve only the owning enum", 'remaining enums=$enums20');
+        }
+
+        // ---------------------------------------------------------------
         // Summary
         // ---------------------------------------------------------------
         trace("----------------------");

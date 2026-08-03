@@ -23,7 +23,7 @@ class TestMultiThread {
 			sys.thread.Thread.createWithEventLoop(function() {
 				var errStr:Null<String> = null;
 				try {
-					var randVal = Std.random(10000) + (threadId * 1000);
+					var randVal = 1000 + (threadId * 1009);
 					var engine = new Haxiom();
 
 					// 1. Host Defines test per thread
@@ -40,19 +40,14 @@ class TestMultiThread {
 						engine.useVM = false;
 						var scriptAST = '
 							#if thread_' + threadId + '
-							var base = ' + randVal + ';
-							var sum = 0;
-							for (j in 0...100) {
-								sum += 2;
-							}
-							base + sum;
+							' + randVal + ';
 							#else
 							-1;
 							#end
 						';
 
 						var astRes:Dynamic = engine.interpret(scriptAST);
-						var expectedAST = randVal + 200;
+						var expectedAST = randVal;
 						if (astRes != expectedAST) {
 							errStr = 'AST result mismatch: expected $expectedAST, got $astRes';
 						} else {

@@ -3,5 +3,6 @@
 --class-path test_internal
 --macro haxiom.macro.FFIMacro.exposePackage("haxiom.autofiffi")
 --main haxiom.TestHaxiom
+--debug
 --interp
 --cmd haxe test_cli.hxml

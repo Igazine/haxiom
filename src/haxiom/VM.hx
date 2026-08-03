@@ -1911,8 +1911,8 @@ class HaxiomSuperInstance {
 				interp.currentConstructorInstance = inst;
 				interp.currentThis = inst;
 				try {
-					if (interp.useVM) {
-						var cDyn:Dynamic = constr;
+					var cDyn:Dynamic = constr;
+					if (interp.useVM || (constr.body == null && cDyn.bytecodeChunk != null)) {
 						if (cDyn.bytecodeChunk == null) {
 							cDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(constr.body, constr.args, false, false, interp.debugMode, "new");
 						}

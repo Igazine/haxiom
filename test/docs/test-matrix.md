@@ -10,6 +10,8 @@ This matrix describes the intended test coverage shape for the developer preview
 | `haxe build.hxml` | Fast local sanity gate using the failure-isolation suite on the interpreter target. |
 | `haxe test_full.hxml` | Full interpreter gate plus bytecode CLI smoke tests. |
 | `haxe test_platforms.hxml` | Active CPP, JavaScript, and Neko platform gate. |
+| `haxe test/haxiom/regression/build.hxml` | Focused Haxe-valid regression corpus across interpreter, CPP, JavaScript, and Neko. |
+| `haxe test/haxiom/regression/test.hxml` | Fast interpreter-only form of the focused regression corpus. |
 | `haxe test_cli.hxml` | Bytecode CLI compile, inspect, and compressed bytecode smoke test. |
 | `haxe test_supporting.hxml` | Sequential aggregate for the supporting example and integration smoke gates. |
 
@@ -27,10 +29,10 @@ This matrix describes the intended test coverage shape for the developer preview
 | Group | Existing Coverage | Desired Direction |
 | --- | --- | --- |
 | Lexer and parser | `TestHaxiom`, `TestParseTypes`, syntax checks in `TestCompilationFeatures` | Split into focused parser fixtures for syntax, comments, metadata, imports, packages, and errors. |
-| AST interpreter | `TestHaxiom`, `TestFailureIsolation`, `TestRegressionSamples` | Run every regression sample with `useVM = false`. |
-| VM execution | `TestHaxiom`, `TestFailureIsolation`, `TestRegressionSamples` | Run every regression sample with `useVM = true`. |
-| AST persistence | `TestHaxiom`, `TestFailureIsolation`, `TestRegressionSamples` | Verify AST bytes round-trip and resource embedding, including `Bytes` payloads. |
-| HXBC bytecode | `TestHaxiom`, `TestFailureIsolation`, `TestBytecodeCLI`, `TestRegressionSamples` | Verify raw bytecode, compressed bytecode, inspection, and corrupted-byte rejection. |
+| AST interpreter | `TestHaxiom`, `TestFailureIsolation`, `TestRegressionSamples` | Every regression sample runs with `useVM = false`; continue extracting focused parser/runtime cases. |
+| VM execution | `TestHaxiom`, `TestFailureIsolation`, `TestRegressionSamples` | Every regression sample runs with `useVM = true`; continue extracting focused VM cases. |
+| AST persistence | `TestHaxiom`, `TestFailureIsolation`, `TestRegressionSamples` | Every regression sample round-trips through AST bytes; extend fixture-backed resource coverage, including `Bytes` payloads. |
+| HXBC bytecode | `TestHaxiom`, `TestFailureIsolation`, `TestBytecodeCLI`, `TestRegressionSamples` | Every regression sample runs through raw and compressed HXBC; retain CLI inspection and corrupted-byte rejection gates. |
 | Embedded resources | `TestHaxiom`, `TestFailureIsolation` | Add fixture-backed text and binary resources under `test/` with target-aware gates. |
 | FFI and host interop | `TestHaxiom`, `TestExterns`, `TestCompilationFeatures`, macro package exposure in hxml | Split host globals, exposed values, exposed classes, externs, and package auto-registration. |
 | Type system | `TestTypeSystem`, `TestStaticTypeChecker`, `TestParseTypes`, `TestHaxiom` | Separate runtime type checks from opt-in static type checking. |
@@ -52,3 +54,5 @@ Regression samples should be small scripts that prove one behavior through all s
 - compressed HXBC bytecode
 
 Samples should avoid host filesystem access unless the test is explicitly `#if sys`. Cross-target samples should be pure guest scripts with deterministic scalar or string results.
+
+Each sample declares one expected outcome: a value, a compiler failure, or a runtime failure. Failure samples must also preserve their source label through every execution path. The corpus runs twice with fresh engine instances to detect leaked mutable runtime state.

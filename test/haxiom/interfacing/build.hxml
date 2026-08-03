@@ -1,5 +1,6 @@
 --class-path test/haxiom/interfacing
 -L haxiom
 --main host.Host
+--debug
 --neko test/haxiom/interfacing/bin/Host.n
 --cmd neko test/haxiom/interfacing/bin/Host.n

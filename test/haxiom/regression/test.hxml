@@ -1,5 +1,5 @@
 -L haxiom
 --class-path test
---main haxiom.bundle.RunBundle
+--main haxiom.TestRegressionSamples
 --debug
 --interp

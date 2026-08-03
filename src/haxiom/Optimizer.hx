@@ -993,7 +993,23 @@ class Optimizer {
 						result.push(expr);
 					}
 
-				case ETypedef(name, _, _) | EEnum(name, _, _) | EInterface(name, _, _, _, _, _):
+				case EEnum(name, constructors, _):
+					var useCount = usages.exists(name) ? usages.get(name) : 0;
+					if (useCount == 0) {
+						for (constructor in constructors) {
+							if (usages.exists(constructor.name) && usages.get(constructor.name) > 0) {
+								useCount++;
+								break;
+							}
+						}
+					}
+					if (useCount == 0) {
+						// Eliminated — neither enum nor any constructor is referenced
+					} else {
+						result.push(expr);
+					}
+
+				case ETypedef(name, _, _) | EInterface(name, _, _, _, _, _):
 					var useCount = usages.exists(name) ? usages.get(name) : 0;
 					if (useCount == 0) {
 						// Eliminated — type never referenced

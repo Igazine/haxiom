@@ -1,4 +1,5 @@
 -L haxiom
 --class-path test
 --main haxiom.CompileExample
+--debug
 --interp
