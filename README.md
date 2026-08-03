@@ -122,6 +122,7 @@ I'm planning to add the following features in the future to extend functionality
 - [x] Support for `extern` keyword, so guest Haxiom scripts can access host-defined classes and methods in an LSP-safe manner without using preprocessor directives
 - [x] Caller identification in the Host
 - [x] Remove the `#if haxiom_script` preprocessor handling from the engine, and enforce the use of the much cleaner `extern` syntax
+- [ ] Remove the possibility of top-level code in Haxiom files
 - [ ] Transition the engine from a top-to-bottom one-shot evaluator into a persistent VM state machine
 - [ ] Automatic `IHaxiomModule` Interface injection into Guest Scripts
 - [ ] Class/field alias with `@:native` metadata inside Haxiom scripts
