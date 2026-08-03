@@ -536,9 +536,16 @@ class BytecodeCompiler {
 				}
 
 			case EField(objExpr, field):
-				compileExpr(objExpr);
-				emit(OP_GET_FIELD, e.pos);
-				emitInt(addConst(field), e.pos);
+				var root = expressionPathRoot(e);
+				var rootLocal = root != null && !isTopLevel ? resolveLocal(root) : null;
+				if (root != null && root != "this" && root != "super" && rootLocal == null && !capturedVars.exists(root)) {
+					emit(OP_RESOLVE_PATH, e.pos);
+					emitInt(addConst(e), e.pos);
+				} else {
+					compileExpr(objExpr);
+					emit(OP_GET_FIELD, e.pos);
+					emitInt(addConst(field), e.pos);
+				}
 
 			case ESafeField(objExpr, field):
 				compileExpr(objExpr);
@@ -1715,7 +1722,7 @@ class BytecodeCompiler {
 			case OP_LOAD_CONST | OP_GET_LOCAL | OP_SET_LOCAL | OP_GET_VAR | OP_SET_VAR | OP_JUMP | OP_JUMP_IF_FALSE | OP_JUMP_IF_FALSE_PEEK |
 				OP_JUMP_IF_TRUE_PEEK | OP_JUMP_IF_NOT_NULL_PEEK | OP_CALL | OP_GET_FIELD | OP_SET_FIELD | OP_NEW_ARRAY | OP_MAKE_FUNCTION | OP_PUSH_TRY |
 				OP_MATCH_CATCH | OP_SAFE_GET_FIELD | OP_SAFE_SET_FIELD | OP_CAST | OP_DECLARE_CLASS | OP_DECLARE_INTERFACE | OP_DECLARE_ENUM |
-				OP_DECLARE_ABSTRACT | OP_DECLARE_TYPEDEF | OP_IMPORT | OP_USING | OP_PACKAGE | OP_NEW_MAP | OP_CHECK_TYPE | OP_UNOP:
+				OP_DECLARE_ABSTRACT | OP_DECLARE_TYPEDEF | OP_IMPORT | OP_USING | OP_PACKAGE | OP_NEW_MAP | OP_CHECK_TYPE | OP_UNOP | OP_RESOLVE_PATH:
 				2;
 
 			case OP_CALL_METHOD | OP_MATCH_CASE | OP_NEW | OP_UNOP_MUTATE | OP_EREG:
@@ -1731,6 +1738,14 @@ class BytecodeCompiler {
 			default:
 				throw 'Unknown opcode in optimizer: $op';
 		}
+	}
+
+	function expressionPathRoot(expr:Expr):Null<String> {
+		return switch (expr.def) {
+			case EIdent(name): name;
+			case EField(target, _): expressionPathRoot(target);
+			default: null;
+		};
 	}
 
 	static function hasAwait(expr:Expr):Bool {

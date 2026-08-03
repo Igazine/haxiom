@@ -1053,7 +1053,7 @@ class Interp {
 			if (useVM) {
 				var scriptName = expr != null && expr.pos != null ? expr.pos.file : null;
 				var chunk = BytecodeCompiler.compile(expr, null, true, false, debugMode, null, this, scriptName);
-				res = VM.runChunk(this, chunk, globals, null, "toplevel");
+				res = VM.runChunk(this, chunk, globals, null, "toplevel", null, true);
 			} else {
 				res = eval(expr, globals);
 			}
@@ -1106,6 +1106,7 @@ class Interp {
 
 			if (onRuntimeError != null) {
 				onRuntimeError(finalException);
+				state = IDLE;
 				return null;
 			}
 			throw finalException;
@@ -1149,7 +1150,7 @@ class Interp {
 			}
 		}
 		try {
-			var res = VM.runChunk(this, chunk, globals, null, "toplevel");
+			var res = VM.runChunk(this, chunk, globals, null, "toplevel", null, true);
 			state = IDLE;
 			return res;
 		} catch (e:ControlFlow) {
@@ -1200,6 +1201,7 @@ class Interp {
 
 			if (onRuntimeError != null) {
 				onRuntimeError(finalException);
+				state = IDLE;
 				return null;
 			}
 			throw finalException;
@@ -2252,6 +2254,12 @@ class Interp {
 						var m = findMethod(inst.cls, name);
 						if (m != null)
 							return bindMethod(currentThis, m);
+
+						var staticOwner = findStaticFieldOwner(inst.cls, name);
+						if (staticOwner != null)
+							return evalField(staticOwner, name, scope, pos);
+						if (findStaticMethod(inst.cls, name) != null)
+							return evalField(inst.cls, name, scope, pos);
 					} else if (Std.isOfType(currentThis, HaxiomClass)) {
 						var cls:HaxiomClass = cast currentThis;
 						var fDef = findFieldDef(cls, name);
@@ -2310,6 +2318,9 @@ class Interp {
 							// Assign to implicit this field
 							if (Std.isOfType(currentThis, HaxiomInstance)) {
 								var inst:HaxiomInstance = cast currentThis;
+								var staticOwner = findStaticFieldOwner(inst.cls, name);
+								if (staticOwner != null)
+									return assignField(staticOwner, name, val, scope, pos);
 								var fDef = findFieldDef(inst.cls, name);
 								if (fDef != null && fDef.property != null && fDef.property.set == "set" && !isInsideAccessor(name)) {
 									var m = findMethod(inst.cls, "set_" + name);
@@ -4031,21 +4042,23 @@ class Interp {
 				} catch (flow:ControlFlow) {
 					throw flow;
 				} catch (errVal:Dynamic) {
+					var caughtValue:Dynamic = Std.isOfType(errVal, ScriptException) ? (cast errVal : ScriptException).rawValue : errVal;
 					while (callStack.length > stackDepth) {
 						callStack.pop();
 					}
 					for (c in catches) {
 						var caseScope = Scope.create(scope);
 						var matched = false;
+						var caseValue = caughtValue;
 						try {
-							if (matchPattern(errVal, c.pattern, scope, caseScope)) {
+							if (matchPattern(caseValue, c.pattern, scope, caseScope)) {
 								var typeMatched = true;
 								if (c.type != null) {
 									try {
-										errVal = castOrCheckType(errVal, c.type, scope);
+										caseValue = castOrCheckType(caseValue, c.type, scope);
 										switch (c.pattern.def) {
 											case EIdent(name):
-												caseScope.set(name, errVal);
+												caseScope.set(name, caseValue);
 											default:
 										}
 									} catch (_:Dynamic) {
@@ -4396,6 +4409,11 @@ class Interp {
 					scope.checkAndSet(name, val, this);
 				} else if (currentThis != null && Std.isOfType(currentThis, HaxiomInstance)) {
 					var inst:HaxiomInstance = cast currentThis;
+					var staticOwner = findStaticFieldOwner(inst.cls, name);
+					if (staticOwner != null) {
+						assignField(staticOwner, name, val, scope, target.pos);
+						return;
+					}
 					var fDef = findFieldDef(inst.cls, name);
 					if (fDef != null && fDef.property != null && fDef.property.set == "set" && !isInsideAccessor(name)) {
 						var m = findMethod(inst.cls, "set_" + name);
@@ -4845,6 +4863,14 @@ class Interp {
 		return findFieldDef(cls.parent, name);
 	}
 
+	function findStaticFieldOwner(cls:HaxiomClass, name:String):HaxiomClass {
+		if (cls == null)
+			return null;
+		if (cls.fields.exists(name) && cls.fields.get(name).isStatic)
+			return cls;
+		return findStaticFieldOwner(cls.parent, name);
+	}
+
 	function findStaticMethod(cls:HaxiomClass, name:String):Dynamic {
 		if (cls == null)
 			return null;
@@ -5018,13 +5044,10 @@ class Interp {
 						+ '\n    at $className.${method.name} ($errFile:$errLine:$errCol)';
 					se = new ScriptException(e, callStack.copy(), formatted, errLine, errCol, errFile);
 				}
-
-				haltNamespace(className);
-
-				if (onRuntimeError != null) {
-					onRuntimeError(se);
-					return null;
+				if (se.runtimeNamespace == null && className != "toplevel") {
+					se.runtimeNamespace = className;
 				}
+
 				throw se;
 			}
 		};
@@ -5987,10 +6010,14 @@ class Interp {
 	}
 
 	function _checkSafeToSerialize(v:Dynamic, visited:haxe.ds.ObjectMap<Dynamic, Bool>) {
-		if (v == null)
+		if (v == null || Std.isOfType(v, String))
 			return;
 		switch (Type.typeof(v)) {
-			case TObject | TClass(_):
+			case TObject:
+				if (visited.exists(v))
+					return;
+				visited.set(v, true);
+			case TClass(c) if (c != String):
 				if (visited.exists(v))
 					return;
 				visited.set(v, true);

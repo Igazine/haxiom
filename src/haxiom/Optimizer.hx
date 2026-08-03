@@ -454,11 +454,22 @@ class Optimizer {
 			case EClass(name, fields, methods, parent, interfaces, params, meta, isExtern):
 				if (isExtern == true)
 					return expr;
+				var requiredAccessors:Map<String, Bool> = new Map();
+				for (field in fields) {
+					if (field.property != null) {
+						if (field.property.get == "get")
+							requiredAccessors.set("get_" + field.name, true);
+						if (field.property.set == "set")
+							requiredAccessors.set("set_" + field.name, true);
+					}
+				}
 				// Keep a method if: public, or named "new", or has @:keep, or its name appears in globalUsages
 				var prunedMethods = methods.filter(m -> {
 					if (m.isPublic)
 						return true;
 					if (m.name == "new")
+						return true;
+					if (requiredAccessors.exists(m.name))
 						return true;
 					if (m.meta != null) {
 						for (meta in m.meta) {

@@ -139,7 +139,7 @@ class Haxiom {
 	function updateInterpErrorHandler() {
 		if (_onRuntimeError != null) {
 			interp.onRuntimeError = (err:ScriptException) -> {
-				var ns = getActiveNamespace();
+				var ns = err.runtimeNamespace != null ? err.runtimeNamespace : getActiveNamespace();
 				if (ns != null) {
 					interp.haltNamespace(ns);
 				}

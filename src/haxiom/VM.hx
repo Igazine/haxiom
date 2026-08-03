@@ -89,6 +89,7 @@ enum abstract Opcode(Int) from Int to Int {
 	var OP_AWAIT = 74;
 	var OP_EREG = 75;
 	var OP_ON_DISPOSE = 76;
+	var OP_RESOLVE_PATH = 77;
 }
 
 typedef DebugSymbol = {
@@ -258,19 +259,20 @@ class VM {
 	}
 
 	static function runChunk(interp:Interp, chunk:BytecodeChunk, scope:Scope, ?currentThis:Dynamic, ?methodName:String = "toplevel",
-			?args:Array<Dynamic>):Dynamic {
+			?args:Array<Dynamic>, ?isExecutionBoundary:Bool = false):Dynamic {
 		if (chunk.isAsync) {
 			var fiber = new VMFiber();
 			fiber.scope = scope;
 			fiber.thisContext = currentThis;
-			executeLoop(interp, fiber, chunk, scope, currentThis, methodName, args);
+			fiber.isExecutionBoundary = isExecutionBoundary;
+			executeLoop(interp, fiber, chunk, scope, currentThis, methodName, args, isExecutionBoundary);
 			return fiber.future;
 		}
-		return executeLoop(interp, null, chunk, scope, currentThis, methodName, args);
+		return executeLoop(interp, null, chunk, scope, currentThis, methodName, args, isExecutionBoundary);
 	}
 
 	static function executeLoop(interp:Interp, fiber:Null<VMFiber>, chunk:Null<BytecodeChunk>, scope:Null<Scope>, ?currentThis:Dynamic,
-			?methodName:String = "toplevel", ?args:Array<Dynamic>):Dynamic {
+			?methodName:String = "toplevel", ?args:Array<Dynamic>, ?isExecutionBoundary:Bool = false):Dynamic {
 		if (interp.disposed) {
 			return null;
 		}
@@ -429,7 +431,15 @@ class VM {
 								var val:Dynamic = null;
 								if (!frame.scope.exists(name) && interp.currentThis != null) {
 									if (Std.isOfType(interp.currentThis, HaxiomInstance)) {
-										val = interp.evalField(interp.currentThis, name, frame.scope, currentPos());
+										var currentInstance:HaxiomInstance = cast interp.currentThis;
+										var staticOwner = interp.findStaticFieldOwner(currentInstance.cls, name);
+										if (staticOwner != null) {
+											val = interp.evalField(staticOwner, name, frame.scope, currentPos());
+										} else if (interp.findStaticMethod(currentInstance.cls, name) != null) {
+											val = interp.evalField(currentInstance.cls, name, frame.scope, currentPos());
+										} else {
+											val = interp.evalField(interp.currentThis, name, frame.scope, currentPos());
+										}
 									} else if (Std.isOfType(interp.currentThis, HaxiomClass)) {
 										var cls:HaxiomClass = cast interp.currentThis;
 										var fDef = interp.findFieldDef(cls, name);
@@ -462,6 +472,11 @@ class VM {
 								if (!frame.scope.exists(name) && interp.currentThis != null) {
 									if (Std.isOfType(interp.currentThis, HaxiomInstance)) {
 										var inst:HaxiomInstance = cast interp.currentThis;
+										var staticOwner = interp.findStaticFieldOwner(inst.cls, name);
+										if (staticOwner != null) {
+											interp.assignField(staticOwner, name, val, frame.scope, currentPos());
+											continue;
+										}
 										var fDef = interp.findFieldDef(inst.cls, name);
 										if (fDef != null && fDef.property != null && fDef.property.set == "set" && !interp.isInsideAccessor(name)) {
 											var m = interp.findMethod(inst.cls, "set_" + name);
@@ -837,6 +852,12 @@ class VM {
 									}
 								}
 							}
+
+						case OP_RESOLVE_PATH:
+							var exprIdx = inst[frame.ip++];
+							var pathExpr:Expr = consts[exprIdx];
+							var pathResult = interp.tryResolveExpressionPath(pathExpr, frame.scope);
+							stack.push(pathResult.success ? pathResult.value : interp.eval(pathExpr, frame.scope));
 
 						case OP_SET_FIELD:
 							var idx = inst[frame.ip++];
@@ -1648,12 +1669,12 @@ class VM {
 								registerAwait(promise, (val) -> {
 									fiber.stack.push(val);
 									fiber.isSuspended = false;
-									executeLoop(interp, fiber, null, null, null, null, null);
+									executeLoop(interp, fiber, null, null, null, null, null, fiber.isExecutionBoundary);
 								}, (err) -> {
 									fiber.hasError = true;
 									fiber.error = err;
 									fiber.isSuspended = false;
-									executeLoop(interp, fiber, null, null, null, null, null);
+									executeLoop(interp, fiber, null, null, null, null, null, fiber.isExecutionBoundary);
 								});
 								return null;
 							} else {
@@ -1726,7 +1747,8 @@ class VM {
 							while (stack.length > handler.stackSize) {
 								stack.pop();
 							}
-							stack.push(e);
+							var caughtValue:Dynamic = Std.isOfType(e, ScriptException) ? (cast e : ScriptException).rawValue : e;
+							stack.push(caughtValue);
 							frame.scope = handler.scope;
 							frame.ip = handler.catchIp;
 							foundHandler = true;
@@ -1764,6 +1786,9 @@ class VM {
 						var formatted = traceLines.join("\n");
 						se = new ScriptException(e, vmCallStack, formatted, lineVal, colVal, fileInfo, interp.lastActiveLocals);
 						interp.lastActiveLocals = null;
+					}
+					if (se.runtimeNamespace == null && targetNamespace != "toplevel") {
+						se.runtimeNamespace = targetNamespace;
 					}
 					throw se;
 				}
@@ -1807,7 +1832,9 @@ class VM {
 				se = new ScriptException("Runtime Error: " + Std.string(e), [], "Runtime Error: " + Std.string(e), 1, 1, "script");
 			}
 
-			interp.haltNamespace(targetNamespace);
+			if (isExecutionBoundary) {
+				interp.haltNamespace(se.runtimeNamespace != null ? se.runtimeNamespace : targetNamespace);
+			}
 
 			if (fiber != null) {
 				if (!fiber.isSuspended) {
@@ -1838,12 +1865,14 @@ class VM {
 				}
 			}
 
-			if (interp.onRuntimeError != null) {
-				interp.onRuntimeError(se);
-			} else {
-				haxe.Log.trace("SCRIPT EXCEPTION ERROR: " + se.message, null);
-				if (se.stack != null && se.stack.length > 0) {
-					haxe.Log.trace("STACK TRACE: " + haxe.CallStack.toString(se.stack), null);
+			if (isExecutionBoundary) {
+				if (interp.onRuntimeError != null) {
+					interp.onRuntimeError(se);
+				} else {
+					haxe.Log.trace("SCRIPT EXCEPTION ERROR: " + se.message, null);
+					if (se.stack != null && se.stack.length > 0) {
+						haxe.Log.trace("STACK TRACE: " + haxe.CallStack.toString(se.stack), null);
+					}
 				}
 			}
 
@@ -1951,6 +1980,7 @@ class VMFiber {
 	var isSuspended:Bool = false;
 	var hasError:Bool = false;
 	var error:Dynamic = null;
+	var isExecutionBoundary:Bool = false;
 
 	function new() {
 		this.future = new haxiom.guest.Future();
