@@ -358,7 +358,7 @@ class ScenarioCatalog {
 		return {
 			name: "vm-control-flow-stress",
 			moduleName: "VMStressScenario",
-			expected: "50005000|false|500500|5000|500|42|boom|191949|377986|946",
+			expected: "50005000|false|500500|5000|500|251|250|250|42|boom|191949|377986|946",
 			vmOnly: true,
 			source: '
 					class RecursiveWorker {
@@ -366,6 +366,36 @@ class ScenarioCatalog {
 
 						public function descend(n:Int, count:Int):Int {
 							return n == 0 ? count : descend(n - 1, count + 1);
+						}
+					}
+
+					class ConstructorNode {
+						public var next:ConstructorNode;
+
+						public function new(remaining:Int) {
+							next = remaining > 0 ? new ConstructorNode(remaining - 1) : null;
+						}
+					}
+
+					class AccessorNode {
+						var next:AccessorNode;
+						var stored:Int = 0;
+						public var depth(get, set):Int;
+
+						public function new(next:AccessorNode) {
+							this.next = next;
+						}
+
+						function get_depth():Int {
+							return next == null ? stored : 1 + next.depth;
+						}
+
+						function set_depth(value:Int):Int {
+							stored = value;
+							if (next != null) {
+								next.depth = value - 1;
+							}
+							return value;
 						}
 					}
 
@@ -407,6 +437,20 @@ class ScenarioCatalog {
 						}
 
 						var worker = new RecursiveWorker();
+						var constructorHead = new ConstructorNode(250);
+						var constructorDepth = 0;
+						while (constructorHead != null) {
+							constructorDepth++;
+							constructorHead = constructorHead.next;
+						}
+
+						var accessorHead:AccessorNode = null;
+						for (i in 0...250) {
+							accessorHead = new AccessorNode(accessorHead);
+						}
+						var assignedDepth = accessorHead.depth = 250;
+						var accessorDepth = accessorHead.depth;
+
 						var add = accumulator(11);
 						add(4);
 						add(8);
@@ -442,7 +486,8 @@ class ScenarioCatalog {
 						}
 
 						return tail(10000, 0) + "|" + isEven(10001) + "|" + nonTail(1000) + "|" + worker.descend(5000, 0)
-							+ "|" + closureDepth(500) + "|" + closureTotal + "|" + caught
+							+ "|" + closureDepth(500) + "|" + constructorDepth + "|" + assignedDepth + "|" + accessorDepth
+							+ "|" + closureTotal + "|" + caught
 							+ "|" + loopTotal + "|" + squareTotal + "|" + mapTotal;
 					}
 				}

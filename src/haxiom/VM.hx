@@ -9,6 +9,7 @@ import haxiom.HaxiomTypes.HaxiomEnum;
 import haxiom.HaxiomTypes.HaxiomEnumInstance;
 import haxiom.HaxiomTypes.HaxiomAbstract;
 import haxiom.HaxiomTypes.HaxiomAbstractInstance;
+import haxiom.HaxiomTypes.ClassMethodInfo;
 import haxe.DynamicAccess;
 
 enum abstract Opcode(Int) from Int to Int {
@@ -185,6 +186,9 @@ class VMCallFrame {
 	var stackBase:Int = 0;
 	var callScope:Scope;
 	var ownsInterpFrame:Bool = false;
+	var completionMode:Int = 0;
+	var completionValue:Dynamic;
+	var constructorContext:Dynamic;
 	var tryStack:Array<{catchIp:Int, stackSize:Int, scope:Scope}> = [];
 	var locals:Array<Dynamic> = [];
 	var isInPool:Bool = false;
@@ -245,6 +249,9 @@ class VM {
 			frame.stackBase = 0;
 			frame.callScope = null;
 			frame.ownsInterpFrame = false;
+			frame.completionMode = 0;
+			frame.completionValue = null;
+			frame.constructorContext = null;
 			#if haxe4
 			frame.tryStack.resize(0);
 			#else
@@ -293,6 +300,9 @@ class VM {
 		frame.stackBase = 0;
 		frame.callScope = null;
 		frame.ownsInterpFrame = false;
+		frame.completionMode = 0;
+		frame.completionValue = null;
+		frame.constructorContext = null;
 		#if haxe4
 		frame.tryStack.resize(0);
 		#else
@@ -353,6 +363,7 @@ class VM {
 			}
 			var frame = obtainFrame(interp, chunk, 0, scope, methodName);
 			frame.thisContext = currentThis;
+			frame.constructorContext = interp.currentConstructorInstance;
 			if (args != null) {
 				for (i in 0...args.length) {
 					if (i < frame.locals.length) {
@@ -400,6 +411,7 @@ class VM {
 			consts = frame.chunk.constants;
 			posTable = frame.chunk.positions;
 			interp.currentThis = frame.thisContext;
+			interp.currentConstructorInstance = frame.constructorContext;
 		}
 
 		function releaseGuestFrame(done:VMCallFrame):Void {
@@ -413,7 +425,8 @@ class VM {
 			recycleFrame(interp, done);
 		}
 
-		function pushGuestCall(callable:VMGuestCallable, callArgs:Array<Dynamic>):Bool {
+		function pushGuestCall(callable:VMGuestCallable, callArgs:Array<Dynamic>, ?completionMode:Int = 0, ?completionValue:Dynamic,
+				?constructorContext:Dynamic):Bool {
 			if (callable == null || callable.chunk == null || callable.chunk.isAsync) {
 				return false;
 			}
@@ -468,6 +481,9 @@ class VM {
 				next.stackBase = stack.length;
 				next.callScope = callScope;
 				next.ownsInterpFrame = true;
+				next.completionMode = completionMode;
+				next.completionValue = completionValue;
+				next.constructorContext = constructorContext != null ? constructorContext : interp.currentConstructorInstance;
 				for (i in 0...mappedArgs.length) {
 					if (i < next.locals.length) {
 						next.locals[i] = mappedArgs[i];
@@ -483,8 +499,10 @@ class VM {
 			}
 		}
 
-		function completeGuestFrame(result:Dynamic):Dynamic {
+		function completeGuestFrame(result:Dynamic):Void {
 			var done = callFrames[callFrames.length - 1];
+			var completionMode = done.completionMode;
+			var completionValue = done.completionValue;
 			if (done.returnType != null && interp.typeToString(done.returnType) == "Void") {
 				result = null;
 			} else {
@@ -496,16 +514,51 @@ class VM {
 			callFrames.pop();
 			releaseGuestFrame(done);
 			activateFrame(callFrames[callFrames.length - 1]);
-			return result;
+			switch (completionMode) {
+				case 1:
+					stack.push(completionValue);
+				case 2:
+				default:
+					stack.push(result);
+			}
+		}
+
+		function tryPushGuestCall(func:Dynamic, callArgs:Array<Dynamic>, ?completionMode:Int = 0, ?completionValue:Dynamic,
+				?constructorContext:Dynamic):Bool {
+			var guestCallable = interp.getVMGuestCallable(func);
+			return guestCallable != null && pushGuestCall(guestCallable, callArgs, completionMode, completionValue, constructorContext);
+		}
+
+		function tryPushGuestMethod(receiver:Dynamic, method:ClassMethodInfo, callArgs:Array<Dynamic>, ?completionMode:Int = 0,
+				?completionValue:Dynamic, ?constructorContext:Dynamic):Bool {
+			var guestCallable = interp.createVMMethodCallable(receiver, method);
+			return guestCallable != null && pushGuestCall(guestCallable, callArgs, completionMode, completionValue, constructorContext);
 		}
 
 		function invokeCallable(func:Dynamic, receiver:Dynamic, callArgs:Array<Dynamic>):Bool {
-			var guestCallable = interp.getVMGuestCallable(func);
-			if (guestCallable != null && pushGuestCall(guestCallable, callArgs)) {
+			if (tryPushGuestCall(func, callArgs)) {
 				return true;
 			}
 			stack.push(Reflect.callMethod(receiver, func, callArgs));
 			return false;
+		}
+
+		function installInlineCache(ownerFrame:VMCallFrame, cacheKey:Int, cache:InlineCacheEntry, entry:InlineCacheEntry):Void {
+			if (cache == null) {
+				ownerFrame.chunk.inlineCaches.set(cacheKey, entry);
+			} else if (!cache.isMegamorphic) {
+				var size = 1;
+				var current = cache;
+				while (current.next != null) {
+					size++;
+					current = current.next;
+				}
+				if (size < 4) {
+					current.next = entry;
+				} else {
+					cache.isMegamorphic = true;
+				}
+			}
 		}
 
 		try {
@@ -538,7 +591,7 @@ class VM {
 					if (frame.ip >= inst.length) {
 						if (callFrames.length > 1) {
 							var implicitResult = stack.length > frame.stackBase ? stack.pop() : null;
-							stack.push(completeGuestFrame(implicitResult));
+							completeGuestFrame(implicitResult);
 							continue;
 						}
 						break;
@@ -593,7 +646,18 @@ class VM {
 										} else if (interp.findStaticMethod(currentInstance.cls, name) != null) {
 											val = interp.evalField(currentInstance.cls, name, frame.scope, currentPos());
 										} else {
-											val = interp.evalField(interp.currentThis, name, frame.scope, currentPos());
+											var fieldDef = interp.findFieldDef(currentInstance.cls, name);
+											var getter = fieldDef != null && fieldDef.property != null && fieldDef.property.get == "get"
+												&& !interp.isInsideAccessor(name) ? interp.findMethod(currentInstance.cls, "get_" + name) : null;
+											if (getter != null) {
+												if (tryPushGuestMethod(interp.currentThis, getter, [])) {
+													continue;
+												}
+												var getterFunc = interp.bindMethod(interp.currentThis, getter);
+												val = Reflect.callMethod(null, getterFunc, []);
+											} else {
+												val = interp.evalField(interp.currentThis, name, frame.scope, currentPos());
+											}
 										}
 									} else if (Std.isOfType(interp.currentThis, HaxiomClass)) {
 										var cls:HaxiomClass = cast interp.currentThis;
@@ -636,7 +700,11 @@ class VM {
 										if (fDef != null && fDef.property != null && fDef.property.set == "set" && !interp.isInsideAccessor(name)) {
 											var m = interp.findMethod(inst.cls, "set_" + name);
 											if (m != null) {
-												Reflect.callMethod(null, interp.bindMethod(interp.currentThis, m), [val]);
+												if (tryPushGuestMethod(interp.currentThis, m, [val], 2)) {
+													continue;
+												}
+												var setterFunc = interp.bindMethod(interp.currentThis, m);
+												Reflect.callMethod(null, setterFunc, [val]);
 											}
 										} else {
 											if (fDef != null && fDef.isFinal && interp.currentConstructorInstance != inst) {
@@ -654,7 +722,11 @@ class VM {
 											if (fDef.property != null && fDef.property.set == "set" && !interp.isInsideAccessor(name)) {
 												var m = interp.findStaticMethod(cls, "set_" + name);
 												if (m != null) {
-													Reflect.callMethod(null, interp.bindMethod(interp.currentThis, m), [val]);
+													if (tryPushGuestMethod(interp.currentThis, m, [val], 2)) {
+														continue;
+													}
+													var setterFunc = interp.bindMethod(interp.currentThis, m);
+													Reflect.callMethod(null, setterFunc, [val]);
 												}
 											} else {
 												if (fDef.isFinal) {
@@ -851,10 +923,17 @@ class VM {
 								args.unshift(stack.pop());
 							}
 
-							if (func != null && Std.isOfType(func, haxiom.HaxiomSuperInstance)) {
-								var superInst:haxiom.HaxiomSuperInstance = cast func;
-								var res = superInst.callConstructor(args);
-								stack.push(res);
+								if (func != null && Std.isOfType(func, haxiom.HaxiomSuperInstance)) {
+									var superInst:haxiom.HaxiomSuperInstance = cast func;
+									var parentClass = superInst.inst.cls.parent;
+									var parentConstructor = parentClass != null ? interp.findMethod(parentClass, "new") : null;
+									if (parentConstructor != null) {
+										if (tryPushGuestMethod(superInst.inst, parentConstructor, args, 1, null, superInst.inst)) {
+											continue;
+										}
+										superInst.callConstructor(args);
+									}
+									stack.push(null);
 							} else {
 								if (invokeCallable(func, null, args)) {
 									continue;
@@ -864,7 +943,7 @@ class VM {
 						case OP_RETURN:
 							var res = stack.pop();
 							if (callFrames.length > 1) {
-								stack.push(completeGuestFrame(res));
+								completeGuestFrame(res);
 							} else {
 								stack.push(res);
 								break;
@@ -890,6 +969,7 @@ class VM {
 								var cache = frame.chunk.inlineCaches.get(cacheKey);
 								var resolved:Dynamic = null;
 								var cacheHit = false;
+								var guestGetterStarted = false;
 
 								var classKey:Dynamic = null;
 								if (Std.isOfType(obj, HaxiomInstance)) {
@@ -926,12 +1006,15 @@ class VM {
 											} else if (curr.isProperty) {
 												if (curr.isNativeProperty) {
 													resolved = Reflect.getProperty(obj, fieldName);
-												} else {
-													if (curr.getterMethod != null) {
-														resolved = Reflect.callMethod(null, interp.bindMethod(obj, curr.getterMethod), []);
-													} else {
-														resolved = null;
+												} else if (curr.getterMethod != null) {
+													if (tryPushGuestMethod(obj, curr.getterMethod, [])) {
+														guestGetterStarted = true;
+														break;
 													}
+													var getterFunc = interp.bindMethod(obj, curr.getterMethod);
+													resolved = Reflect.callMethod(null, getterFunc, []);
+												} else {
+													resolved = null;
 												}
 												cacheHit = true;
 											}
@@ -939,11 +1022,36 @@ class VM {
 										}
 										curr = curr.next;
 									}
-								}
+									}
+									if (guestGetterStarted) {
+										continue;
+									}
 
-								if (cacheHit) {
-									stack.push(resolved);
-								} else {
+									if (cacheHit) {
+										stack.push(resolved);
+									} else {
+										if (Std.isOfType(obj, HaxiomInstance)) {
+										var instObj:HaxiomInstance = cast obj;
+										var propertyDef = interp.findFieldDef(instObj.cls, fieldName);
+										if (propertyDef != null && propertyDef.property != null && propertyDef.property.get == "get"
+												&& !interp.isInsideAccessor(fieldName)) {
+											var getterMethod = interp.findMethod(instObj.cls, "get_" + fieldName);
+											if (getterMethod != null) {
+												var propertyEntry = new InlineCacheEntry();
+												propertyEntry.lastClass = classKey;
+												propertyEntry.fieldName = fieldName;
+												propertyEntry.isProperty = true;
+												propertyEntry.getterMethod = getterMethod;
+												installInlineCache(frame, cacheKey, cache, propertyEntry);
+												if (tryPushGuestMethod(obj, getterMethod, [])) {
+													continue;
+												}
+												var getterFunc = interp.bindMethod(obj, getterMethod);
+												stack.push(Reflect.callMethod(null, getterFunc, []));
+												continue;
+											}
+										}
+									}
 									var val = interp.evalField(obj, fieldName, frame.scope, currentPos());
 									stack.push(val);
 
@@ -1051,10 +1159,13 @@ class VM {
 											} else if (curr.isProperty) {
 												if (curr.isNativeProperty) {
 													Reflect.setProperty(obj, fieldName, val);
-												} else {
-													if (curr.setterMethod != null) {
-														Reflect.callMethod(null, interp.bindMethod(obj, curr.setterMethod), [val]);
+												} else if (curr.setterMethod != null) {
+													cacheHit = true;
+													if (tryPushGuestMethod(obj, curr.setterMethod, [val], 1, val)) {
+														break;
 													}
+													var setterFunc = interp.bindMethod(obj, curr.setterMethod);
+													Reflect.callMethod(null, setterFunc, [val]);
 												}
 												cacheHit = true;
 											}
@@ -1067,6 +1178,29 @@ class VM {
 								if (cacheHit) {
 									stack.push(val);
 								} else {
+									if (Std.isOfType(obj, HaxiomInstance)) {
+										var instObj:HaxiomInstance = cast obj;
+										var propertyDef = interp.findFieldDef(instObj.cls, fieldName);
+										if (propertyDef != null && propertyDef.property != null && propertyDef.property.set == "set"
+												&& !interp.isInsideAccessor(fieldName)) {
+											var setterMethod = interp.findMethod(instObj.cls, "set_" + fieldName);
+											if (setterMethod != null) {
+												var propertyEntry = new InlineCacheEntry();
+												propertyEntry.lastClass = classKey;
+												propertyEntry.fieldName = fieldName;
+												propertyEntry.isProperty = true;
+												propertyEntry.setterMethod = setterMethod;
+												installInlineCache(frame, cacheKey, cache, propertyEntry);
+												if (tryPushGuestMethod(obj, setterMethod, [val], 1, val)) {
+													continue;
+												}
+												var setterFunc = interp.bindMethod(obj, setterMethod);
+												Reflect.callMethod(null, setterFunc, [val]);
+												stack.push(val);
+												continue;
+											}
+										}
+									}
 									var result = interp.assignField(obj, fieldName, val, frame.scope);
 									stack.push(result);
 
@@ -1131,23 +1265,23 @@ class VM {
 								var resolved:Dynamic = null;
 								var cacheHit = false;
 
-								if (cache != null && cache.isMethod) {
-									if (obj == cache.lastObject) {
-										resolved = cache.cachedValue;
-										cacheHit = true;
-									} else if (Std.isOfType(obj, HaxiomInstance)) {
-										var instObj:HaxiomInstance = cast obj;
-										if (instObj.cls == cache.lastClass) {
-											resolved = interp.bindMethod(instObj, cache.cachedMethodDef);
-											cache.lastObject = instObj;
-											cache.cachedValue = resolved;
+									if (cache != null && cache.isMethod) {
+										if (obj == cache.lastObject) {
+											resolved = cache.cachedValue;
 											cacheHit = true;
+										} else if (Std.isOfType(obj, HaxiomInstance)) {
+											var instObj:HaxiomInstance = cast obj;
+											if (instObj.cls == cache.lastClass) {
+												resolved = interp.bindMethod(instObj, cache.cachedMethodDef);
+												cache.lastObject = instObj;
+												cache.cachedValue = resolved;
+												cacheHit = true;
+											}
 										}
 									}
-								}
 
-								if (cacheHit) {
-									stack.push(resolved);
+									if (cacheHit) {
+										stack.push(resolved);
 								} else {
 									var val = interp.evalField(obj, fieldName, frame.scope, currentPos());
 									stack.push(val);
@@ -1569,10 +1703,32 @@ class VM {
 								args.unshift(stack.pop());
 							}
 
-							// Evaluate new instance using parser/interpreter helpers
-							var fakeNewExpr = {def: ENew(type, [for (a in args) {def: EValue(a), pos: currentPos()}]), pos: currentPos()};
-							var res = interp.eval(fakeNewExpr, frame.scope);
-							stack.push(res);
+								var construction = interp.prepareVMClassConstruction(type, args, frame.scope, currentPos());
+								if (construction != null) {
+									if (construction.methodInfo == null) {
+										stack.push(construction.instance);
+									} else {
+										if (tryPushGuestMethod(construction.instance, construction.methodInfo, args, 1, construction.instance,
+												construction.instance)) {
+											continue;
+										}
+										var constructorFunc = interp.bindMethod(construction.instance, construction.methodInfo);
+										var oldConstructor = interp.currentConstructorInstance;
+										interp.currentConstructorInstance = construction.instance;
+										try {
+											Reflect.callMethod(null, constructorFunc, args);
+											interp.currentConstructorInstance = oldConstructor;
+										} catch (error:Dynamic) {
+											interp.currentConstructorInstance = oldConstructor;
+											throw error;
+										}
+										stack.push(construction.instance);
+									}
+								} else {
+									// Native and exposed constructor paths remain owned by the interpreter.
+									var fakeNewExpr = {def: ENew(type, [for (a in args) {def: EValue(a), pos: currentPos()}]), pos: currentPos()};
+									stack.push(interp.eval(fakeNewExpr, frame.scope));
+								}
 
 						case OP_CAST:
 							var typeIdx = inst[frame.ip++];
