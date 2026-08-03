@@ -41,9 +41,10 @@ class BytecodeCompiler {
 	var resources:Map<String, haxe.io.Bytes> = new Map();
 	var interp:Null<Interp> = null;
 	var scriptName:Null<String> = null;
+	var implicitMembers:Map<String, Bool> = new Map();
 
 	function new(?interp:Interp, ?args:Array<FunctionArg>, ?isTopLevel:Bool = true, ?isAsync:Bool = false, ?debugMode:Bool = false, ?functionName:String,
-			?scriptName:String) {
+			?scriptName:String, ?implicitMembers:Map<String, Bool>) {
 		this.interp = interp;
 		this.args = args;
 		this.isTopLevel = isTopLevel;
@@ -51,6 +52,7 @@ class BytecodeCompiler {
 		this.debugMode = debugMode;
 		this.functionName = functionName;
 		this.scriptName = scriptName;
+		this.implicitMembers = implicitMembers != null ? implicitMembers : new Map();
 		if (args != null && !isTopLevel) {
 			for (arg in args) {
 				declareLocal(arg.name, arg.type);
@@ -59,9 +61,9 @@ class BytecodeCompiler {
 	}
 
 	static function compile(expr:Expr, ?args:Array<FunctionArg>, ?isTopLevel:Bool = true, ?isAsync:Bool = false, ?debugMode:Bool = false,
-			?functionName:String, ?interp:Interp, ?scriptName:String):BytecodeChunk {
+			?functionName:String, ?interp:Interp, ?scriptName:String, ?implicitMembers:Map<String, Bool>):BytecodeChunk {
 		var actualAsync = isAsync || hasAwait(expr);
-		var compiler = new BytecodeCompiler(interp, args, isTopLevel, actualAsync, debugMode, functionName, scriptName);
+		var compiler = new BytecodeCompiler(interp, args, isTopLevel, actualAsync, debugMode, functionName, scriptName, implicitMembers);
 		if (!isTopLevel) {
 			compiler.findCapturedVars(expr, new Map<String, Bool>(), compiler.capturedVars);
 		}
@@ -538,7 +540,14 @@ class BytecodeCompiler {
 			case EField(objExpr, field):
 				var root = expressionPathRoot(e);
 				var rootLocal = root != null && !isTopLevel ? resolveLocal(root) : null;
-				if (root != null && root != "this" && root != "super" && rootLocal == null && !capturedVars.exists(root)) {
+				var isBareReceiver = switch (objExpr.def) {
+					case EIdent(_): true;
+					default: false;
+				};
+				var barePackageRoot = isBareReceiver && root != null && root.length > 0
+					&& root.charAt(0) == root.charAt(0).toLowerCase() && !implicitMembers.exists(root);
+				if ((!isBareReceiver || barePackageRoot) && root != null && root != "this" && root != "super" && rootLocal == null
+						&& !capturedVars.exists(root)) {
 					emit(OP_RESOLVE_PATH, e.pos);
 					emitInt(addConst(e), e.pos);
 				} else {
@@ -649,7 +658,7 @@ class BytecodeCompiler {
 				}
 
 			case EFunction(name, args, retType, body):
-				var bodyChunk = BytecodeCompiler.compile(body, args, false, false, debugMode, name, this.interp, this.scriptName);
+				var bodyChunk = BytecodeCompiler.compile(body, args, false, false, debugMode, name, this.interp, this.scriptName, implicitMembers);
 				// Clean the body Chunk's positions so it knows its location
 				var proto = {
 					name: name,
@@ -1041,11 +1050,16 @@ class BytecodeCompiler {
 			case EClass(name, fields, methods, parent, interfaces, params, meta, isExtern):
 				if (isExtern == true)
 					return;
+				var classMembers:Map<String, Bool> = new Map();
 				for (f in fields) {
+					classMembers.set(f.name, true);
 					if (f.meta != null) {
 						f.expr = ResourceCompiler.processResource(this.interp, f.meta, f.type, f.expr, e.pos, this.resources);
 						f.meta = stripResourceMeta(f.meta);
 					}
+				}
+				for (m in methods) {
+					classMembers.set(m.name, true);
 				}
 				for (m in methods) {
 					if (m.body != null) {
@@ -1059,7 +1073,8 @@ class BytecodeCompiler {
 							}
 						}
 						var mDyn:Dynamic = m;
-						mDyn.bytecodeChunk = BytecodeCompiler.compile(m.body, m.args, false, isMethodAsync, debugMode, m.name, this.interp, this.scriptName);
+						mDyn.bytecodeChunk = BytecodeCompiler.compile(m.body, m.args, false, isMethodAsync, debugMode, m.name, this.interp, this.scriptName,
+							classMembers);
 						if (!debugMode) {
 							m.body = null;
 						}
@@ -1077,11 +1092,16 @@ class BytecodeCompiler {
 				emitInt(addConst(e), e.pos);
 
 			case EAbstract(name, underlyingType, fields, methods, params, meta):
+				var abstractMembers:Map<String, Bool> = new Map();
 				for (f in fields) {
+					abstractMembers.set(f.name, true);
 					if (f.meta != null) {
 						f.expr = ResourceCompiler.processResource(this.interp, f.meta, f.type, f.expr, e.pos, this.resources);
 						f.meta = stripResourceMeta(f.meta);
 					}
+				}
+				for (m in methods) {
+					abstractMembers.set(m.name, true);
 				}
 				for (m in methods) {
 					if (m.body != null) {
@@ -1095,7 +1115,8 @@ class BytecodeCompiler {
 							}
 						}
 						var mDyn:Dynamic = m;
-						mDyn.bytecodeChunk = BytecodeCompiler.compile(m.body, m.args, false, isMethodAsync, debugMode, m.name, this.interp, this.scriptName);
+						mDyn.bytecodeChunk = BytecodeCompiler.compile(m.body, m.args, false, isMethodAsync, debugMode, m.name, this.interp, this.scriptName,
+							abstractMembers);
 						if (!debugMode) {
 							m.body = null;
 						}

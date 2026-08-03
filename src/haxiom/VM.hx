@@ -189,6 +189,7 @@ class VMCallFrame {
 	var completionMode:Int = 0;
 	var completionValue:Dynamic;
 	var constructorContext:Dynamic;
+	var abstractContext:Bool = false;
 	var tryStack:Array<{catchIp:Int, stackSize:Int, scope:Scope}> = [];
 	var locals:Array<Dynamic> = [];
 	var isInPool:Bool = false;
@@ -213,6 +214,7 @@ class VMGuestCallable {
 	var creationPos:Pos;
 	var typeBindings:Null<Map<String, TypeDecl>>;
 	var prefixArgs:Array<Dynamic>;
+	var abstractContext:Bool;
 
 	function new(chunk:BytecodeChunk, parentScope:Scope, args:Array<FunctionArg>, returnType:Null<TypeDecl>, thisContext:Dynamic, methodName:String,
 			creationPos:Pos, ?typeBindings:Null<Map<String, TypeDecl>>, ?prefixArgs:Array<Dynamic>) {
@@ -225,6 +227,7 @@ class VMGuestCallable {
 		this.creationPos = creationPos;
 		this.typeBindings = typeBindings;
 		this.prefixArgs = prefixArgs != null ? prefixArgs : [];
+		this.abstractContext = Std.isOfType(thisContext, HaxiomAbstractInstance);
 	}
 }
 
@@ -252,6 +255,7 @@ class VM {
 			frame.completionMode = 0;
 			frame.completionValue = null;
 			frame.constructorContext = null;
+			frame.abstractContext = false;
 			#if haxe4
 			frame.tryStack.resize(0);
 			#else
@@ -303,6 +307,7 @@ class VM {
 		frame.completionMode = 0;
 		frame.completionValue = null;
 		frame.constructorContext = null;
+		frame.abstractContext = false;
 		#if haxe4
 		frame.tryStack.resize(0);
 		#else
@@ -364,6 +369,7 @@ class VM {
 			var frame = obtainFrame(interp, chunk, 0, scope, methodName);
 			frame.thisContext = currentThis;
 			frame.constructorContext = interp.currentConstructorInstance;
+			frame.abstractContext = interp.inAbstractMethod;
 			if (args != null) {
 				for (i in 0...args.length) {
 					if (i < frame.locals.length) {
@@ -383,6 +389,9 @@ class VM {
 		var inst = frame.chunk.instructions;
 		var consts = frame.chunk.constants;
 		var posTable = frame.chunk.positions;
+		interp.currentThis = frame.thisContext;
+		interp.currentConstructorInstance = frame.constructorContext;
+		interp.inAbstractMethod = frame.abstractContext;
 
 		inline function frameFallbackFile(f:VMCallFrame):String {
 			return f != null && f.chunk != null && f.chunk.scriptName != null ? f.chunk.scriptName : "script";
@@ -412,6 +421,7 @@ class VM {
 			posTable = frame.chunk.positions;
 			interp.currentThis = frame.thisContext;
 			interp.currentConstructorInstance = frame.constructorContext;
+			interp.inAbstractMethod = frame.abstractContext;
 		}
 
 		function releaseGuestFrame(done:VMCallFrame):Void {
@@ -484,6 +494,7 @@ class VM {
 				next.completionMode = completionMode;
 				next.completionValue = completionValue;
 				next.constructorContext = constructorContext != null ? constructorContext : interp.currentConstructorInstance;
+				next.abstractContext = callable.abstractContext || interp.inAbstractMethod;
 				for (i in 0...mappedArgs.length) {
 					if (i < next.locals.length) {
 						next.locals[i] = mappedArgs[i];
@@ -635,9 +646,20 @@ class VM {
 								} else {
 									throw "Cannot use 'super' outside of a class instance constructor or method";
 								}
-							} else {
-								var val:Dynamic = null;
-								if (!frame.scope.exists(name) && interp.currentThis != null) {
+								} else {
+									var val:Dynamic = null;
+									if (!frame.scope.exists(name) && interp.currentThis != null) {
+										var getterMethod = interp.findVMPropertyAccessor(interp.currentThis, name, false, currentPos());
+										if (getterMethod != null) {
+											if (tryPushGuestMethod(interp.currentThis, getterMethod, [])) {
+												continue;
+											}
+											val = Reflect.callMethod(null, interp.bindMethod(interp.currentThis, getterMethod), []);
+											stack.push(val);
+											continue;
+										}
+									}
+									if (!frame.scope.exists(name) && interp.currentThis != null) {
 									if (Std.isOfType(interp.currentThis, HaxiomInstance)) {
 										var currentInstance:HaxiomInstance = cast interp.currentThis;
 										var staticOwner = interp.findStaticFieldOwner(currentInstance.cls, name);
@@ -669,6 +691,19 @@ class VM {
 										} else {
 											val = frame.scope.get(name);
 										}
+									} else if (Std.isOfType(interp.currentThis, HaxiomAbstractInstance)) {
+										var abstractInstance:HaxiomAbstractInstance = cast interp.currentThis;
+										var abstractType = abstractInstance.abstractType;
+										var fieldDef = abstractType.fields.get(name);
+										if (fieldDef != null && fieldDef.isStatic) {
+											val = interp.evalField(abstractType, name, frame.scope, currentPos());
+										} else if (abstractType.methods.exists(name)) {
+											val = interp.bindMethod(interp.currentThis, abstractType.methods.get(name));
+										} else if (fieldDef != null) {
+											val = interp.evalField(interp.currentThis, name, frame.scope, currentPos());
+										} else {
+											val = frame.scope.get(name);
+										}
 									} else {
 										val = frame.scope.get(name);
 									}
@@ -685,10 +720,20 @@ class VM {
 							var idx = inst[frame.ip++];
 							var name:String = consts[idx];
 							var val = stack[stack.length - 1];
-							if (name == "this") {
-								interp.currentThis = val;
-							} else {
-								if (!frame.scope.exists(name) && interp.currentThis != null) {
+								if (name == "this") {
+									interp.currentThis = val;
+								} else {
+									if (!frame.scope.exists(name) && interp.currentThis != null) {
+										var setterMethod = interp.findVMPropertyAccessor(interp.currentThis, name, true, currentPos());
+										if (setterMethod != null) {
+											if (tryPushGuestMethod(interp.currentThis, setterMethod, [val], 2)) {
+												continue;
+											}
+											Reflect.callMethod(null, interp.bindMethod(interp.currentThis, setterMethod), [val]);
+											continue;
+										}
+									}
+									if (!frame.scope.exists(name) && interp.currentThis != null) {
 									if (Std.isOfType(interp.currentThis, HaxiomInstance)) {
 										var inst:HaxiomInstance = cast interp.currentThis;
 										var staticOwner = interp.findStaticFieldOwner(inst.cls, name);
@@ -737,6 +782,22 @@ class VM {
 												}
 												cls.staticFields.set(name, val);
 											}
+										} else {
+											frame.scope.checkAndSet(name, val, interp);
+										}
+									} else if (Std.isOfType(interp.currentThis, HaxiomAbstractInstance)) {
+										var abstractInstance:HaxiomAbstractInstance = cast interp.currentThis;
+										var fieldDef = abstractInstance.abstractType.fields.get(name);
+										if (fieldDef != null && fieldDef.isStatic) {
+											if (fieldDef.isFinal) {
+												throw 'Cannot reassign static final field $name';
+											}
+											if (fieldDef.type != null) {
+												val = interp.castOrCheckType(val, fieldDef.type, frame.scope);
+											}
+											abstractInstance.abstractType.staticFields.set(name, val);
+										} else if (fieldDef != null) {
+											interp.assignField(interp.currentThis, name, val, frame.scope, currentPos());
 										} else {
 											frame.scope.checkAndSet(name, val, interp);
 										}
@@ -953,9 +1014,17 @@ class VM {
 							var idx = inst[frame.ip++];
 							var fieldName:String = consts[idx];
 							var obj = stack.pop();
-							if (obj == null)
-								throw 'Cannot read field "$fieldName" of null';
-							if (Std.isOfType(obj, haxiom.HaxiomSuperInstance)) {
+								if (obj == null)
+									throw 'Cannot read field "$fieldName" of null';
+								var getterMethod = interp.findVMPropertyAccessor(obj, fieldName, false, currentPos());
+								if (getterMethod != null) {
+									if (tryPushGuestMethod(obj, getterMethod, [])) {
+										continue;
+									}
+									stack.push(Reflect.callMethod(null, interp.bindMethod(obj, getterMethod), []));
+									continue;
+								}
+								if (Std.isOfType(obj, haxiom.HaxiomSuperInstance)) {
 								var superInst:haxiom.HaxiomSuperInstance = cast obj;
 								var parentCls = superInst.inst.cls.parent;
 								var m = interp.findMethod(parentCls, fieldName);
@@ -1122,9 +1191,18 @@ class VM {
 							var fieldName:String = consts[idx];
 							var val = stack.pop();
 							var obj = stack.pop();
-							if (obj == null)
-								throw 'Cannot write field "$fieldName" of null';
-							if (Std.isOfType(obj, haxiom.HaxiomSuperInstance)) {
+								if (obj == null)
+									throw 'Cannot write field "$fieldName" of null';
+								var setterMethod = interp.findVMPropertyAccessor(obj, fieldName, true, currentPos());
+								if (setterMethod != null) {
+									if (tryPushGuestMethod(obj, setterMethod, [val], 1, val)) {
+										continue;
+									}
+									Reflect.callMethod(null, interp.bindMethod(obj, setterMethod), [val]);
+									stack.push(val);
+									continue;
+								}
+								if (Std.isOfType(obj, haxiom.HaxiomSuperInstance)) {
 								var superInst:haxiom.HaxiomSuperInstance = cast obj;
 								superInst.inst.fields.set(fieldName, val);
 								stack.push(val);
@@ -1260,6 +1338,14 @@ class VM {
 							if (obj == null) {
 								stack.push(null);
 							} else {
+								var getterMethod = interp.findVMPropertyAccessor(obj, fieldName, false, currentPos());
+								if (getterMethod != null) {
+									if (tryPushGuestMethod(obj, getterMethod, [])) {
+										continue;
+									}
+									stack.push(Reflect.callMethod(null, interp.bindMethod(obj, getterMethod), []));
+									continue;
+								}
 								var cacheKey = frame.ip - 2;
 								var cache = frame.chunk.inlineCaches.get(cacheKey);
 								var resolved:Dynamic = null;
@@ -1311,7 +1397,16 @@ class VM {
 							if (obj == null) {
 								stack.push(null);
 							} else {
-								stack.push(interp.assignField(obj, fieldName, val, frame.scope));
+								var setterMethod = interp.findVMPropertyAccessor(obj, fieldName, true, currentPos());
+								if (setterMethod != null) {
+									if (tryPushGuestMethod(obj, setterMethod, [val], 1, val)) {
+										continue;
+									}
+									Reflect.callMethod(null, interp.bindMethod(obj, setterMethod), [val]);
+									stack.push(val);
+								} else {
+									stack.push(interp.assignField(obj, fieldName, val, frame.scope));
+								}
 							}
 
 						case OP_NEW_ARRAY:

@@ -358,7 +358,7 @@ class ScenarioCatalog {
 		return {
 			name: "vm-control-flow-stress",
 			moduleName: "VMStressScenario",
-			expected: "50005000|false|500500|5000|500|251|250|250|42|boom|191949|377986|946",
+			expected: "50005000|false|500500|5000|500|251|250|250|250|250|250|250|42|boom|191949|377986|946",
 			vmOnly: true,
 			source: '
 					class RecursiveWorker {
@@ -395,6 +395,48 @@ class ScenarioCatalog {
 							if (next != null) {
 								next.depth = value - 1;
 							}
+							return value;
+						}
+					}
+
+					class StaticAccessorDepth {
+						static var remaining:Int = 0;
+						public static var depth(get, set):Int;
+
+						static function get_depth():Int {
+							return remaining == 0 ? 0 : 1 + continueDepth();
+						}
+
+						static function continueDepth():Int {
+							remaining--;
+							return StaticAccessorDepth.depth;
+						}
+
+						static function set_depth(value:Int):Int {
+							remaining = value;
+							return value;
+						}
+					}
+
+					abstract AbstractAccessorDepth(Int) {
+						static var remaining:Int = 0;
+						public var depth(get, set):Int;
+
+						public function new(value:Int) {
+							this = value;
+						}
+
+						function get_depth():Int {
+							return remaining == 0 ? 0 : 1 + continueDepth();
+						}
+
+						function continueDepth():Int {
+							remaining--;
+							return depth;
+						}
+
+						function set_depth(value:Int):Int {
+							remaining = value;
 							return value;
 						}
 					}
@@ -448,8 +490,15 @@ class ScenarioCatalog {
 						for (i in 0...250) {
 							accessorHead = new AccessorNode(accessorHead);
 						}
-						var assignedDepth = accessorHead.depth = 250;
-						var accessorDepth = accessorHead.depth;
+						var assignedDepth = accessorHead?.depth = 250;
+						var accessorDepth = accessorHead?.depth;
+
+						var staticAssignedDepth = StaticAccessorDepth.depth = 250;
+						var staticAccessorDepth = StaticAccessorDepth.depth;
+
+						var abstractAccessor = new AbstractAccessorDepth(0);
+						var abstractAssignedDepth = abstractAccessor.depth = 250;
+						var abstractAccessorDepth = abstractAccessor.depth;
 
 						var add = accumulator(11);
 						add(4);
@@ -487,6 +536,7 @@ class ScenarioCatalog {
 
 						return tail(10000, 0) + "|" + isEven(10001) + "|" + nonTail(1000) + "|" + worker.descend(5000, 0)
 							+ "|" + closureDepth(500) + "|" + constructorDepth + "|" + assignedDepth + "|" + accessorDepth
+							+ "|" + staticAssignedDepth + "|" + staticAccessorDepth + "|" + abstractAssignedDepth + "|" + abstractAccessorDepth
 							+ "|" + closureTotal + "|" + caught
 							+ "|" + loopTotal + "|" + squareTotal + "|" + mapTotal;
 					}

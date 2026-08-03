@@ -1932,7 +1932,7 @@ class Interp {
 			var abs = inst.abstractType;
 			if (abs.fields.exists(field)) {
 				var fDef = abs.fields.get(field);
-				if (fDef.property != null && !isInsideAccessor(field)) {
+				if (fDef.property != null && !isInsideAccessor(field, obj)) {
 					var getAccessor = fDef.property.get;
 					if (getAccessor == "get") {
 						var m = abs.methods.get("get_" + field);
@@ -1958,7 +1958,7 @@ class Interp {
 			var fDef = findFieldDef(inst.cls, field);
 			if (fDef != null) {
 				checkMemberAccess(inst.cls, fDef.isPublic, pos, field);
-				if (fDef.property != null && !isInsideAccessor(field)) {
+				if (fDef.property != null && !isInsideAccessor(field, obj)) {
 					var getAccessor = fDef.property.get;
 					if (getAccessor == "get") {
 						var m = findMethod(inst.cls, "get_" + field);
@@ -2138,7 +2138,7 @@ class Interp {
 			var abs = inst.abstractType;
 			if (abs.fields.exists(field)) {
 				var fDef = abs.fields.get(field);
-				if (fDef.property != null && !isInsideAccessor(field)) {
+				if (fDef.property != null && !isInsideAccessor(field, obj)) {
 					var setAccessor = fDef.property.set;
 					if (setAccessor == "set") {
 						var m = abs.methods.get("set_" + field);
@@ -2160,7 +2160,7 @@ class Interp {
 			var fDef = findFieldDef(inst.cls, field);
 			if (fDef != null) {
 				checkMemberAccess(inst.cls, fDef.isPublic, pos, field);
-				if (fDef.property != null && !isInsideAccessor(field)) {
+				if (fDef.property != null && !isInsideAccessor(field, obj)) {
 					var setAccessor = fDef.property.set;
 					if (setAccessor == "set") {
 						var m = findMethod(inst.cls, "set_" + field);
@@ -2336,6 +2336,24 @@ class Interp {
 						var m = findStaticMethod(cls, name);
 						if (m != null)
 							return bindMethod(currentThis, m);
+					} else if (Std.isOfType(currentThis, HaxiomAbstractInstance)) {
+						var abstractInstance:HaxiomAbstractInstance = cast currentThis;
+						var abstractType = abstractInstance.abstractType;
+						var fieldDef = abstractType.fields.get(name);
+						if (fieldDef != null) {
+							if (fieldDef.isStatic) {
+								return evalField(abstractType, name, scope, pos);
+							}
+							if (fieldDef.property != null && fieldDef.property.get == "get" && !isInsideAccessor(name, currentThis)) {
+								var getter = abstractType.methods.get("get_" + name);
+								if (getter != null)
+									return Reflect.callMethod(null, bindMethod(currentThis, getter), []);
+							}
+							return evalField(currentThis, name, scope, pos);
+						}
+						var method = abstractType.methods.get(name);
+						if (method != null)
+							return bindMethod(currentThis, method);
 					} else {
 						// Native Haxe object field
 						var f = Reflect.field(currentThis, name);
@@ -4492,6 +4510,36 @@ class Interp {
 						checkType(val, fDef.type, scope, inst.genericBindings);
 					}
 					inst.fields.set(name, val);
+				} else if (Std.isOfType(currentThis, HaxiomClass)) {
+					var cls:HaxiomClass = cast currentThis;
+					var fieldDef = findFieldDef(cls, name);
+					if (fieldDef != null && fieldDef.isStatic) {
+						if (fieldDef.isFinal) {
+							throw 'Cannot reassign static final field $name';
+						}
+						if (fieldDef.type != null) {
+							val = castOrCheckType(val, fieldDef.type, scope);
+						}
+						cls.staticFields.set(name, val);
+					} else {
+						scope.checkAndSet(name, val, this);
+					}
+				} else if (Std.isOfType(currentThis, HaxiomAbstractInstance)) {
+					var abstractInstance:HaxiomAbstractInstance = cast currentThis;
+					var fieldDef = abstractInstance.abstractType.fields.get(name);
+					if (fieldDef != null && fieldDef.isStatic) {
+						if (fieldDef.isFinal) {
+							throw 'Cannot reassign static final field $name';
+						}
+						if (fieldDef.type != null) {
+							val = castOrCheckType(val, fieldDef.type, scope);
+						}
+						abstractInstance.abstractType.staticFields.set(name, val);
+					} else if (fieldDef != null) {
+						assignField(currentThis, name, val, scope, target.pos);
+					} else {
+						scope.checkAndSet(name, val, this);
+					}
 				} else {
 					scope.checkAndSet(name, val, this);
 				}
@@ -4573,24 +4621,18 @@ class Interp {
 		return false;
 	}
 
-	function isInsideAccessor(fieldName:String):Bool {
-		// haxe.Log.trace("isInsideAccessor check for " + fieldName + ", stack: " + [for (f in callStack) f.method].join(", "), null);
+	function isInsideAccessor(fieldName:String, ?target:Dynamic):Bool {
 		if (callStack.length == 0)
+			return false;
+		if (target != null && currentThis != target)
 			return false;
 		var suffix1 = ".get_" + fieldName;
 		var suffix2 = ".set_" + fieldName;
-		var i = callStack.length - 1;
-		while (i >= 0) {
-			var method = callStack[i].method;
-			if (StringTools.endsWith(method, suffix1)
-				|| StringTools.endsWith(method, suffix2)
-				|| method == "get_" + fieldName
-				|| method == "set_" + fieldName) {
-				return true;
-			}
-			i--;
-		}
-		return false;
+		var method = callStack[callStack.length - 1].method;
+		return StringTools.endsWith(method, suffix1)
+			|| StringTools.endsWith(method, suffix2)
+			|| method == "get_" + fieldName
+			|| method == "set_" + fieldName;
 	}
 
 	function getMetaPath(v:Dynamic):Null<String> {
@@ -4943,6 +4985,40 @@ class Interp {
 		return findStaticMethod(cls.parent, name);
 	}
 
+	function findVMPropertyAccessor(obj:Dynamic, fieldName:String, setter:Bool, pos:Pos):Null<ClassMethodInfo> {
+		if (obj == null || isInsideAccessor(fieldName, obj)) {
+			return null;
+		}
+		var accessorName = (setter ? "set_" : "get_") + fieldName;
+		var accessorValue = setter ? "set" : "get";
+
+		if (Std.isOfType(obj, HaxiomInstance)) {
+			var instance:HaxiomInstance = cast obj;
+			var field = findFieldDef(instance.cls, fieldName);
+			if (field != null && field.property != null
+					&& (setter ? field.property.set : field.property.get) == accessorValue) {
+				checkMemberAccess(instance.cls, field.isPublic, pos, fieldName);
+				return findMethod(instance.cls, accessorName);
+			}
+		} else if (Std.isOfType(obj, HaxiomAbstractInstance)) {
+			var instance:HaxiomAbstractInstance = cast obj;
+			var field = instance.abstractType.fields.get(fieldName);
+			if (field != null && field.property != null
+					&& (setter ? field.property.set : field.property.get) == accessorValue) {
+				return instance.abstractType.methods.get(accessorName);
+			}
+		} else if (Std.isOfType(obj, HaxiomClass)) {
+			var cls:HaxiomClass = cast obj;
+			var field = findFieldDef(cls, fieldName);
+			if (field != null && field.isStatic && field.property != null
+					&& (setter ? field.property.set : field.property.get) == accessorValue) {
+				checkMemberAccess(cls, field.isPublic, pos, fieldName);
+				return cast findStaticMethod(cls, accessorName);
+			}
+		}
+		return null;
+	}
+
 	function createVMMethodCallable(obj:Dynamic, method:ClassMethodInfo):Null<haxiom.VM.VMGuestCallable> {
 		var methodDyn:Dynamic = method;
 		if ((!useVM && methodDyn.bytecodeChunk == null) || methodDyn.isAbstract == true || methodDyn.isExtern == true) {
@@ -4958,7 +5034,21 @@ class Interp {
 			}
 		}
 		if (methodDyn.bytecodeChunk == null && method.body != null) {
-			methodDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(method.body, method.args, false, isMethodAsync, debugMode, method.name);
+			var implicitMembers:Map<String, Bool> = new Map();
+			if (Std.isOfType(obj, HaxiomInstance) || Std.isOfType(obj, HaxiomClass)) {
+				var cls:HaxiomClass = Std.isOfType(obj, HaxiomInstance) ? (cast obj : HaxiomInstance).cls : cast obj;
+				while (cls != null) {
+					for (field in cls.fields) implicitMembers.set(field.name, true);
+					for (methodName in cls.methods.keys()) implicitMembers.set(methodName, true);
+					cls = cls.parent;
+				}
+			} else if (Std.isOfType(obj, HaxiomAbstractInstance)) {
+				var abstractType = (cast obj : HaxiomAbstractInstance).abstractType;
+				for (fieldName in abstractType.fields.keys()) implicitMembers.set(fieldName, true);
+				for (methodName in abstractType.methods.keys()) implicitMembers.set(methodName, true);
+			}
+			methodDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(method.body, method.args, false, isMethodAsync, debugMode, method.name, this,
+				activeSourceLabel, implicitMembers);
 		}
 		if (methodDyn.bytecodeChunk == null) {
 			return null;
