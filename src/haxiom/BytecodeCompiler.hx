@@ -914,6 +914,13 @@ class BytecodeCompiler {
 				emit(OP_THROW, e.pos);
 
 			case ETry(tryExpr, catches):
+				for (c in catches) {
+					if (c.guard != null) {
+						var clauseDyn:Dynamic = c;
+						clauseDyn.guardChunk = BytecodeCompiler.compile(c.guard, [], false, false, debugMode, "catch<guard>", this.interp,
+							this.scriptName, implicitMembers);
+					}
+				}
 				emit(OP_PUSH_TRY, e.pos);
 				var catchJumpIdx = instructions.length;
 				emitInt(0, e.pos);
@@ -978,10 +985,12 @@ class BytecodeCompiler {
 				for (c in cases) {
 					var caseBodyLabel = -1;
 					var valueJumpPlaceholderIndices = [];
+					var guardIdx = c.guard != null
+						? addConst(BytecodeCompiler.compile(c.guard, [], false, false, debugMode, "switch<guard>", this.interp, this.scriptName, implicitMembers))
+						: -1;
 
 					for (v in c.values) {
 						var patternIdx = addConst(v);
-						var guardIdx = c.guard != null ? addConst(c.guard) : -1;
 						emit(OP_MATCH_CASE, e.pos);
 						emitInt(patternIdx, e.pos);
 						emitInt(guardIdx, e.pos);
@@ -1109,6 +1118,13 @@ class BytecodeCompiler {
 				}
 				for (m in methods) {
 					abstractMembers.set(m.name, true);
+				}
+				for (f in fields) {
+					if (f.expr != null) {
+						var fieldDyn:Dynamic = f;
+						fieldDyn.bytecodeChunk = BytecodeCompiler.compile(f.expr, [], false, false, debugMode, name + "." + f.name + "<init>", this.interp,
+							this.scriptName, abstractMembers);
+					}
 				}
 				for (m in methods) {
 					if (m.body != null) {
@@ -1360,6 +1376,10 @@ class BytecodeCompiler {
 				for (f in fields) {
 					if (f.expr != null)
 						stripPositions(f.expr);
+					var fDyn:Dynamic = f;
+					if (fDyn.bytecodeChunk != null) {
+						stripPositionsFromChunk(fDyn.bytecodeChunk);
+					}
 					if (f.meta != null) {
 						for (m in f.meta) {
 							if (m.params != null) {

@@ -564,6 +564,45 @@ class VM {
 			return false;
 		}
 
+		function resumeAbstractDeclaration(declaration:haxiom.Interp.VMAbstractDeclaration):Bool {
+			if (declaration.initializerIndex < declaration.initializers.length) {
+				var initializer = declaration.initializers[declaration.initializerIndex];
+				var callable = new VMGuestCallable(initializer.chunk, declaration.scope, [], initializer.type, declaration.thisContext,
+					declaration.abstractType.name + "." + initializer.name + "<init>", initializer.pos);
+				return pushGuestCall(callable, [], 5, declaration);
+			}
+			stack.push(declaration.abstractType);
+			return false;
+		}
+
+		function pushGuardEvaluation(guardChunk:BytecodeChunk, caseScope:Scope, pos:Pos):Bool {
+			var state = new VMGuardEvaluation(caseScope);
+			var callable = new VMGuestCallable(guardChunk, caseScope, [], null, interp.currentThis, "guard", pos);
+			return pushGuestCall(callable, [], 6, state);
+		}
+
+		function invokeAbstractBinop(op:String, v1:Dynamic, v2:Dynamic):Int {
+			var method = interp.findAbstractBinopMethod(op, v1, v2);
+			if (method == null) {
+				return 0;
+			}
+			if (tryPushGuestMethod(null, method, [v1, v2])) {
+				return 1;
+			}
+			throw 'Abstract operator "$op" cannot execute in VM mode';
+		}
+
+		function invokeAbstractUnop(op:String, val:Dynamic, ?completionMode:Int = 0, ?completionValue:Dynamic):Int {
+			var method = interp.findAbstractUnopMethod(op, val);
+			if (method == null) {
+				return 0;
+			}
+			if (tryPushGuestMethod(null, method, [val], completionMode, completionValue)) {
+				return 1;
+			}
+			throw 'Abstract operator "$op" cannot execute in VM mode';
+		}
+
 		function completeGuestFrame(result:Dynamic):Void {
 			var done = callFrames[callFrames.length - 1];
 			var completionMode = done.completionMode;
@@ -593,6 +632,25 @@ class VM {
 					var initializer = declaration.initializers[declaration.initializerIndex++];
 					declaration.cls.staticFields.set(initializer.name, result);
 					resumeClassDeclaration(declaration);
+				case 5:
+					var declaration:haxiom.Interp.VMAbstractDeclaration = cast completionValue;
+					var initializer = declaration.initializers[declaration.initializerIndex++];
+					declaration.abstractType.staticFields.set(initializer.name, result);
+					resumeAbstractDeclaration(declaration);
+				case 6:
+					var guard:haxiom.VM.VMGuardEvaluation = cast completionValue;
+					if (VM.isTruthy(result)) {
+						stack.pop();
+						stack.push(guard.caseScope);
+						stack.push(true);
+					} else {
+						Scope.recycle(guard.caseScope, interp);
+						stack.push(false);
+					}
+				case 7:
+					var mutation:haxiom.VM.VMUnaryMutation = cast completionValue;
+					mutation.assign(interp, callFrames[callFrames.length - 1], result);
+					stack.push(mutation.isPostfix ? mutation.originalValue : result);
 				default:
 					stack.push(result);
 			}
@@ -886,74 +944,84 @@ class VM {
 						case OP_ADD:
 							var v2 = stack.pop();
 							var v1 = stack.pop();
-							var overloadRes = interp.findAbstractBinopOverload("+", v1, v2);
-							if (overloadRes.success) {
-								stack.push(overloadRes.value);
-							} else if (TypeSystem.isString(v1) || TypeSystem.isString(v2)) {
+							var overloadState = invokeAbstractBinop("+", v1, v2);
+							if (overloadState == 1) {
+								continue;
+							} else if (overloadState == 0 && (TypeSystem.isString(v1) || TypeSystem.isString(v2))) {
 								stack.push(Std.string(v1) + Std.string(v2));
-							} else {
+							} else if (overloadState == 0) {
 								stack.push((v1 + v2 : Dynamic));
 							}
 
 						case OP_SUB:
 							var v2 = stack.pop();
 							var v1 = stack.pop();
-							var overloadRes = interp.findAbstractBinopOverload("-", v1, v2);
-							stack.push(overloadRes.success ? overloadRes.value : (v1 - v2 : Dynamic));
+							var overloadState = invokeAbstractBinop("-", v1, v2);
+							if (overloadState == 1) continue;
+							if (overloadState == 0) stack.push((v1 - v2 : Dynamic));
 
 						case OP_MUL:
 							var v2 = stack.pop();
 							var v1 = stack.pop();
-							var overloadRes = interp.findAbstractBinopOverload("*", v1, v2);
-							stack.push(overloadRes.success ? overloadRes.value : (v1 * v2 : Dynamic));
+							var overloadState = invokeAbstractBinop("*", v1, v2);
+							if (overloadState == 1) continue;
+							if (overloadState == 0) stack.push((v1 * v2 : Dynamic));
 
 						case OP_DIV:
 							var v2 = stack.pop();
 							var v1 = stack.pop();
-							var overloadRes = interp.findAbstractBinopOverload("/", v1, v2);
-							stack.push(overloadRes.success ? overloadRes.value : (v1 / v2 : Dynamic));
+							var overloadState = invokeAbstractBinop("/", v1, v2);
+							if (overloadState == 1) continue;
+							if (overloadState == 0) stack.push((v1 / v2 : Dynamic));
 
 						case OP_MOD:
 							var v2 = stack.pop();
 							var v1 = stack.pop();
-							var overloadRes = interp.findAbstractBinopOverload("%", v1, v2);
-							stack.push(overloadRes.success ? overloadRes.value : (v1 % v2 : Dynamic));
+							var overloadState = invokeAbstractBinop("%", v1, v2);
+							if (overloadState == 1) continue;
+							if (overloadState == 0) stack.push((v1 % v2 : Dynamic));
 
 						case OP_EQ:
 							var v2 = stack.pop();
 							var v1 = stack.pop();
-							var overloadRes = interp.findAbstractBinopOverload("==", v1, v2);
-							stack.push(overloadRes.success ? overloadRes.value : (v1 == v2 : Dynamic));
+							var overloadState = invokeAbstractBinop("==", v1, v2);
+							if (overloadState == 1) continue;
+							if (overloadState == 0) stack.push((v1 == v2 : Dynamic));
 
 						case OP_NEQ:
 							var v2 = stack.pop();
 							var v1 = stack.pop();
-							var overloadRes = interp.findAbstractBinopOverload("!=", v1, v2);
-							stack.push(overloadRes.success ? overloadRes.value : (v1 != v2 : Dynamic));
+							var overloadState = invokeAbstractBinop("!=", v1, v2);
+							if (overloadState == 1) continue;
+							if (overloadState == 0) stack.push((v1 != v2 : Dynamic));
 
 						case OP_LT:
 							var v2 = stack.pop();
 							var v1 = stack.pop();
-							var overloadRes = interp.findAbstractBinopOverload("<", v1, v2);
-							stack.push(overloadRes.success ? overloadRes.value : (v1 < v2 : Dynamic));
+							var overloadState = invokeAbstractBinop("<", v1, v2);
+							if (overloadState == 1) continue;
+							if (overloadState == 0) stack.push((v1 < v2 : Dynamic));
 
 						case OP_LTE:
 							var v2 = stack.pop();
 							var v1 = stack.pop();
-							var overloadRes = interp.findAbstractBinopOverload("<=", v1, v2);
-							stack.push(overloadRes.success ? overloadRes.value : (v1 <= v2 : Dynamic));
+							var overloadState = invokeAbstractBinop("<=", v1, v2);
+							if (overloadState == 1) continue;
+							if (overloadState == 0) stack.push((v1 <= v2 : Dynamic));
 
 						case OP_GT:
 							var v2 = stack.pop();
 							var v1 = stack.pop();
-							var overloadRes = interp.findAbstractBinopOverload(">", v1, v2);
-							stack.push(overloadRes.success ? overloadRes.value : (v1 > v2 : Dynamic));
+							var overloadState = invokeAbstractBinop(">", v1, v2);
+							if (overloadState == 1) continue;
+							if (overloadState == 0) stack.push((v1 > v2 : Dynamic));
 
 						case OP_GTE:
 							var v2 = stack.pop();
 							var v1 = stack.pop();
-							var overloadRes = interp.findAbstractBinopOverload(">=", v1, v2);
-							stack.push(overloadRes.success ? overloadRes.value : (v1 >= v2 : Dynamic));
+							var overloadState = invokeAbstractBinop(">=", v1, v2);
+							if (overloadState == 1) continue;
+							if (overloadState == 0) stack.push((v1 >= v2 : Dynamic));
 
 						case OP_AND:
 							var v2 = stack.pop();
@@ -1688,14 +1756,17 @@ class VM {
 							var guardIdx = inst[frame.ip++];
 							var val = stack[stack.length - 1];
 							var pattern = consts[patternIdx];
-							var guard = guardIdx >= 0 ? consts[guardIdx] : null;
+							var guardChunk:BytecodeChunk = guardIdx >= 0 ? cast consts[guardIdx] : null;
 							var caseScope = Scope.create(frame.scope, interp);
 							var matched = false;
 							try {
 								if (interp.matchPattern(val, pattern, frame.scope, caseScope)) {
 									var guardMatched = true;
-									if (guard != null) {
-										guardMatched = interp.eval(guard, caseScope) == true;
+									if (guardChunk != null) {
+										if (pushGuardEvaluation(guardChunk, caseScope, currentPos())) {
+											continue;
+										}
+										guardMatched = false;
 									}
 									if (guardMatched) {
 										matched = true;
@@ -1738,7 +1809,17 @@ class VM {
 									if (typeMatched) {
 										var guardMatched = true;
 										if (c.guard != null) {
-											guardMatched = interp.eval(c.guard, caseScope) == true;
+											var clauseDyn:Dynamic = c;
+											var guardChunk:BytecodeChunk = clauseDyn.guardChunk;
+											if (guardChunk == null) {
+												guardChunk = haxiom.BytecodeCompiler.compile(c.guard, [], false, false, interp.debugMode, "catch<guard>", interp,
+													frame.chunk.scriptName);
+												clauseDyn.guardChunk = guardChunk;
+											}
+											if (pushGuardEvaluation(guardChunk, caseScope, currentPos())) {
+												continue;
+											}
+											guardMatched = false;
 										}
 										if (guardMatched) {
 											matched = true;
@@ -1761,10 +1842,10 @@ class VM {
 						case OP_UNOP:
 							var opStr:String = consts[inst[frame.ip++]];
 							var val = stack.pop();
-							var overloadRes = interp.findAbstractUnopOverload(opStr, val);
-							if (overloadRes.success) {
-								stack.push(overloadRes.value);
-							} else {
+							var overloadState = invokeAbstractUnop(opStr, val);
+							if (overloadState == 1) {
+								continue;
+							} else if (overloadState == 0) {
 								var unopRes:Dynamic = null;
 								switch (opStr) {
 									case "!": unopRes = !(cast val : Bool);
@@ -1796,21 +1877,13 @@ class VM {
 							}
 
 							var val:Dynamic = localSlot != -1 ? frame.locals[localSlot] : interp.eval(targetExpr, frame.scope);
-							var overloadRes = interp.findAbstractUnopOverload(opStr, val);
+							var mutation = new VMUnaryMutation(targetExpr, localSlot, val, opStr == "post++" || opStr == "post--");
+							var overloadState = invokeAbstractUnop(opStr, val, 7, mutation);
 							var finalVal:Dynamic = null;
 							var retVal:Dynamic = null;
 
-							if (overloadRes.success) {
-								finalVal = overloadRes.value;
-								retVal = finalVal;
-								if (opStr == "post++" || opStr == "post--") {
-									retVal = val;
-								}
-								if (localSlot != -1) {
-									frame.locals[localSlot] = finalVal;
-								} else {
-									interp.assign(targetExpr, finalVal, frame.scope);
-								}
+							if (overloadState == 1) {
+								continue;
 							} else {
 								switch (opStr) {
 									case "post++":
@@ -1900,8 +1973,10 @@ class VM {
 
 						case OP_DECLARE_ABSTRACT:
 							var exprIdx = inst[frame.ip++];
-							var res = interp.eval(consts[exprIdx], frame.scope);
-							stack.push(res);
+							var declaration = interp.prepareVMAbstractDeclaration(consts[exprIdx], frame.scope);
+							if (resumeAbstractDeclaration(declaration)) {
+								continue;
+							}
 
 						case OP_DECLARE_TYPEDEF:
 							var exprIdx = inst[frame.ip++];
@@ -2358,6 +2433,38 @@ class VM {
 					onReject(err);
 				}
 			}
+		}
+	}
+}
+
+@:allow(haxiom)
+class VMGuardEvaluation {
+	var caseScope:Scope;
+
+	function new(caseScope:Scope) {
+		this.caseScope = caseScope;
+	}
+}
+
+@:allow(haxiom)
+class VMUnaryMutation {
+	var targetExpr:Expr;
+	var localSlot:Int;
+	var originalValue:Dynamic;
+	var isPostfix:Bool;
+
+	function new(targetExpr:Expr, localSlot:Int, originalValue:Dynamic, isPostfix:Bool) {
+		this.targetExpr = targetExpr;
+		this.localSlot = localSlot;
+		this.originalValue = originalValue;
+		this.isPostfix = isPostfix;
+	}
+
+	function assign(interp:Interp, frame:VMCallFrame, value:Dynamic):Void {
+		if (localSlot >= 0) {
+			frame.locals[localSlot] = value;
+		} else {
+			interp.assign(targetExpr, value, frame.scope);
 		}
 	}
 }

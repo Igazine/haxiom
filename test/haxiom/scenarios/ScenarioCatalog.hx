@@ -358,7 +358,7 @@ class ScenarioCatalog {
 		return {
 			name: "vm-control-flow-stress",
 			moduleName: "VMStressScenario",
-			expected: "50005000|false|500500|5000|500|251|251|5000|250|250|250|250|250|250|42|boom|191949|377986|946",
+			expected: "50005000|false|500500|5000|500|251|251|5000|5000|250|250|250|250|250|250|42|true|boom|500|191949|377986|946",
 			vmOnly: true,
 			source: '
 					class RecursiveWorker {
@@ -404,6 +404,10 @@ class ScenarioCatalog {
 					}
 
 					class StaticInitializerDepth {
+						public static var depth:Int = StaticInitializerHelper.descend(5000);
+					}
+
+					abstract StaticAbstractInitializerDepth(Int) {
 						public static var depth:Int = StaticInitializerHelper.descend(5000);
 					}
 
@@ -471,6 +475,19 @@ class ScenarioCatalog {
 						}
 					}
 
+					abstract RecursiveOperator(Int) {
+						public function new(value:Int) {
+							this = value;
+						}
+
+						@:op(A + B)
+						public static function add(left:RecursiveOperator, remaining:Int):Int {
+							return remaining == 0
+								? 0
+								: 1 + (left + (remaining - 1));
+						}
+					}
+
 					class VMStressScenario {
 					static function tail(n:Int, acc:Int):Int {
 						return n == 0 ? acc : tail(n - 1, acc + n);
@@ -496,12 +513,16 @@ class ScenarioCatalog {
 						};
 					}
 
-					static function risky(depth:Int):Void {
+						static function risky(depth:Int):Void {
 						if (depth == 0) {
 							throw "boom";
 						}
-						risky(depth - 1);
-					}
+							risky(depth - 1);
+						}
+
+						static function guardDepth(depth:Int):Bool {
+							return depth == 0 ? true : guardDepth(depth - 1);
+						}
 
 					static public function main():String {
 						function closureDepth(n:Int):Int {
@@ -539,9 +560,18 @@ class ScenarioCatalog {
 						var caught = "none";
 						try {
 							risky(250);
-						} catch (error:Dynamic) {
+						} catch (error:Dynamic if (guardDepth(500))) {
 							caught = Std.string(error);
 						}
+
+						var switchGuard = false;
+						switch (1) {
+							case value if (guardDepth(500)):
+								switchGuard = value == 1;
+							default:
+						}
+
+						var recursiveOperatorDepth = new RecursiveOperator(0) + 500;
 
 						var loopTotal = 0;
 						for (i in 0...4000) {
@@ -567,9 +597,10 @@ class ScenarioCatalog {
 
 						return tail(10000, 0) + "|" + isEven(10001) + "|" + nonTail(1000) + "|" + worker.descend(5000, 0)
 							+ "|" + closureDepth(500) + "|" + constructorDepth + "|" + initializerDepth + "|" + StaticInitializerDepth.depth
+							+ "|" + StaticAbstractInitializerDepth.depth
 							+ "|" + assignedDepth + "|" + accessorDepth
 							+ "|" + staticAssignedDepth + "|" + staticAccessorDepth + "|" + abstractAssignedDepth + "|" + abstractAccessorDepth
-							+ "|" + closureTotal + "|" + caught
+							+ "|" + closureTotal + "|" + switchGuard + "|" + caught + "|" + recursiveOperatorDepth
 							+ "|" + loopTotal + "|" + squareTotal + "|" + mapTotal;
 					}
 				}

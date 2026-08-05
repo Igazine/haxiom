@@ -1135,6 +1135,41 @@ class Interp {
 		return new VMClassDeclaration(cls, scope, initializers);
 	}
 
+	private function prepareVMAbstractDeclaration(expr:Expr, scope:Scope):VMAbstractDeclaration {
+		var previousSuppression = suppressStaticFieldInitializers;
+		suppressStaticFieldInitializers = true;
+		var abstractType:HaxiomAbstract;
+		try {
+			abstractType = cast eval(expr, scope);
+			suppressStaticFieldInitializers = previousSuppression;
+		} catch (error:Dynamic) {
+			suppressStaticFieldInitializers = previousSuppression;
+			throw error;
+		}
+
+		var initializers:Array<VMStaticFieldInitializer> = [];
+		switch (expr.def) {
+			case EAbstract(_, _, fields, _, _, _):
+				for (parsedField in fields) {
+					var field = abstractType.fields.get(parsedField.name);
+					if (field != null && field.isStatic && field.expr != null) {
+						var fieldDyn:Dynamic = field;
+						if (fieldDyn.bytecodeChunk == null) {
+							var implicitMembers:Map<String, Bool> = new Map();
+							for (fieldName in abstractType.fields.keys()) implicitMembers.set(fieldName, true);
+							for (methodName in abstractType.methods.keys()) implicitMembers.set(methodName, true);
+							fieldDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(field.expr, [], false, false, debugMode,
+								abstractType.name + "." + field.name + "<init>", this, activeSourceLabel, implicitMembers);
+						}
+						initializers.push(new VMStaticFieldInitializer(field.name, field.type, fieldDyn.bytecodeChunk,
+							field.expr.pos != null ? field.expr.pos : expr.pos));
+					}
+				}
+			default:
+		}
+		return new VMAbstractDeclaration(abstractType, scope, initializers);
+	}
+
 	function registerMacroDeclaration(expr:Expr, scope:Scope, initializeStaticFields:Bool):Dynamic {
 		var previousSuppression = suppressStaticFieldInitializers;
 		suppressStaticFieldInitializers = previousSuppression || !initializeStaticFields;
@@ -3835,6 +3870,7 @@ class Interp {
 						isPublic: f.isPublic,
 						isFinal: f.isFinal,
 						property: f.property,
+						bytecodeChunk: Reflect.field(f, "bytecodeChunk"),
 						meta: evaluateMetadata(f.meta, scope)
 					});
 					if (f.isStatic && f.expr != null && !suppressStaticFieldInitializers) {
@@ -5089,7 +5125,7 @@ class Interp {
 
 	function createVMMethodCallable(obj:Dynamic, method:ClassMethodInfo):Null<haxiom.VM.VMGuestCallable> {
 		var methodDyn:Dynamic = method;
-		if ((!useVM && methodDyn.bytecodeChunk == null) || methodDyn.isAbstract == true || methodDyn.isExtern == true) {
+		if ((!useVM && activeVMCallFrames == null && methodDyn.bytecodeChunk == null) || methodDyn.isAbstract == true || methodDyn.isExtern == true) {
 			return null;
 		}
 		var isMethodAsync = false;
@@ -6528,35 +6564,45 @@ class Interp {
 	}
 
 	function findAbstractBinopOverload(op:String, v1:Dynamic, v2:Dynamic):{success:Bool, value:Dynamic} {
+		var method = findAbstractBinopMethod(op, v1, v2);
+		return method == null ? {success: false, value: null} : {success: true, value: callAbstractOp(method, [v1, v2])};
+	}
+
+	function findAbstractUnopOverload(op:String, val:Dynamic):{success:Bool, value:Dynamic} {
+		var method = findAbstractUnopMethod(op, val);
+		return method == null ? {success: false, value: null} : {success: true, value: callAbstractOp(method, [val])};
+	}
+
+	function findAbstractBinopMethod(op:String, v1:Dynamic, v2:Dynamic):Null<ClassMethodInfo> {
 		if (Std.isOfType(v1, HaxiomAbstractInstance)) {
 			var inst:HaxiomAbstractInstance = cast v1;
 			var method = findAbstractOpMethod(inst.abstractType, op, true);
 			if (method != null) {
-				return {success: true, value: callAbstractOp(inst.abstractType, method, [v1, v2])};
+				return cast method;
 			}
 		}
 		if (Std.isOfType(v2, HaxiomAbstractInstance)) {
 			var inst:HaxiomAbstractInstance = cast v2;
 			var method = findAbstractOpMethod(inst.abstractType, op, true);
 			if (method != null) {
-				return {success: true, value: callAbstractOp(inst.abstractType, method, [v1, v2])};
+				return cast method;
 			}
 		}
-		return {success: false, value: null};
+		return null;
 	}
 
-	function findAbstractUnopOverload(op:String, val:Dynamic):{success:Bool, value:Dynamic} {
+	function findAbstractUnopMethod(op:String, val:Dynamic):Null<ClassMethodInfo> {
 		if (Std.isOfType(val, HaxiomAbstractInstance)) {
 			var inst:HaxiomAbstractInstance = cast val;
 			var method = findAbstractOpMethod(inst.abstractType, op, false);
 			if (method != null) {
-				return {success: true, value: callAbstractOp(inst.abstractType, method, [val])};
+				return cast method;
 			}
 		}
-		return {success: false, value: null};
+		return null;
 	}
 
-	function callAbstractOp(abs:HaxiomAbstract, method:Dynamic, args:Array<Dynamic>):Dynamic {
+	function callAbstractOp(method:ClassMethodInfo, args:Array<Dynamic>):Dynamic {
 		var func = bindMethod(null, method);
 		return Reflect.callMethod(null, func, args);
 	}
@@ -6734,6 +6780,22 @@ class VMClassDeclaration {
 }
 
 @:allow(haxiom)
+class VMAbstractDeclaration {
+	var abstractType:HaxiomAbstract;
+	var thisContext:HaxiomAbstractInstance;
+	var scope:Scope;
+	var initializers:Array<VMStaticFieldInitializer>;
+	var initializerIndex:Int = 0;
+
+	function new(abstractType:HaxiomAbstract, scope:Scope, initializers:Array<VMStaticFieldInitializer>) {
+		this.abstractType = abstractType;
+		this.thisContext = new HaxiomAbstractInstance(abstractType, null);
+		this.scope = scope;
+		this.initializers = initializers;
+	}
+}
+
+@:allow(haxiom)
 class VMStaticFieldInitializer {
 	var name:String;
 	var type:Null<TypeDecl>;
@@ -6750,16 +6812,11 @@ class VMStaticFieldInitializer {
 
 @:allow(haxiom)
 class FunctionSignatures {
-	#if neko
 	var pairs:Array<{k:Dynamic, v:haxiom.TypeDecl}> = [];
-	#else
-	var map:haxe.ds.ObjectMap<Dynamic, haxiom.TypeDecl> = new haxe.ds.ObjectMap();
-	#end
 
 	private function new() {}
 
 	private function set(k:Dynamic, v:haxiom.TypeDecl) {
-		#if neko
 		for (p in pairs) {
 			if (p.k == k) {
 				p.v = v;
@@ -6767,32 +6824,21 @@ class FunctionSignatures {
 			}
 		}
 		pairs.push({k: k, v: v});
-		#else
-		map.set(k, v);
-		#end
 	}
 
 	private function exists(k:Dynamic):Bool {
-		#if neko
 		for (p in pairs) {
 			if (p.k == k)
 				return true;
 		}
 		return false;
-		#else
-		return map.exists(k);
-		#end
 	}
 
 	private function get(k:Dynamic):haxiom.TypeDecl {
-		#if neko
 		for (p in pairs) {
 			if (p.k == k)
 				return p.v;
 		}
 		return null;
-		#else
-		return map.get(k);
-		#end
 	}
 }

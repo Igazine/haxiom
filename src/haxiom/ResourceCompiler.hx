@@ -6,7 +6,7 @@ import haxe.io.Bytes;
 /**
  * Helper class for processing `@:haxiom.resource('./path')` metadata annotations.
  * Supports embedded binary payloads, virtual resources map,
- * custom host resource provider callbacks, and disk loading on sys targets.
+ * custom host resource provider callbacks, and host-compiled `haxe.Resource` data.
  */
 @:allow(haxiom)
 class ResourceCompiler {
