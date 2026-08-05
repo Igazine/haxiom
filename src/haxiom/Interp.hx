@@ -1058,12 +1058,30 @@ class Interp {
 					}
 					var inst = new HaxiomInstance(cls);
 					populateGenericBindings(inst, cls, params, null, null, scope);
+					var initializers:Array<VMFieldInitializer> = [];
 
 					var current = cls;
 					while (current != null) {
 						for (field in current.fields) {
 							if (!field.isStatic) {
-								inst.fields.set(field.name, field.expr != null ? eval(field.expr, scope) : null);
+								if (field.expr == null) {
+									inst.fields.set(field.name, null);
+								} else {
+									var fieldDyn:Dynamic = field;
+									if (fieldDyn.bytecodeChunk == null) {
+										var implicitMembers:Map<String, Bool> = new Map();
+										var memberClass = cls;
+										while (memberClass != null) {
+											for (memberField in memberClass.fields) implicitMembers.set(memberField.name, true);
+											for (methodName in memberClass.methods.keys()) implicitMembers.set(methodName, true);
+											memberClass = memberClass.parent;
+										}
+										fieldDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(field.expr, [], false, false, debugMode,
+											cls.name + "." + field.name + "<init>", this, activeSourceLabel, implicitMembers);
+									}
+									initializers.push(new VMFieldInitializer(field.name, field.type, fieldDyn.bytecodeChunk,
+										field.expr.pos != null ? field.expr.pos : pos));
+								}
 							}
 						}
 						current = current.parent;
@@ -1074,7 +1092,7 @@ class Interp {
 						checkMemberAccess(cls, constructor.isPublic, pos, "new");
 					}
 					trackNewAllocation(inst, pos);
-					new VMClassConstruction(inst, constructor);
+					new VMClassConstruction(inst, constructor, args, scope, initializers);
 				}
 			default:
 				null;
@@ -3455,6 +3473,7 @@ class Interp {
 						isPublic: f.isPublic,
 						isFinal: f.isFinal,
 						property: f.property,
+						bytecodeChunk: Reflect.field(f, "bytecodeChunk"),
 						meta: evaluateMetadata(f.meta, scope)
 					});
 					if (f.isStatic && fieldExpr != null) {
@@ -6622,10 +6641,32 @@ class Interp {
 class VMClassConstruction {
 	var instance:HaxiomInstance;
 	var methodInfo:Null<ClassMethodInfo>;
+	var args:Array<Dynamic>;
+	var scope:Scope;
+	var initializers:Array<VMFieldInitializer>;
+	var initializerIndex:Int = 0;
 
-	function new(instance:HaxiomInstance, methodInfo:Null<ClassMethodInfo>) {
+	function new(instance:HaxiomInstance, methodInfo:Null<ClassMethodInfo>, args:Array<Dynamic>, scope:Scope, initializers:Array<VMFieldInitializer>) {
 		this.instance = instance;
 		this.methodInfo = methodInfo;
+		this.args = args;
+		this.scope = scope;
+		this.initializers = initializers;
+	}
+}
+
+@:allow(haxiom)
+class VMFieldInitializer {
+	var name:String;
+	var type:Null<TypeDecl>;
+	var chunk:haxiom.VM.BytecodeChunk;
+	var pos:Pos;
+
+	function new(name:String, type:Null<TypeDecl>, chunk:haxiom.VM.BytecodeChunk, pos:Pos) {
+		this.name = name;
+		this.type = type;
+		this.chunk = chunk;
+		this.pos = pos;
 	}
 }
 

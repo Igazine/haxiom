@@ -1061,6 +1061,13 @@ class BytecodeCompiler {
 				for (m in methods) {
 					classMembers.set(m.name, true);
 				}
+				for (f in fields) {
+					if (!f.isStatic && f.expr != null) {
+						var fieldDyn:Dynamic = f;
+						fieldDyn.bytecodeChunk = BytecodeCompiler.compile(f.expr, [], false, false, debugMode, name + "." + f.name + "<init>", this.interp,
+							this.scriptName, classMembers);
+					}
+				}
 				for (m in methods) {
 					if (m.body != null) {
 						var isMethodAsync = false;

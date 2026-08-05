@@ -358,7 +358,7 @@ class ScenarioCatalog {
 		return {
 			name: "vm-control-flow-stress",
 			moduleName: "VMStressScenario",
-			expected: "50005000|false|500500|5000|500|251|250|250|250|250|250|250|42|boom|191949|377986|946",
+			expected: "50005000|false|500500|5000|500|251|251|250|250|250|250|250|250|42|boom|191949|377986|946",
 			vmOnly: true,
 			source: '
 					class RecursiveWorker {
@@ -374,6 +374,26 @@ class ScenarioCatalog {
 
 						public function new(remaining:Int) {
 							next = remaining > 0 ? new ConstructorNode(remaining - 1) : null;
+						}
+					}
+
+					class FieldInitializerNode {
+						static var remaining:Int = 0;
+						public var depth:Int = initializeDepth();
+
+						public function new() {}
+
+						function initializeDepth():Int {
+							if (remaining == 0) {
+								return 1;
+							}
+							remaining--;
+							return 1 + new FieldInitializerNode().depth;
+						}
+
+						public static function create(depth:Int):FieldInitializerNode {
+							remaining = depth;
+							return new FieldInitializerNode();
 						}
 					}
 
@@ -485,6 +505,7 @@ class ScenarioCatalog {
 							constructorDepth++;
 							constructorHead = constructorHead.next;
 						}
+						var initializerDepth = FieldInitializerNode.create(250).depth;
 
 						var accessorHead:AccessorNode = null;
 						for (i in 0...250) {
@@ -535,7 +556,7 @@ class ScenarioCatalog {
 						}
 
 						return tail(10000, 0) + "|" + isEven(10001) + "|" + nonTail(1000) + "|" + worker.descend(5000, 0)
-							+ "|" + closureDepth(500) + "|" + constructorDepth + "|" + assignedDepth + "|" + accessorDepth
+							+ "|" + closureDepth(500) + "|" + constructorDepth + "|" + initializerDepth + "|" + assignedDepth + "|" + accessorDepth
 							+ "|" + staticAssignedDepth + "|" + staticAccessorDepth + "|" + abstractAssignedDepth + "|" + abstractAccessorDepth
 							+ "|" + closureTotal + "|" + caught
 							+ "|" + loopTotal + "|" + squareTotal + "|" + mapTotal;

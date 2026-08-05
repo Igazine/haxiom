@@ -30,6 +30,7 @@ class HaxiomClass {
 		isPublic:Bool,
 		isFinal:Bool,
 		?property:{get:String, set:String},
+		?bytecodeChunk:haxiom.VM.BytecodeChunk,
 		?meta:Array<{name:String, params:Array<Dynamic>}>
 	}> = new Map();
 	public var methods:Map<String, ClassMethodInfo> = new Map();

@@ -510,6 +510,49 @@ class VM {
 			}
 		}
 
+		function tryPushGuestCall(func:Dynamic, callArgs:Array<Dynamic>, ?completionMode:Int = 0, ?completionValue:Dynamic,
+				?constructorContext:Dynamic):Bool {
+			var guestCallable = interp.getVMGuestCallable(func);
+			return guestCallable != null && pushGuestCall(guestCallable, callArgs, completionMode, completionValue, constructorContext);
+		}
+
+		function tryPushGuestMethod(receiver:Dynamic, method:ClassMethodInfo, callArgs:Array<Dynamic>, ?completionMode:Int = 0,
+				?completionValue:Dynamic, ?constructorContext:Dynamic):Bool {
+			var guestCallable = interp.createVMMethodCallable(receiver, method);
+			return guestCallable != null && pushGuestCall(guestCallable, callArgs, completionMode, completionValue, constructorContext);
+		}
+
+		function resumeConstruction(construction:haxiom.Interp.VMClassConstruction):Bool {
+			if (construction.initializerIndex < construction.initializers.length) {
+				var initializer = construction.initializers[construction.initializerIndex];
+				var callable = new VMGuestCallable(initializer.chunk, construction.scope, [], initializer.type, construction.instance,
+					construction.instance.cls.name + "." + initializer.name + "<init>", initializer.pos, construction.instance.genericBindings);
+				return pushGuestCall(callable, [], 3, construction, construction.instance);
+			}
+
+			if (construction.methodInfo == null) {
+				stack.push(construction.instance);
+				return false;
+			}
+			if (tryPushGuestMethod(construction.instance, construction.methodInfo, construction.args, 1, construction.instance,
+					construction.instance)) {
+				return true;
+			}
+
+			var constructorFunc = interp.bindMethod(construction.instance, construction.methodInfo);
+			var oldConstructor = interp.currentConstructorInstance;
+			interp.currentConstructorInstance = construction.instance;
+			try {
+				Reflect.callMethod(null, constructorFunc, construction.args);
+				interp.currentConstructorInstance = oldConstructor;
+			} catch (error:Dynamic) {
+				interp.currentConstructorInstance = oldConstructor;
+				throw error;
+			}
+			stack.push(construction.instance);
+			return false;
+		}
+
 		function completeGuestFrame(result:Dynamic):Void {
 			var done = callFrames[callFrames.length - 1];
 			var completionMode = done.completionMode;
@@ -529,21 +572,14 @@ class VM {
 				case 1:
 					stack.push(completionValue);
 				case 2:
+				case 3:
+					var construction:haxiom.Interp.VMClassConstruction = cast completionValue;
+					var initializer = construction.initializers[construction.initializerIndex++];
+					construction.instance.fields.set(initializer.name, result);
+					resumeConstruction(construction);
 				default:
 					stack.push(result);
 			}
-		}
-
-		function tryPushGuestCall(func:Dynamic, callArgs:Array<Dynamic>, ?completionMode:Int = 0, ?completionValue:Dynamic,
-				?constructorContext:Dynamic):Bool {
-			var guestCallable = interp.getVMGuestCallable(func);
-			return guestCallable != null && pushGuestCall(guestCallable, callArgs, completionMode, completionValue, constructorContext);
-		}
-
-		function tryPushGuestMethod(receiver:Dynamic, method:ClassMethodInfo, callArgs:Array<Dynamic>, ?completionMode:Int = 0,
-				?completionValue:Dynamic, ?constructorContext:Dynamic):Bool {
-			var guestCallable = interp.createVMMethodCallable(receiver, method);
-			return guestCallable != null && pushGuestCall(guestCallable, callArgs, completionMode, completionValue, constructorContext);
 		}
 
 		function invokeCallable(func:Dynamic, receiver:Dynamic, callArgs:Array<Dynamic>):Bool {
@@ -621,7 +657,14 @@ class VM {
 
 						case OP_LOAD_CONST:
 							var idx = inst[frame.ip++];
-							stack.push(consts[idx]);
+							var value:Dynamic = consts[idx];
+							if (value != null && (Std.isOfType(value, BinaryResourceRefHolder) || Reflect.hasField(value, "key"))) {
+								var resourceKey:String = Reflect.field(value, "key");
+								if (resourceKey != null && interp.virtualResources.exists(resourceKey)) {
+									value = interp.virtualResources.get(resourceKey);
+								}
+							}
+							stack.push(value);
 
 						case OP_GET_LOCAL:
 							var slot = inst[frame.ip++];
@@ -984,7 +1027,7 @@ class VM {
 								args.unshift(stack.pop());
 							}
 
-								if (func != null && Std.isOfType(func, haxiom.HaxiomSuperInstance)) {
+							if (func != null && Std.isOfType(func, haxiom.HaxiomSuperInstance)) {
 									var superInst:haxiom.HaxiomSuperInstance = cast func;
 									var parentClass = superInst.inst.cls.parent;
 									var parentConstructor = parentClass != null ? interp.findMethod(parentClass, "new") : null;
@@ -1798,32 +1841,16 @@ class VM {
 								args.unshift(stack.pop());
 							}
 
-								var construction = interp.prepareVMClassConstruction(type, args, frame.scope, currentPos());
-								if (construction != null) {
-									if (construction.methodInfo == null) {
-										stack.push(construction.instance);
-									} else {
-										if (tryPushGuestMethod(construction.instance, construction.methodInfo, args, 1, construction.instance,
-												construction.instance)) {
-											continue;
-										}
-										var constructorFunc = interp.bindMethod(construction.instance, construction.methodInfo);
-										var oldConstructor = interp.currentConstructorInstance;
-										interp.currentConstructorInstance = construction.instance;
-										try {
-											Reflect.callMethod(null, constructorFunc, args);
-											interp.currentConstructorInstance = oldConstructor;
-										} catch (error:Dynamic) {
-											interp.currentConstructorInstance = oldConstructor;
-											throw error;
-										}
-										stack.push(construction.instance);
-									}
-								} else {
-									// Native and exposed constructor paths remain owned by the interpreter.
-									var fakeNewExpr = {def: ENew(type, [for (a in args) {def: EValue(a), pos: currentPos()}]), pos: currentPos()};
-									stack.push(interp.eval(fakeNewExpr, frame.scope));
+							var construction = interp.prepareVMClassConstruction(type, args, frame.scope, currentPos());
+							if (construction != null) {
+								if (resumeConstruction(construction)) {
+									continue;
 								}
+							} else {
+								// Native and exposed constructor paths remain owned by the interpreter.
+								var fakeNewExpr = {def: ENew(type, [for (a in args) {def: EValue(a), pos: currentPos()}]), pos: currentPos()};
+								stack.push(interp.eval(fakeNewExpr, frame.scope));
+							}
 
 						case OP_CAST:
 							var typeIdx = inst[frame.ip++];
