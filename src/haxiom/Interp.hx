@@ -759,7 +759,7 @@ class Interp {
 
 	public var state(default, null):VMState = UNINITIALIZED;
 
-	private var useVM:Bool = false;
+	private var useVM:Bool = true;
 	private var debugMode:Bool = true;
 	private var maxInstructions:Int = 0;
 	private var instructionsCount:Int = 0;

@@ -63,8 +63,7 @@ import haxiom.ScriptContext;
 
 class Main {
     static function main() {
-        var engine = new Haxiom();
-        engine.useVM = true; // Use the high-performance Bytecode VM
+        var engine = new Haxiom(); // Uses the stack-safe Bytecode VM by default
         
         var result:Float = engine.interpret("
             class GuestScript {

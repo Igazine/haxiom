@@ -172,7 +172,7 @@ class Haxiom {
 	}
 
 	/**
-	 * If true, Haxiom compiles the AST to bytecode and executes it via the HXBC virtual machine.
+	 * If true (the default), Haxiom compiles the AST to bytecode and executes it via the HXBC virtual machine.
 	 * If false, Haxiom evaluates the AST nodes recursively in interpretation mode.
 	 */
 	public var useVM(get, set):Bool;

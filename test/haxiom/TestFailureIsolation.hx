@@ -9,6 +9,7 @@ class TestFailureIsolation {
 		trace("Haxiom CPP Failure Isolation Suite");
 		trace("-----------------------------------");
 
+		runSync("VM is the default execution mode", testVMDefault);
 		runSync("Safe casts", testSafeCasts);
 		runSync("AST and bytecode persistence", testPersistence);
 		runSync("Debug bytecode compile state restoration", testDebugBytecodeCompileStateRestoration);
@@ -39,6 +40,11 @@ class TestFailureIsolation {
 		TestAsyncVM.runTests(() -> {
 			trace("ALL ISOLATED TESTS COMPLETED SUCCESSFULLY!");
 		});
+	}
+
+	static function testVMDefault():Void {
+		if (!new Haxiom().useVM)
+			throw "New Haxiom instances must use VM mode by default";
 	}
 
 	static function runSync(name:String, fn:Void->Void):Void {
