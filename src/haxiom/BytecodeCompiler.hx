@@ -1062,7 +1062,7 @@ class BytecodeCompiler {
 					classMembers.set(m.name, true);
 				}
 				for (f in fields) {
-					if (!f.isStatic && f.expr != null) {
+					if (f.expr != null) {
 						var fieldDyn:Dynamic = f;
 						fieldDyn.bytecodeChunk = BytecodeCompiler.compile(f.expr, [], false, false, debugMode, name + "." + f.name + "<init>", this.interp,
 							this.scriptName, classMembers);
@@ -1194,6 +1194,10 @@ class BytecodeCompiler {
 				for (f in fields) {
 					if (f.expr != null)
 						stripPositions(f.expr);
+					var fDyn:Dynamic = f;
+					if (fDyn.bytecodeChunk != null) {
+						stripPositionsFromChunk(fDyn.bytecodeChunk);
+					}
 					if (f.meta != null) {
 						for (m in f.meta) {
 							if (m.params != null) {

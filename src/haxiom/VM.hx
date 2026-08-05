@@ -553,6 +553,17 @@ class VM {
 			return false;
 		}
 
+		function resumeClassDeclaration(declaration:haxiom.Interp.VMClassDeclaration):Bool {
+			if (declaration.initializerIndex < declaration.initializers.length) {
+				var initializer = declaration.initializers[declaration.initializerIndex];
+				var callable = new VMGuestCallable(initializer.chunk, declaration.scope, [], initializer.type, declaration.cls,
+					declaration.cls.name + "." + initializer.name + "<init>", initializer.pos);
+				return pushGuestCall(callable, [], 4, declaration);
+			}
+			stack.push(declaration.cls);
+			return false;
+		}
+
 		function completeGuestFrame(result:Dynamic):Void {
 			var done = callFrames[callFrames.length - 1];
 			var completionMode = done.completionMode;
@@ -577,6 +588,11 @@ class VM {
 					var initializer = construction.initializers[construction.initializerIndex++];
 					construction.instance.fields.set(initializer.name, result);
 					resumeConstruction(construction);
+				case 4:
+					var declaration:haxiom.Interp.VMClassDeclaration = cast completionValue;
+					var initializer = declaration.initializers[declaration.initializerIndex++];
+					declaration.cls.staticFields.set(initializer.name, result);
+					resumeClassDeclaration(declaration);
 				default:
 					stack.push(result);
 			}
@@ -1867,9 +1883,10 @@ class VM {
 
 						case OP_DECLARE_CLASS:
 							var exprIdx = inst[frame.ip++];
-							var res = interp.eval(consts[exprIdx], frame.scope);
-							// In VM mode, any method body of the class will be compiled to bytecode upon invocation
-							stack.push(res);
+							var declaration = interp.prepareVMClassDeclaration(consts[exprIdx], frame.scope);
+							if (resumeClassDeclaration(declaration)) {
+								continue;
+							}
 
 						case OP_DECLARE_INTERFACE:
 							var exprIdx = inst[frame.ip++];

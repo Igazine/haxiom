@@ -414,6 +414,7 @@ class Interp {
 	private var callStack:Array<{method:String, pos:Pos}> = [];
 	private var activeVMCallFrames:Dynamic = null;
 	private var activeSourceLabel:String = null;
+	private var suppressStaticFieldInitializers:Bool = false;
 	private var onRuntimeError:Null<ScriptException->Void> = null;
 
 	private function getCallerInfo():Null<ScriptStackFrame> {
@@ -1096,6 +1097,54 @@ class Interp {
 				}
 			default:
 				null;
+		}
+	}
+
+	private function prepareVMClassDeclaration(expr:Expr, scope:Scope):VMClassDeclaration {
+		var previousSuppression = suppressStaticFieldInitializers;
+		suppressStaticFieldInitializers = true;
+		var cls:HaxiomClass;
+		try {
+			cls = cast eval(expr, scope);
+			suppressStaticFieldInitializers = previousSuppression;
+		} catch (error:Dynamic) {
+			suppressStaticFieldInitializers = previousSuppression;
+			throw error;
+		}
+
+		var initializers:Array<VMStaticFieldInitializer> = [];
+		switch (expr.def) {
+			case EClass(_, fields, _, _, _, _, _, _):
+				for (parsedField in fields) {
+					var field = cls.fields.get(parsedField.name);
+					if (field != null && field.isStatic && field.expr != null) {
+						var fieldDyn:Dynamic = field;
+						if (fieldDyn.bytecodeChunk == null) {
+							var implicitMembers:Map<String, Bool> = new Map();
+							for (memberField in cls.fields) implicitMembers.set(memberField.name, true);
+							for (methodName in cls.methods.keys()) implicitMembers.set(methodName, true);
+							fieldDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(field.expr, [], false, false, debugMode,
+								cls.name + "." + field.name + "<init>", this, activeSourceLabel, implicitMembers);
+						}
+						initializers.push(new VMStaticFieldInitializer(field.name, field.type, fieldDyn.bytecodeChunk,
+							field.expr.pos != null ? field.expr.pos : expr.pos));
+					}
+				}
+			default:
+		}
+		return new VMClassDeclaration(cls, scope, initializers);
+	}
+
+	function registerMacroDeclaration(expr:Expr, scope:Scope, initializeStaticFields:Bool):Dynamic {
+		var previousSuppression = suppressStaticFieldInitializers;
+		suppressStaticFieldInitializers = previousSuppression || !initializeStaticFields;
+		try {
+			var result = eval(expr, scope);
+			suppressStaticFieldInitializers = previousSuppression;
+			return result;
+		} catch (error:Dynamic) {
+			suppressStaticFieldInitializers = previousSuppression;
+			throw error;
 		}
 	}
 
@@ -3476,7 +3525,7 @@ class Interp {
 						bytecodeChunk: Reflect.field(f, "bytecodeChunk"),
 						meta: evaluateMetadata(f.meta, scope)
 					});
-					if (f.isStatic && fieldExpr != null) {
+					if (f.isStatic && fieldExpr != null && !suppressStaticFieldInitializers) {
 						cls.staticFields.set(f.name, eval(fieldExpr, scope));
 					}
 				}
@@ -3788,7 +3837,7 @@ class Interp {
 						property: f.property,
 						meta: evaluateMetadata(f.meta, scope)
 					});
-					if (f.isStatic && f.expr != null) {
+					if (f.isStatic && f.expr != null && !suppressStaticFieldInitializers) {
 						abs.staticFields.set(f.name, eval(f.expr, scope));
 					}
 				}
@@ -6657,6 +6706,35 @@ class VMClassConstruction {
 
 @:allow(haxiom)
 class VMFieldInitializer {
+	var name:String;
+	var type:Null<TypeDecl>;
+	var chunk:haxiom.VM.BytecodeChunk;
+	var pos:Pos;
+
+	function new(name:String, type:Null<TypeDecl>, chunk:haxiom.VM.BytecodeChunk, pos:Pos) {
+		this.name = name;
+		this.type = type;
+		this.chunk = chunk;
+		this.pos = pos;
+	}
+}
+
+@:allow(haxiom)
+class VMClassDeclaration {
+	var cls:HaxiomClass;
+	var scope:Scope;
+	var initializers:Array<VMStaticFieldInitializer>;
+	var initializerIndex:Int = 0;
+
+	function new(cls:HaxiomClass, scope:Scope, initializers:Array<VMStaticFieldInitializer>) {
+		this.cls = cls;
+		this.scope = scope;
+		this.initializers = initializers;
+	}
+}
+
+@:allow(haxiom)
+class VMStaticFieldInitializer {
 	var name:String;
 	var type:Null<TypeDecl>;
 	var chunk:haxiom.VM.BytecodeChunk;
