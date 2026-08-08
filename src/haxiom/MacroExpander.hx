@@ -22,11 +22,29 @@ class MacroExpander {
                 for (e in exprs) {
                     registerMacros(e, interp);
                 }
-            case EClass(_, _, _, _, _, _, _) | EInterface(_, _, _, _, _, _) | EEnum(_, _, _) | EAbstract(_, _, _, _, _, _) | ETypedef(_, _, _) | EPackage(_) | EImport(_, _) | EUsing(_):
-                interp.eval(expr, interp.globals);
+            case EClass(_, _, methods, _, _, _, _, _):
+                interp.registerMacroDeclaration(expr, interp.globals, hasMacroMethod(methods));
+            case EAbstract(_, _, _, methods, _, _):
+                interp.registerMacroDeclaration(expr, interp.globals, hasMacroMethod(methods));
+            case EInterface(_, _, _, _, _, _) | EEnum(_, _, _) | ETypedef(_, _, _) | EPackage(_) | EImport(_, _) | EUsing(_):
+                interp.registerMacroDeclaration(expr, interp.globals, false);
             default:
                 // No-op for other expressions during macro registration phase
         }
+    }
+
+    static function hasMacroMethod(methods:Array<Dynamic>):Bool {
+        for (method in methods) {
+            if (method.meta != null) {
+                var metadata:Array<Dynamic> = cast method.meta;
+                for (meta in metadata) {
+                    if (meta.name == ":haxiom.macro" || meta.name == "haxiom.macro") {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     /**

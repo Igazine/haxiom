@@ -41,9 +41,10 @@ class BytecodeCompiler {
 	var resources:Map<String, haxe.io.Bytes> = new Map();
 	var interp:Null<Interp> = null;
 	var scriptName:Null<String> = null;
+	var implicitMembers:Map<String, Bool> = new Map();
 
 	function new(?interp:Interp, ?args:Array<FunctionArg>, ?isTopLevel:Bool = true, ?isAsync:Bool = false, ?debugMode:Bool = false, ?functionName:String,
-			?scriptName:String) {
+			?scriptName:String, ?implicitMembers:Map<String, Bool>) {
 		this.interp = interp;
 		this.args = args;
 		this.isTopLevel = isTopLevel;
@@ -51,6 +52,7 @@ class BytecodeCompiler {
 		this.debugMode = debugMode;
 		this.functionName = functionName;
 		this.scriptName = scriptName;
+		this.implicitMembers = implicitMembers != null ? implicitMembers : new Map();
 		if (args != null && !isTopLevel) {
 			for (arg in args) {
 				declareLocal(arg.name, arg.type);
@@ -59,9 +61,9 @@ class BytecodeCompiler {
 	}
 
 	static function compile(expr:Expr, ?args:Array<FunctionArg>, ?isTopLevel:Bool = true, ?isAsync:Bool = false, ?debugMode:Bool = false,
-			?functionName:String, ?interp:Interp, ?scriptName:String):BytecodeChunk {
+			?functionName:String, ?interp:Interp, ?scriptName:String, ?implicitMembers:Map<String, Bool>):BytecodeChunk {
 		var actualAsync = isAsync || hasAwait(expr);
-		var compiler = new BytecodeCompiler(interp, args, isTopLevel, actualAsync, debugMode, functionName, scriptName);
+		var compiler = new BytecodeCompiler(interp, args, isTopLevel, actualAsync, debugMode, functionName, scriptName, implicitMembers);
 		if (!isTopLevel) {
 			compiler.findCapturedVars(expr, new Map<String, Bool>(), compiler.capturedVars);
 		}
@@ -536,9 +538,23 @@ class BytecodeCompiler {
 				}
 
 			case EField(objExpr, field):
-				compileExpr(objExpr);
-				emit(OP_GET_FIELD, e.pos);
-				emitInt(addConst(field), e.pos);
+				var root = expressionPathRoot(e);
+				var rootLocal = root != null && !isTopLevel ? resolveLocal(root) : null;
+				var isBareReceiver = switch (objExpr.def) {
+					case EIdent(_): true;
+					default: false;
+				};
+				var barePackageRoot = isBareReceiver && root != null && root.length > 0
+					&& root.charAt(0) == root.charAt(0).toLowerCase() && !implicitMembers.exists(root);
+				if ((!isBareReceiver || barePackageRoot) && root != null && root != "this" && root != "super" && rootLocal == null
+						&& !capturedVars.exists(root)) {
+					emit(OP_RESOLVE_PATH, e.pos);
+					emitInt(addConst(e), e.pos);
+				} else {
+					compileExpr(objExpr);
+					emit(OP_GET_FIELD, e.pos);
+					emitInt(addConst(field), e.pos);
+				}
 
 			case ESafeField(objExpr, field):
 				compileExpr(objExpr);
@@ -642,7 +658,7 @@ class BytecodeCompiler {
 				}
 
 			case EFunction(name, args, retType, body):
-				var bodyChunk = BytecodeCompiler.compile(body, args, false, false, debugMode, name, this.interp, this.scriptName);
+				var bodyChunk = BytecodeCompiler.compile(body, args, false, false, debugMode, name, this.interp, this.scriptName, implicitMembers);
 				// Clean the body Chunk's positions so it knows its location
 				var proto = {
 					name: name,
@@ -898,6 +914,13 @@ class BytecodeCompiler {
 				emit(OP_THROW, e.pos);
 
 			case ETry(tryExpr, catches):
+				for (c in catches) {
+					if (c.guard != null) {
+						var clauseDyn:Dynamic = c;
+						clauseDyn.guardChunk = BytecodeCompiler.compile(c.guard, [], false, false, debugMode, "catch<guard>", this.interp,
+							this.scriptName, implicitMembers);
+					}
+				}
 				emit(OP_PUSH_TRY, e.pos);
 				var catchJumpIdx = instructions.length;
 				emitInt(0, e.pos);
@@ -962,10 +985,12 @@ class BytecodeCompiler {
 				for (c in cases) {
 					var caseBodyLabel = -1;
 					var valueJumpPlaceholderIndices = [];
+					var guardIdx = c.guard != null
+						? addConst(BytecodeCompiler.compile(c.guard, [], false, false, debugMode, "switch<guard>", this.interp, this.scriptName, implicitMembers))
+						: -1;
 
 					for (v in c.values) {
 						var patternIdx = addConst(v);
-						var guardIdx = c.guard != null ? addConst(c.guard) : -1;
 						emit(OP_MATCH_CASE, e.pos);
 						emitInt(patternIdx, e.pos);
 						emitInt(guardIdx, e.pos);
@@ -1034,10 +1059,22 @@ class BytecodeCompiler {
 			case EClass(name, fields, methods, parent, interfaces, params, meta, isExtern):
 				if (isExtern == true)
 					return;
+				var classMembers:Map<String, Bool> = new Map();
 				for (f in fields) {
+					classMembers.set(f.name, true);
 					if (f.meta != null) {
 						f.expr = ResourceCompiler.processResource(this.interp, f.meta, f.type, f.expr, e.pos, this.resources);
 						f.meta = stripResourceMeta(f.meta);
+					}
+				}
+				for (m in methods) {
+					classMembers.set(m.name, true);
+				}
+				for (f in fields) {
+					if (f.expr != null) {
+						var fieldDyn:Dynamic = f;
+						fieldDyn.bytecodeChunk = BytecodeCompiler.compile(f.expr, [], false, false, debugMode, name + "." + f.name + "<init>", this.interp,
+							this.scriptName, classMembers);
 					}
 				}
 				for (m in methods) {
@@ -1052,7 +1089,8 @@ class BytecodeCompiler {
 							}
 						}
 						var mDyn:Dynamic = m;
-						mDyn.bytecodeChunk = BytecodeCompiler.compile(m.body, m.args, false, isMethodAsync, debugMode, m.name, this.interp, this.scriptName);
+						mDyn.bytecodeChunk = BytecodeCompiler.compile(m.body, m.args, false, isMethodAsync, debugMode, m.name, this.interp, this.scriptName,
+							classMembers);
 						if (!debugMode) {
 							m.body = null;
 						}
@@ -1070,10 +1108,22 @@ class BytecodeCompiler {
 				emitInt(addConst(e), e.pos);
 
 			case EAbstract(name, underlyingType, fields, methods, params, meta):
+				var abstractMembers:Map<String, Bool> = new Map();
 				for (f in fields) {
+					abstractMembers.set(f.name, true);
 					if (f.meta != null) {
 						f.expr = ResourceCompiler.processResource(this.interp, f.meta, f.type, f.expr, e.pos, this.resources);
 						f.meta = stripResourceMeta(f.meta);
+					}
+				}
+				for (m in methods) {
+					abstractMembers.set(m.name, true);
+				}
+				for (f in fields) {
+					if (f.expr != null) {
+						var fieldDyn:Dynamic = f;
+						fieldDyn.bytecodeChunk = BytecodeCompiler.compile(f.expr, [], false, false, debugMode, name + "." + f.name + "<init>", this.interp,
+							this.scriptName, abstractMembers);
 					}
 				}
 				for (m in methods) {
@@ -1088,7 +1138,8 @@ class BytecodeCompiler {
 							}
 						}
 						var mDyn:Dynamic = m;
-						mDyn.bytecodeChunk = BytecodeCompiler.compile(m.body, m.args, false, isMethodAsync, debugMode, m.name, this.interp, this.scriptName);
+						mDyn.bytecodeChunk = BytecodeCompiler.compile(m.body, m.args, false, isMethodAsync, debugMode, m.name, this.interp, this.scriptName,
+							abstractMembers);
 						if (!debugMode) {
 							m.body = null;
 						}
@@ -1159,6 +1210,10 @@ class BytecodeCompiler {
 				for (f in fields) {
 					if (f.expr != null)
 						stripPositions(f.expr);
+					var fDyn:Dynamic = f;
+					if (fDyn.bytecodeChunk != null) {
+						stripPositionsFromChunk(fDyn.bytecodeChunk);
+					}
 					if (f.meta != null) {
 						for (m in f.meta) {
 							if (m.params != null) {
@@ -1321,6 +1376,10 @@ class BytecodeCompiler {
 				for (f in fields) {
 					if (f.expr != null)
 						stripPositions(f.expr);
+					var fDyn:Dynamic = f;
+					if (fDyn.bytecodeChunk != null) {
+						stripPositionsFromChunk(fDyn.bytecodeChunk);
+					}
 					if (f.meta != null) {
 						for (m in f.meta) {
 							if (m.params != null) {
@@ -1715,7 +1774,7 @@ class BytecodeCompiler {
 			case OP_LOAD_CONST | OP_GET_LOCAL | OP_SET_LOCAL | OP_GET_VAR | OP_SET_VAR | OP_JUMP | OP_JUMP_IF_FALSE | OP_JUMP_IF_FALSE_PEEK |
 				OP_JUMP_IF_TRUE_PEEK | OP_JUMP_IF_NOT_NULL_PEEK | OP_CALL | OP_GET_FIELD | OP_SET_FIELD | OP_NEW_ARRAY | OP_MAKE_FUNCTION | OP_PUSH_TRY |
 				OP_MATCH_CATCH | OP_SAFE_GET_FIELD | OP_SAFE_SET_FIELD | OP_CAST | OP_DECLARE_CLASS | OP_DECLARE_INTERFACE | OP_DECLARE_ENUM |
-				OP_DECLARE_ABSTRACT | OP_DECLARE_TYPEDEF | OP_IMPORT | OP_USING | OP_PACKAGE | OP_NEW_MAP | OP_CHECK_TYPE | OP_UNOP:
+				OP_DECLARE_ABSTRACT | OP_DECLARE_TYPEDEF | OP_IMPORT | OP_USING | OP_PACKAGE | OP_NEW_MAP | OP_CHECK_TYPE | OP_UNOP | OP_RESOLVE_PATH:
 				2;
 
 			case OP_CALL_METHOD | OP_MATCH_CASE | OP_NEW | OP_UNOP_MUTATE | OP_EREG:
@@ -1731,6 +1790,14 @@ class BytecodeCompiler {
 			default:
 				throw 'Unknown opcode in optimizer: $op';
 		}
+	}
+
+	function expressionPathRoot(expr:Expr):Null<String> {
+		return switch (expr.def) {
+			case EIdent(name): name;
+			case EField(target, _): expressionPathRoot(target);
+			default: null;
+		};
 	}
 
 	static function hasAwait(expr:Expr):Bool {

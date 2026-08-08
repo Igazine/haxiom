@@ -1,0 +1,21 @@
+-L haxiom
+--class-path test
+--main haxiom.scenarios.TestScenarios
+--debug
+
+--each
+
+--next
+--interp
+
+--next
+--cpp test/haxiom/tmp_scenarios/cpp
+--cmd ./test/haxiom/tmp_scenarios/cpp/TestScenarios-debug
+
+--next
+--js test/haxiom/tmp_scenarios/js/TestScenarios.js
+--cmd node test/haxiom/tmp_scenarios/js/TestScenarios.js
+
+--next
+--neko test/haxiom/tmp_scenarios/neko/TestScenarios.n
+--cmd neko test/haxiom/tmp_scenarios/neko/TestScenarios.n

@@ -29,7 +29,7 @@ class BytecodeVerifier {
 		var ip = 0;
 		while (ip < inst.length) {
 			var op:Int = inst[ip++];
-			if (op < 0 || op > 76) {
+			if (op < 0 || op > 77) {
 				throw 'Invalid opcode $op at instruction index ${ip - 1}';
 			}
 
@@ -139,6 +139,10 @@ class BytecodeVerifier {
 
 				case 76: // OP_ON_DISPOSE
 					// 0 operands
+
+				case 77: // OP_RESOLVE_PATH
+					checkOperands(ip, 1, inst.length);
+					checkConstIndex(inst[ip++], chunk); // path expression
 
 				case 75: // OP_EREG
 					checkOperands(ip, 2, inst.length);

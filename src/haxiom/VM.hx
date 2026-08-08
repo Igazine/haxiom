@@ -9,6 +9,7 @@ import haxiom.HaxiomTypes.HaxiomEnum;
 import haxiom.HaxiomTypes.HaxiomEnumInstance;
 import haxiom.HaxiomTypes.HaxiomAbstract;
 import haxiom.HaxiomTypes.HaxiomAbstractInstance;
+import haxiom.HaxiomTypes.ClassMethodInfo;
 import haxe.DynamicAccess;
 
 enum abstract Opcode(Int) from Int to Int {
@@ -89,6 +90,7 @@ enum abstract Opcode(Int) from Int to Int {
 	var OP_AWAIT = 74;
 	var OP_EREG = 75;
 	var OP_ON_DISPOSE = 76;
+	var OP_RESOLVE_PATH = 77;
 }
 
 typedef DebugSymbol = {
@@ -178,6 +180,16 @@ class VMCallFrame {
 	var ip:Int;
 	var scope:Scope;
 	var methodName:String;
+	var thisContext:Dynamic;
+	var returnType:Null<TypeDecl>;
+	var typeBindings:Null<Map<String, TypeDecl>>;
+	var stackBase:Int = 0;
+	var callScope:Scope;
+	var ownsInterpFrame:Bool = false;
+	var completionMode:Int = 0;
+	var completionValue:Dynamic;
+	var constructorContext:Dynamic;
+	var abstractContext:Bool = false;
 	var tryStack:Array<{catchIp:Int, stackSize:Int, scope:Scope}> = [];
 	var locals:Array<Dynamic> = [];
 	var isInPool:Bool = false;
@@ -188,6 +200,34 @@ class VMCallFrame {
 		this.scope = scope;
 		this.methodName = methodName;
 		this.locals = [for (i in 0...chunk.maxSlots) null];
+	}
+}
+
+@:allow(haxiom)
+class VMGuestCallable {
+	var chunk:BytecodeChunk;
+	var parentScope:Scope;
+	var args:Array<FunctionArg>;
+	var returnType:Null<TypeDecl>;
+	var thisContext:Dynamic;
+	var methodName:String;
+	var creationPos:Pos;
+	var typeBindings:Null<Map<String, TypeDecl>>;
+	var prefixArgs:Array<Dynamic>;
+	var abstractContext:Bool;
+
+	function new(chunk:BytecodeChunk, parentScope:Scope, args:Array<FunctionArg>, returnType:Null<TypeDecl>, thisContext:Dynamic, methodName:String,
+			creationPos:Pos, ?typeBindings:Null<Map<String, TypeDecl>>, ?prefixArgs:Array<Dynamic>) {
+		this.chunk = chunk;
+		this.parentScope = parentScope;
+		this.args = args;
+		this.returnType = returnType;
+		this.thisContext = thisContext;
+		this.methodName = methodName;
+		this.creationPos = creationPos;
+		this.typeBindings = typeBindings;
+		this.prefixArgs = prefixArgs != null ? prefixArgs : [];
+		this.abstractContext = Std.isOfType(thisContext, HaxiomAbstractInstance);
 	}
 }
 
@@ -206,6 +246,16 @@ class VM {
 			frame.ip = ip;
 			frame.scope = scope;
 			frame.methodName = methodName;
+			frame.thisContext = null;
+			frame.returnType = null;
+			frame.typeBindings = null;
+			frame.stackBase = 0;
+			frame.callScope = null;
+			frame.ownsInterpFrame = false;
+			frame.completionMode = 0;
+			frame.completionValue = null;
+			frame.constructorContext = null;
+			frame.abstractContext = false;
 			#if haxe4
 			frame.tryStack.resize(0);
 			#else
@@ -248,6 +298,16 @@ class VM {
 		frame.chunk = null;
 		frame.scope = null;
 		frame.methodName = null;
+		frame.thisContext = null;
+		frame.returnType = null;
+		frame.typeBindings = null;
+		frame.stackBase = 0;
+		frame.callScope = null;
+		frame.ownsInterpFrame = false;
+		frame.completionMode = 0;
+		frame.completionValue = null;
+		frame.constructorContext = null;
+		frame.abstractContext = false;
 		#if haxe4
 		frame.tryStack.resize(0);
 		#else
@@ -258,19 +318,20 @@ class VM {
 	}
 
 	static function runChunk(interp:Interp, chunk:BytecodeChunk, scope:Scope, ?currentThis:Dynamic, ?methodName:String = "toplevel",
-			?args:Array<Dynamic>):Dynamic {
+			?args:Array<Dynamic>, ?isExecutionBoundary:Bool = false):Dynamic {
 		if (chunk.isAsync) {
 			var fiber = new VMFiber();
 			fiber.scope = scope;
 			fiber.thisContext = currentThis;
-			executeLoop(interp, fiber, chunk, scope, currentThis, methodName, args);
+			fiber.isExecutionBoundary = isExecutionBoundary;
+			executeLoop(interp, fiber, chunk, scope, currentThis, methodName, args, isExecutionBoundary);
 			return fiber.future;
 		}
-		return executeLoop(interp, null, chunk, scope, currentThis, methodName, args);
+		return executeLoop(interp, null, chunk, scope, currentThis, methodName, args, isExecutionBoundary);
 	}
 
 	static function executeLoop(interp:Interp, fiber:Null<VMFiber>, chunk:Null<BytecodeChunk>, scope:Null<Scope>, ?currentThis:Dynamic,
-			?methodName:String = "toplevel", ?args:Array<Dynamic>):Dynamic {
+			?methodName:String = "toplevel", ?args:Array<Dynamic>, ?isExecutionBoundary:Bool = false):Dynamic {
 		if (interp.disposed) {
 			return null;
 		}
@@ -306,6 +367,9 @@ class VM {
 				callFrames = [];
 			}
 			var frame = obtainFrame(interp, chunk, 0, scope, methodName);
+			frame.thisContext = currentThis;
+			frame.constructorContext = interp.currentConstructorInstance;
+			frame.abstractContext = interp.inAbstractMethod;
 			if (args != null) {
 				for (i in 0...args.length) {
 					if (i < frame.locals.length) {
@@ -325,6 +389,9 @@ class VM {
 		var inst = frame.chunk.instructions;
 		var consts = frame.chunk.constants;
 		var posTable = frame.chunk.positions;
+		interp.currentThis = frame.thisContext;
+		interp.currentConstructorInstance = frame.constructorContext;
+		interp.inAbstractMethod = frame.abstractContext;
 
 		inline function frameFallbackFile(f:VMCallFrame):String {
 			return f != null && f.chunk != null && f.chunk.scriptName != null ? f.chunk.scriptName : "script";
@@ -345,6 +412,274 @@ class VM {
 
 		inline function currentPos():Pos {
 			return positionForFrame(frame, frame.ip);
+		}
+
+		function activateFrame(next:VMCallFrame):Void {
+			frame = next;
+			inst = frame.chunk.instructions;
+			consts = frame.chunk.constants;
+			posTable = frame.chunk.positions;
+			interp.currentThis = frame.thisContext;
+			interp.currentConstructorInstance = frame.constructorContext;
+			interp.inAbstractMethod = frame.abstractContext;
+		}
+
+		function releaseGuestFrame(done:VMCallFrame):Void {
+			if (done.ownsInterpFrame) {
+				interp.popFrame();
+			}
+			if (done.callScope != null) {
+				Scope.recycle(done.callScope, interp);
+				done.callScope = null;
+			}
+			recycleFrame(interp, done);
+		}
+
+		function pushGuestCall(callable:VMGuestCallable, callArgs:Array<Dynamic>, ?completionMode:Int = 0, ?completionValue:Dynamic,
+				?constructorContext:Dynamic):Bool {
+			if (callable == null || callable.chunk == null || callable.chunk.isAsync) {
+				return false;
+			}
+			if (interp.disposed) {
+				stack.push(null);
+				return true;
+			}
+
+			var namespace = "toplevel";
+			if (callable.thisContext != null) {
+				if (Std.isOfType(callable.thisContext, HaxiomInstance)) {
+					namespace = (cast callable.thisContext : HaxiomInstance).cls.name;
+				} else if (Std.isOfType(callable.thisContext, HaxiomClass)) {
+					namespace = (cast callable.thisContext : HaxiomClass).name;
+				}
+			}
+			if (interp.isNamespaceHalted(namespace)) {
+				stack.push(null);
+				return true;
+			}
+
+			var callScope = Scope.create(callable.parentScope, interp);
+			try {
+				if (callable.thisContext != null) {
+					callScope.declare("this", callable.thisContext);
+				}
+				var fullArgs = callable.prefixArgs.concat(callArgs);
+				var mappedArgs:Array<Dynamic> = [];
+				for (i in 0...callable.args.length) {
+					var arg = callable.args[i];
+					var value:Dynamic = null;
+					if (arg.isRest) {
+						value = fullArgs.slice(i);
+						if (arg.type != null) {
+							var rest:Array<Dynamic> = cast value;
+							for (j in 0...rest.length) {
+								rest[j] = interp.castOrCheckType(rest[j], arg.type, callScope, callable.typeBindings);
+							}
+						}
+					} else {
+						value = i < fullArgs.length ? fullArgs[i] : null;
+						value = interp.castOrCheckType(value, arg.type, callScope, callable.typeBindings);
+					}
+					callScope.declare(arg.name, value, arg.type);
+					mappedArgs.push(value);
+				}
+
+				var next = obtainFrame(interp, callable.chunk, 0, callScope, callable.methodName);
+				next.thisContext = callable.thisContext;
+				next.returnType = callable.returnType;
+				next.typeBindings = callable.typeBindings;
+				next.stackBase = stack.length;
+				next.callScope = callScope;
+				next.ownsInterpFrame = true;
+				next.completionMode = completionMode;
+				next.completionValue = completionValue;
+				next.constructorContext = constructorContext != null ? constructorContext : interp.currentConstructorInstance;
+				next.abstractContext = callable.abstractContext || interp.inAbstractMethod;
+				for (i in 0...mappedArgs.length) {
+					if (i < next.locals.length) {
+						next.locals[i] = mappedArgs[i];
+					}
+				}
+				interp.pushFrame(callable.methodName, callable.creationPos);
+				callFrames.push(next);
+				activateFrame(next);
+				return true;
+			} catch (error:Dynamic) {
+				Scope.recycle(callScope, interp);
+				throw error;
+			}
+		}
+
+		function tryPushGuestCall(func:Dynamic, callArgs:Array<Dynamic>, ?completionMode:Int = 0, ?completionValue:Dynamic,
+				?constructorContext:Dynamic):Bool {
+			var guestCallable = interp.getVMGuestCallable(func);
+			return guestCallable != null && pushGuestCall(guestCallable, callArgs, completionMode, completionValue, constructorContext);
+		}
+
+		function tryPushGuestMethod(receiver:Dynamic, method:ClassMethodInfo, callArgs:Array<Dynamic>, ?completionMode:Int = 0,
+				?completionValue:Dynamic, ?constructorContext:Dynamic):Bool {
+			var guestCallable = interp.createVMMethodCallable(receiver, method);
+			return guestCallable != null && pushGuestCall(guestCallable, callArgs, completionMode, completionValue, constructorContext);
+		}
+
+		function resumeConstruction(construction:haxiom.Interp.VMClassConstruction):Bool {
+			if (construction.initializerIndex < construction.initializers.length) {
+				var initializer = construction.initializers[construction.initializerIndex];
+				var callable = new VMGuestCallable(initializer.chunk, construction.scope, [], initializer.type, construction.instance,
+					construction.instance.cls.name + "." + initializer.name + "<init>", initializer.pos, construction.instance.genericBindings);
+				return pushGuestCall(callable, [], 3, construction, construction.instance);
+			}
+
+			if (construction.methodInfo == null) {
+				stack.push(construction.instance);
+				return false;
+			}
+			if (tryPushGuestMethod(construction.instance, construction.methodInfo, construction.args, 1, construction.instance,
+					construction.instance)) {
+				return true;
+			}
+
+			var constructorFunc = interp.bindMethod(construction.instance, construction.methodInfo);
+			var oldConstructor = interp.currentConstructorInstance;
+			interp.currentConstructorInstance = construction.instance;
+			try {
+				Reflect.callMethod(null, constructorFunc, construction.args);
+				interp.currentConstructorInstance = oldConstructor;
+			} catch (error:Dynamic) {
+				interp.currentConstructorInstance = oldConstructor;
+				throw error;
+			}
+			stack.push(construction.instance);
+			return false;
+		}
+
+		function resumeClassDeclaration(declaration:haxiom.Interp.VMClassDeclaration):Bool {
+			if (declaration.initializerIndex < declaration.initializers.length) {
+				var initializer = declaration.initializers[declaration.initializerIndex];
+				var callable = new VMGuestCallable(initializer.chunk, declaration.scope, [], initializer.type, declaration.cls,
+					declaration.cls.name + "." + initializer.name + "<init>", initializer.pos);
+				return pushGuestCall(callable, [], 4, declaration);
+			}
+			stack.push(declaration.cls);
+			return false;
+		}
+
+		function resumeAbstractDeclaration(declaration:haxiom.Interp.VMAbstractDeclaration):Bool {
+			if (declaration.initializerIndex < declaration.initializers.length) {
+				var initializer = declaration.initializers[declaration.initializerIndex];
+				var callable = new VMGuestCallable(initializer.chunk, declaration.scope, [], initializer.type, declaration.thisContext,
+					declaration.abstractType.name + "." + initializer.name + "<init>", initializer.pos);
+				return pushGuestCall(callable, [], 5, declaration);
+			}
+			stack.push(declaration.abstractType);
+			return false;
+		}
+
+		function pushGuardEvaluation(guardChunk:BytecodeChunk, caseScope:Scope, pos:Pos):Bool {
+			var state = new VMGuardEvaluation(caseScope);
+			var callable = new VMGuestCallable(guardChunk, caseScope, [], null, interp.currentThis, "guard", pos);
+			return pushGuestCall(callable, [], 6, state);
+		}
+
+		function invokeAbstractBinop(op:String, v1:Dynamic, v2:Dynamic):Int {
+			var method = interp.findAbstractBinopMethod(op, v1, v2);
+			if (method == null) {
+				return 0;
+			}
+			if (tryPushGuestMethod(null, method, [v1, v2])) {
+				return 1;
+			}
+			throw 'Abstract operator "$op" cannot execute in VM mode';
+		}
+
+		function invokeAbstractUnop(op:String, val:Dynamic, ?completionMode:Int = 0, ?completionValue:Dynamic):Int {
+			var method = interp.findAbstractUnopMethod(op, val);
+			if (method == null) {
+				return 0;
+			}
+			if (tryPushGuestMethod(null, method, [val], completionMode, completionValue)) {
+				return 1;
+			}
+			throw 'Abstract operator "$op" cannot execute in VM mode';
+		}
+
+		function completeGuestFrame(result:Dynamic):Void {
+			var done = callFrames[callFrames.length - 1];
+			var completionMode = done.completionMode;
+			var completionValue = done.completionValue;
+			if (done.returnType != null && interp.typeToString(done.returnType) == "Void") {
+				result = null;
+			} else {
+				result = interp.castOrCheckType(result, done.returnType, done.scope, done.typeBindings);
+			}
+			while (stack.length > done.stackBase) {
+				stack.pop();
+			}
+			callFrames.pop();
+			releaseGuestFrame(done);
+			activateFrame(callFrames[callFrames.length - 1]);
+			switch (completionMode) {
+				case 1:
+					stack.push(completionValue);
+				case 2:
+				case 3:
+					var construction:haxiom.Interp.VMClassConstruction = cast completionValue;
+					var initializer = construction.initializers[construction.initializerIndex++];
+					construction.instance.fields.set(initializer.name, result);
+					resumeConstruction(construction);
+				case 4:
+					var declaration:haxiom.Interp.VMClassDeclaration = cast completionValue;
+					var initializer = declaration.initializers[declaration.initializerIndex++];
+					declaration.cls.staticFields.set(initializer.name, result);
+					resumeClassDeclaration(declaration);
+				case 5:
+					var declaration:haxiom.Interp.VMAbstractDeclaration = cast completionValue;
+					var initializer = declaration.initializers[declaration.initializerIndex++];
+					declaration.abstractType.staticFields.set(initializer.name, result);
+					resumeAbstractDeclaration(declaration);
+				case 6:
+					var guard:haxiom.VM.VMGuardEvaluation = cast completionValue;
+					if (VM.isTruthy(result)) {
+						stack.pop();
+						stack.push(guard.caseScope);
+						stack.push(true);
+					} else {
+						Scope.recycle(guard.caseScope, interp);
+						stack.push(false);
+					}
+				case 7:
+					var mutation:haxiom.VM.VMUnaryMutation = cast completionValue;
+					mutation.assign(interp, callFrames[callFrames.length - 1], result);
+					stack.push(mutation.isPostfix ? mutation.originalValue : result);
+				default:
+					stack.push(result);
+			}
+		}
+
+		function invokeCallable(func:Dynamic, receiver:Dynamic, callArgs:Array<Dynamic>):Bool {
+			if (tryPushGuestCall(func, callArgs)) {
+				return true;
+			}
+			stack.push(Reflect.callMethod(receiver, func, callArgs));
+			return false;
+		}
+
+		function installInlineCache(ownerFrame:VMCallFrame, cacheKey:Int, cache:InlineCacheEntry, entry:InlineCacheEntry):Void {
+			if (cache == null) {
+				ownerFrame.chunk.inlineCaches.set(cacheKey, entry);
+			} else if (!cache.isMegamorphic) {
+				var size = 1;
+				var current = cache;
+				while (current.next != null) {
+					size++;
+					current = current.next;
+				}
+				if (size < 4) {
+					current.next = entry;
+				} else {
+					cache.isMegamorphic = true;
+				}
+			}
 		}
 
 		try {
@@ -376,12 +711,8 @@ class VM {
 					}
 					if (frame.ip >= inst.length) {
 						if (callFrames.length > 1) {
-							var popped = callFrames.pop();
-							recycleFrame(interp, popped);
-							frame = callFrames[callFrames.length - 1];
-							inst = frame.chunk.instructions;
-							consts = frame.chunk.constants;
-							posTable = frame.chunk.positions;
+							var implicitResult = stack.length > frame.stackBase ? stack.pop() : null;
+							completeGuestFrame(implicitResult);
 							continue;
 						}
 						break;
@@ -400,7 +731,14 @@ class VM {
 
 						case OP_LOAD_CONST:
 							var idx = inst[frame.ip++];
-							stack.push(consts[idx]);
+							var value:Dynamic = consts[idx];
+							if (value != null && (Std.isOfType(value, BinaryResourceRefHolder) || Reflect.hasField(value, "key"))) {
+								var resourceKey:String = Reflect.field(value, "key");
+								if (resourceKey != null && interp.virtualResources.exists(resourceKey)) {
+									value = interp.virtualResources.get(resourceKey);
+								}
+							}
+							stack.push(value);
 
 						case OP_GET_LOCAL:
 							var slot = inst[frame.ip++];
@@ -425,17 +763,60 @@ class VM {
 								} else {
 									throw "Cannot use 'super' outside of a class instance constructor or method";
 								}
-							} else {
-								var val:Dynamic = null;
-								if (!frame.scope.exists(name) && interp.currentThis != null) {
+								} else {
+									var val:Dynamic = null;
+									if (!frame.scope.exists(name) && interp.currentThis != null) {
+										var getterMethod = interp.findVMPropertyAccessor(interp.currentThis, name, false, currentPos());
+										if (getterMethod != null) {
+											if (tryPushGuestMethod(interp.currentThis, getterMethod, [])) {
+												continue;
+											}
+											val = Reflect.callMethod(null, interp.bindMethod(interp.currentThis, getterMethod), []);
+											stack.push(val);
+											continue;
+										}
+									}
+									if (!frame.scope.exists(name) && interp.currentThis != null) {
 									if (Std.isOfType(interp.currentThis, HaxiomInstance)) {
-										val = interp.evalField(interp.currentThis, name, frame.scope, currentPos());
+										var currentInstance:HaxiomInstance = cast interp.currentThis;
+										var staticOwner = interp.findStaticFieldOwner(currentInstance.cls, name);
+										if (staticOwner != null) {
+											val = interp.evalField(staticOwner, name, frame.scope, currentPos());
+										} else if (interp.findStaticMethod(currentInstance.cls, name) != null) {
+											val = interp.evalField(currentInstance.cls, name, frame.scope, currentPos());
+										} else {
+											var fieldDef = interp.findFieldDef(currentInstance.cls, name);
+											var getter = fieldDef != null && fieldDef.property != null && fieldDef.property.get == "get"
+												&& !interp.isInsideAccessor(name) ? interp.findMethod(currentInstance.cls, "get_" + name) : null;
+											if (getter != null) {
+												if (tryPushGuestMethod(interp.currentThis, getter, [])) {
+													continue;
+												}
+												var getterFunc = interp.bindMethod(interp.currentThis, getter);
+												val = Reflect.callMethod(null, getterFunc, []);
+											} else {
+												val = interp.evalField(interp.currentThis, name, frame.scope, currentPos());
+											}
+										}
 									} else if (Std.isOfType(interp.currentThis, HaxiomClass)) {
 										var cls:HaxiomClass = cast interp.currentThis;
 										var fDef = interp.findFieldDef(cls, name);
 										var isStaticField = fDef != null && fDef.isStatic;
 										var isStaticMethod = interp.findStaticMethod(cls, name) != null;
 										if (isStaticField || isStaticMethod) {
+											val = interp.evalField(interp.currentThis, name, frame.scope, currentPos());
+										} else {
+											val = frame.scope.get(name);
+										}
+									} else if (Std.isOfType(interp.currentThis, HaxiomAbstractInstance)) {
+										var abstractInstance:HaxiomAbstractInstance = cast interp.currentThis;
+										var abstractType = abstractInstance.abstractType;
+										var fieldDef = abstractType.fields.get(name);
+										if (fieldDef != null && fieldDef.isStatic) {
+											val = interp.evalField(abstractType, name, frame.scope, currentPos());
+										} else if (abstractType.methods.exists(name)) {
+											val = interp.bindMethod(interp.currentThis, abstractType.methods.get(name));
+										} else if (fieldDef != null) {
 											val = interp.evalField(interp.currentThis, name, frame.scope, currentPos());
 										} else {
 											val = frame.scope.get(name);
@@ -456,17 +837,36 @@ class VM {
 							var idx = inst[frame.ip++];
 							var name:String = consts[idx];
 							var val = stack[stack.length - 1];
-							if (name == "this") {
-								interp.currentThis = val;
-							} else {
-								if (!frame.scope.exists(name) && interp.currentThis != null) {
+								if (name == "this") {
+									interp.currentThis = val;
+								} else {
+									if (!frame.scope.exists(name) && interp.currentThis != null) {
+										var setterMethod = interp.findVMPropertyAccessor(interp.currentThis, name, true, currentPos());
+										if (setterMethod != null) {
+											if (tryPushGuestMethod(interp.currentThis, setterMethod, [val], 2)) {
+												continue;
+											}
+											Reflect.callMethod(null, interp.bindMethod(interp.currentThis, setterMethod), [val]);
+											continue;
+										}
+									}
+									if (!frame.scope.exists(name) && interp.currentThis != null) {
 									if (Std.isOfType(interp.currentThis, HaxiomInstance)) {
 										var inst:HaxiomInstance = cast interp.currentThis;
+										var staticOwner = interp.findStaticFieldOwner(inst.cls, name);
+										if (staticOwner != null) {
+											interp.assignField(staticOwner, name, val, frame.scope, currentPos());
+											continue;
+										}
 										var fDef = interp.findFieldDef(inst.cls, name);
 										if (fDef != null && fDef.property != null && fDef.property.set == "set" && !interp.isInsideAccessor(name)) {
 											var m = interp.findMethod(inst.cls, "set_" + name);
 											if (m != null) {
-												Reflect.callMethod(null, interp.bindMethod(interp.currentThis, m), [val]);
+												if (tryPushGuestMethod(interp.currentThis, m, [val], 2)) {
+													continue;
+												}
+												var setterFunc = interp.bindMethod(interp.currentThis, m);
+												Reflect.callMethod(null, setterFunc, [val]);
 											}
 										} else {
 											if (fDef != null && fDef.isFinal && interp.currentConstructorInstance != inst) {
@@ -484,7 +884,11 @@ class VM {
 											if (fDef.property != null && fDef.property.set == "set" && !interp.isInsideAccessor(name)) {
 												var m = interp.findStaticMethod(cls, "set_" + name);
 												if (m != null) {
-													Reflect.callMethod(null, interp.bindMethod(interp.currentThis, m), [val]);
+													if (tryPushGuestMethod(interp.currentThis, m, [val], 2)) {
+														continue;
+													}
+													var setterFunc = interp.bindMethod(interp.currentThis, m);
+													Reflect.callMethod(null, setterFunc, [val]);
 												}
 											} else {
 												if (fDef.isFinal) {
@@ -495,6 +899,22 @@ class VM {
 												}
 												cls.staticFields.set(name, val);
 											}
+										} else {
+											frame.scope.checkAndSet(name, val, interp);
+										}
+									} else if (Std.isOfType(interp.currentThis, HaxiomAbstractInstance)) {
+										var abstractInstance:HaxiomAbstractInstance = cast interp.currentThis;
+										var fieldDef = abstractInstance.abstractType.fields.get(name);
+										if (fieldDef != null && fieldDef.isStatic) {
+											if (fieldDef.isFinal) {
+												throw 'Cannot reassign static final field $name';
+											}
+											if (fieldDef.type != null) {
+												val = interp.castOrCheckType(val, fieldDef.type, frame.scope);
+											}
+											abstractInstance.abstractType.staticFields.set(name, val);
+										} else if (fieldDef != null) {
+											interp.assignField(interp.currentThis, name, val, frame.scope, currentPos());
 										} else {
 											frame.scope.checkAndSet(name, val, interp);
 										}
@@ -524,74 +944,84 @@ class VM {
 						case OP_ADD:
 							var v2 = stack.pop();
 							var v1 = stack.pop();
-							var overloadRes = interp.findAbstractBinopOverload("+", v1, v2);
-							if (overloadRes.success) {
-								stack.push(overloadRes.value);
-							} else if (TypeSystem.isString(v1) || TypeSystem.isString(v2)) {
+							var overloadState = invokeAbstractBinop("+", v1, v2);
+							if (overloadState == 1) {
+								continue;
+							} else if (overloadState == 0 && (TypeSystem.isString(v1) || TypeSystem.isString(v2))) {
 								stack.push(Std.string(v1) + Std.string(v2));
-							} else {
+							} else if (overloadState == 0) {
 								stack.push((v1 + v2 : Dynamic));
 							}
 
 						case OP_SUB:
 							var v2 = stack.pop();
 							var v1 = stack.pop();
-							var overloadRes = interp.findAbstractBinopOverload("-", v1, v2);
-							stack.push(overloadRes.success ? overloadRes.value : (v1 - v2 : Dynamic));
+							var overloadState = invokeAbstractBinop("-", v1, v2);
+							if (overloadState == 1) continue;
+							if (overloadState == 0) stack.push((v1 - v2 : Dynamic));
 
 						case OP_MUL:
 							var v2 = stack.pop();
 							var v1 = stack.pop();
-							var overloadRes = interp.findAbstractBinopOverload("*", v1, v2);
-							stack.push(overloadRes.success ? overloadRes.value : (v1 * v2 : Dynamic));
+							var overloadState = invokeAbstractBinop("*", v1, v2);
+							if (overloadState == 1) continue;
+							if (overloadState == 0) stack.push((v1 * v2 : Dynamic));
 
 						case OP_DIV:
 							var v2 = stack.pop();
 							var v1 = stack.pop();
-							var overloadRes = interp.findAbstractBinopOverload("/", v1, v2);
-							stack.push(overloadRes.success ? overloadRes.value : (v1 / v2 : Dynamic));
+							var overloadState = invokeAbstractBinop("/", v1, v2);
+							if (overloadState == 1) continue;
+							if (overloadState == 0) stack.push((v1 / v2 : Dynamic));
 
 						case OP_MOD:
 							var v2 = stack.pop();
 							var v1 = stack.pop();
-							var overloadRes = interp.findAbstractBinopOverload("%", v1, v2);
-							stack.push(overloadRes.success ? overloadRes.value : (v1 % v2 : Dynamic));
+							var overloadState = invokeAbstractBinop("%", v1, v2);
+							if (overloadState == 1) continue;
+							if (overloadState == 0) stack.push((v1 % v2 : Dynamic));
 
 						case OP_EQ:
 							var v2 = stack.pop();
 							var v1 = stack.pop();
-							var overloadRes = interp.findAbstractBinopOverload("==", v1, v2);
-							stack.push(overloadRes.success ? overloadRes.value : (v1 == v2 : Dynamic));
+							var overloadState = invokeAbstractBinop("==", v1, v2);
+							if (overloadState == 1) continue;
+							if (overloadState == 0) stack.push((v1 == v2 : Dynamic));
 
 						case OP_NEQ:
 							var v2 = stack.pop();
 							var v1 = stack.pop();
-							var overloadRes = interp.findAbstractBinopOverload("!=", v1, v2);
-							stack.push(overloadRes.success ? overloadRes.value : (v1 != v2 : Dynamic));
+							var overloadState = invokeAbstractBinop("!=", v1, v2);
+							if (overloadState == 1) continue;
+							if (overloadState == 0) stack.push((v1 != v2 : Dynamic));
 
 						case OP_LT:
 							var v2 = stack.pop();
 							var v1 = stack.pop();
-							var overloadRes = interp.findAbstractBinopOverload("<", v1, v2);
-							stack.push(overloadRes.success ? overloadRes.value : (v1 < v2 : Dynamic));
+							var overloadState = invokeAbstractBinop("<", v1, v2);
+							if (overloadState == 1) continue;
+							if (overloadState == 0) stack.push((v1 < v2 : Dynamic));
 
 						case OP_LTE:
 							var v2 = stack.pop();
 							var v1 = stack.pop();
-							var overloadRes = interp.findAbstractBinopOverload("<=", v1, v2);
-							stack.push(overloadRes.success ? overloadRes.value : (v1 <= v2 : Dynamic));
+							var overloadState = invokeAbstractBinop("<=", v1, v2);
+							if (overloadState == 1) continue;
+							if (overloadState == 0) stack.push((v1 <= v2 : Dynamic));
 
 						case OP_GT:
 							var v2 = stack.pop();
 							var v1 = stack.pop();
-							var overloadRes = interp.findAbstractBinopOverload(">", v1, v2);
-							stack.push(overloadRes.success ? overloadRes.value : (v1 > v2 : Dynamic));
+							var overloadState = invokeAbstractBinop(">", v1, v2);
+							if (overloadState == 1) continue;
+							if (overloadState == 0) stack.push((v1 > v2 : Dynamic));
 
 						case OP_GTE:
 							var v2 = stack.pop();
 							var v1 = stack.pop();
-							var overloadRes = interp.findAbstractBinopOverload(">=", v1, v2);
-							stack.push(overloadRes.success ? overloadRes.value : (v1 >= v2 : Dynamic));
+							var overloadState = invokeAbstractBinop(">=", v1, v2);
+							if (overloadState == 1) continue;
+							if (overloadState == 0) stack.push((v1 >= v2 : Dynamic));
 
 						case OP_AND:
 							var v2 = stack.pop();
@@ -682,24 +1112,26 @@ class VM {
 							}
 
 							if (func != null && Std.isOfType(func, haxiom.HaxiomSuperInstance)) {
-								var superInst:haxiom.HaxiomSuperInstance = cast func;
-								var res = superInst.callConstructor(args);
-								stack.push(res);
+									var superInst:haxiom.HaxiomSuperInstance = cast func;
+									var parentClass = superInst.inst.cls.parent;
+									var parentConstructor = parentClass != null ? interp.findMethod(parentClass, "new") : null;
+									if (parentConstructor != null) {
+										if (tryPushGuestMethod(superInst.inst, parentConstructor, args, 1, null, superInst.inst)) {
+											continue;
+										}
+										superInst.callConstructor(args);
+									}
+									stack.push(null);
 							} else {
-								var res = Reflect.callMethod(null, func, args);
-								stack.push(res);
+								if (invokeCallable(func, null, args)) {
+									continue;
+								}
 							}
 
 						case OP_RETURN:
 							var res = stack.pop();
 							if (callFrames.length > 1) {
-								var popped = callFrames.pop();
-								recycleFrame(interp, popped);
-								frame = callFrames[callFrames.length - 1];
-								inst = frame.chunk.instructions;
-								consts = frame.chunk.constants;
-								posTable = frame.chunk.positions;
-								stack.push(res);
+								completeGuestFrame(res);
 							} else {
 								stack.push(res);
 								break;
@@ -709,9 +1141,17 @@ class VM {
 							var idx = inst[frame.ip++];
 							var fieldName:String = consts[idx];
 							var obj = stack.pop();
-							if (obj == null)
-								throw 'Cannot read field "$fieldName" of null';
-							if (Std.isOfType(obj, haxiom.HaxiomSuperInstance)) {
+								if (obj == null)
+									throw 'Cannot read field "$fieldName" of null';
+								var getterMethod = interp.findVMPropertyAccessor(obj, fieldName, false, currentPos());
+								if (getterMethod != null) {
+									if (tryPushGuestMethod(obj, getterMethod, [])) {
+										continue;
+									}
+									stack.push(Reflect.callMethod(null, interp.bindMethod(obj, getterMethod), []));
+									continue;
+								}
+								if (Std.isOfType(obj, haxiom.HaxiomSuperInstance)) {
 								var superInst:haxiom.HaxiomSuperInstance = cast obj;
 								var parentCls = superInst.inst.cls.parent;
 								var m = interp.findMethod(parentCls, fieldName);
@@ -725,6 +1165,7 @@ class VM {
 								var cache = frame.chunk.inlineCaches.get(cacheKey);
 								var resolved:Dynamic = null;
 								var cacheHit = false;
+								var guestGetterStarted = false;
 
 								var classKey:Dynamic = null;
 								if (Std.isOfType(obj, HaxiomInstance)) {
@@ -761,12 +1202,15 @@ class VM {
 											} else if (curr.isProperty) {
 												if (curr.isNativeProperty) {
 													resolved = Reflect.getProperty(obj, fieldName);
-												} else {
-													if (curr.getterMethod != null) {
-														resolved = Reflect.callMethod(null, interp.bindMethod(obj, curr.getterMethod), []);
-													} else {
-														resolved = null;
+												} else if (curr.getterMethod != null) {
+													if (tryPushGuestMethod(obj, curr.getterMethod, [])) {
+														guestGetterStarted = true;
+														break;
 													}
+													var getterFunc = interp.bindMethod(obj, curr.getterMethod);
+													resolved = Reflect.callMethod(null, getterFunc, []);
+												} else {
+													resolved = null;
 												}
 												cacheHit = true;
 											}
@@ -774,11 +1218,36 @@ class VM {
 										}
 										curr = curr.next;
 									}
-								}
+									}
+									if (guestGetterStarted) {
+										continue;
+									}
 
-								if (cacheHit) {
-									stack.push(resolved);
-								} else {
+									if (cacheHit) {
+										stack.push(resolved);
+									} else {
+										if (Std.isOfType(obj, HaxiomInstance)) {
+										var instObj:HaxiomInstance = cast obj;
+										var propertyDef = interp.findFieldDef(instObj.cls, fieldName);
+										if (propertyDef != null && propertyDef.property != null && propertyDef.property.get == "get"
+												&& !interp.isInsideAccessor(fieldName)) {
+											var getterMethod = interp.findMethod(instObj.cls, "get_" + fieldName);
+											if (getterMethod != null) {
+												var propertyEntry = new InlineCacheEntry();
+												propertyEntry.lastClass = classKey;
+												propertyEntry.fieldName = fieldName;
+												propertyEntry.isProperty = true;
+												propertyEntry.getterMethod = getterMethod;
+												installInlineCache(frame, cacheKey, cache, propertyEntry);
+												if (tryPushGuestMethod(obj, getterMethod, [])) {
+													continue;
+												}
+												var getterFunc = interp.bindMethod(obj, getterMethod);
+												stack.push(Reflect.callMethod(null, getterFunc, []));
+												continue;
+											}
+										}
+									}
 									var val = interp.evalField(obj, fieldName, frame.scope, currentPos());
 									stack.push(val);
 
@@ -838,14 +1307,29 @@ class VM {
 								}
 							}
 
+						case OP_RESOLVE_PATH:
+							var exprIdx = inst[frame.ip++];
+							var pathExpr:Expr = consts[exprIdx];
+							var pathResult = interp.tryResolveExpressionPath(pathExpr, frame.scope);
+							stack.push(pathResult.success ? pathResult.value : interp.eval(pathExpr, frame.scope));
+
 						case OP_SET_FIELD:
 							var idx = inst[frame.ip++];
 							var fieldName:String = consts[idx];
 							var val = stack.pop();
 							var obj = stack.pop();
-							if (obj == null)
-								throw 'Cannot write field "$fieldName" of null';
-							if (Std.isOfType(obj, haxiom.HaxiomSuperInstance)) {
+								if (obj == null)
+									throw 'Cannot write field "$fieldName" of null';
+								var setterMethod = interp.findVMPropertyAccessor(obj, fieldName, true, currentPos());
+								if (setterMethod != null) {
+									if (tryPushGuestMethod(obj, setterMethod, [val], 1, val)) {
+										continue;
+									}
+									Reflect.callMethod(null, interp.bindMethod(obj, setterMethod), [val]);
+									stack.push(val);
+									continue;
+								}
+								if (Std.isOfType(obj, haxiom.HaxiomSuperInstance)) {
 								var superInst:haxiom.HaxiomSuperInstance = cast obj;
 								superInst.inst.fields.set(fieldName, val);
 								stack.push(val);
@@ -880,10 +1364,13 @@ class VM {
 											} else if (curr.isProperty) {
 												if (curr.isNativeProperty) {
 													Reflect.setProperty(obj, fieldName, val);
-												} else {
-													if (curr.setterMethod != null) {
-														Reflect.callMethod(null, interp.bindMethod(obj, curr.setterMethod), [val]);
+												} else if (curr.setterMethod != null) {
+													cacheHit = true;
+													if (tryPushGuestMethod(obj, curr.setterMethod, [val], 1, val)) {
+														break;
 													}
+													var setterFunc = interp.bindMethod(obj, curr.setterMethod);
+													Reflect.callMethod(null, setterFunc, [val]);
 												}
 												cacheHit = true;
 											}
@@ -896,6 +1383,29 @@ class VM {
 								if (cacheHit) {
 									stack.push(val);
 								} else {
+									if (Std.isOfType(obj, HaxiomInstance)) {
+										var instObj:HaxiomInstance = cast obj;
+										var propertyDef = interp.findFieldDef(instObj.cls, fieldName);
+										if (propertyDef != null && propertyDef.property != null && propertyDef.property.set == "set"
+												&& !interp.isInsideAccessor(fieldName)) {
+											var setterMethod = interp.findMethod(instObj.cls, "set_" + fieldName);
+											if (setterMethod != null) {
+												var propertyEntry = new InlineCacheEntry();
+												propertyEntry.lastClass = classKey;
+												propertyEntry.fieldName = fieldName;
+												propertyEntry.isProperty = true;
+												propertyEntry.setterMethod = setterMethod;
+												installInlineCache(frame, cacheKey, cache, propertyEntry);
+												if (tryPushGuestMethod(obj, setterMethod, [val], 1, val)) {
+													continue;
+												}
+												var setterFunc = interp.bindMethod(obj, setterMethod);
+												Reflect.callMethod(null, setterFunc, [val]);
+												stack.push(val);
+												continue;
+											}
+										}
+									}
 									var result = interp.assignField(obj, fieldName, val, frame.scope);
 									stack.push(result);
 
@@ -955,28 +1465,36 @@ class VM {
 							if (obj == null) {
 								stack.push(null);
 							} else {
+								var getterMethod = interp.findVMPropertyAccessor(obj, fieldName, false, currentPos());
+								if (getterMethod != null) {
+									if (tryPushGuestMethod(obj, getterMethod, [])) {
+										continue;
+									}
+									stack.push(Reflect.callMethod(null, interp.bindMethod(obj, getterMethod), []));
+									continue;
+								}
 								var cacheKey = frame.ip - 2;
 								var cache = frame.chunk.inlineCaches.get(cacheKey);
 								var resolved:Dynamic = null;
 								var cacheHit = false;
 
-								if (cache != null && cache.isMethod) {
-									if (obj == cache.lastObject) {
-										resolved = cache.cachedValue;
-										cacheHit = true;
-									} else if (Std.isOfType(obj, HaxiomInstance)) {
-										var instObj:HaxiomInstance = cast obj;
-										if (instObj.cls == cache.lastClass) {
-											resolved = interp.bindMethod(instObj, cache.cachedMethodDef);
-											cache.lastObject = instObj;
-											cache.cachedValue = resolved;
+									if (cache != null && cache.isMethod) {
+										if (obj == cache.lastObject) {
+											resolved = cache.cachedValue;
 											cacheHit = true;
+										} else if (Std.isOfType(obj, HaxiomInstance)) {
+											var instObj:HaxiomInstance = cast obj;
+											if (instObj.cls == cache.lastClass) {
+												resolved = interp.bindMethod(instObj, cache.cachedMethodDef);
+												cache.lastObject = instObj;
+												cache.cachedValue = resolved;
+												cacheHit = true;
+											}
 										}
 									}
-								}
 
-								if (cacheHit) {
-									stack.push(resolved);
+									if (cacheHit) {
+										stack.push(resolved);
 								} else {
 									var val = interp.evalField(obj, fieldName, frame.scope, currentPos());
 									stack.push(val);
@@ -1006,7 +1524,16 @@ class VM {
 							if (obj == null) {
 								stack.push(null);
 							} else {
-								stack.push(interp.assignField(obj, fieldName, val, frame.scope));
+								var setterMethod = interp.findVMPropertyAccessor(obj, fieldName, true, currentPos());
+								if (setterMethod != null) {
+									if (tryPushGuestMethod(obj, setterMethod, [val], 1, val)) {
+										continue;
+									}
+									Reflect.callMethod(null, interp.bindMethod(obj, setterMethod), [val]);
+									stack.push(val);
+								} else {
+									stack.push(interp.assignField(obj, fieldName, val, frame.scope));
+								}
 							}
 
 						case OP_NEW_ARRAY:
@@ -1057,6 +1584,7 @@ class VM {
 							var closureScope = frame.scope;
 							closureScope.markCaptured();
 							var creationPos = currentPos();
+							var closureThis = interp.currentThis;
 
 							var func = (callArgs:Array<Dynamic>) -> {
 								if (interp.disposed)
@@ -1147,6 +1675,9 @@ class VM {
 							}
 							var signatureRet = proto.retType != null ? proto.retType : TPath(["Dynamic"], []);
 							interp.functionSignatures.set(boundFunc, TFun(signatureArgs, signatureRet));
+							interp.registerVMGuestCallable(boundFunc,
+								new VMGuestCallable(proto.bodyChunk, closureScope, cast proto.args, proto.retType, closureThis,
+									proto.name != null ? proto.name : "anonymous", creationPos));
 
 							if (proto.name != null) {
 								frame.scope.declare(proto.name, boundFunc);
@@ -1225,14 +1756,17 @@ class VM {
 							var guardIdx = inst[frame.ip++];
 							var val = stack[stack.length - 1];
 							var pattern = consts[patternIdx];
-							var guard = guardIdx >= 0 ? consts[guardIdx] : null;
+							var guardChunk:BytecodeChunk = guardIdx >= 0 ? cast consts[guardIdx] : null;
 							var caseScope = Scope.create(frame.scope, interp);
 							var matched = false;
 							try {
 								if (interp.matchPattern(val, pattern, frame.scope, caseScope)) {
 									var guardMatched = true;
-									if (guard != null) {
-										guardMatched = interp.eval(guard, caseScope) == true;
+									if (guardChunk != null) {
+										if (pushGuardEvaluation(guardChunk, caseScope, currentPos())) {
+											continue;
+										}
+										guardMatched = false;
 									}
 									if (guardMatched) {
 										matched = true;
@@ -1275,7 +1809,17 @@ class VM {
 									if (typeMatched) {
 										var guardMatched = true;
 										if (c.guard != null) {
-											guardMatched = interp.eval(c.guard, caseScope) == true;
+											var clauseDyn:Dynamic = c;
+											var guardChunk:BytecodeChunk = clauseDyn.guardChunk;
+											if (guardChunk == null) {
+												guardChunk = haxiom.BytecodeCompiler.compile(c.guard, [], false, false, interp.debugMode, "catch<guard>", interp,
+													frame.chunk.scriptName);
+												clauseDyn.guardChunk = guardChunk;
+											}
+											if (pushGuardEvaluation(guardChunk, caseScope, currentPos())) {
+												continue;
+											}
+											guardMatched = false;
 										}
 										if (guardMatched) {
 											matched = true;
@@ -1298,10 +1842,10 @@ class VM {
 						case OP_UNOP:
 							var opStr:String = consts[inst[frame.ip++]];
 							var val = stack.pop();
-							var overloadRes = interp.findAbstractUnopOverload(opStr, val);
-							if (overloadRes.success) {
-								stack.push(overloadRes.value);
-							} else {
+							var overloadState = invokeAbstractUnop(opStr, val);
+							if (overloadState == 1) {
+								continue;
+							} else if (overloadState == 0) {
 								var unopRes:Dynamic = null;
 								switch (opStr) {
 									case "!": unopRes = !(cast val : Bool);
@@ -1333,21 +1877,13 @@ class VM {
 							}
 
 							var val:Dynamic = localSlot != -1 ? frame.locals[localSlot] : interp.eval(targetExpr, frame.scope);
-							var overloadRes = interp.findAbstractUnopOverload(opStr, val);
+							var mutation = new VMUnaryMutation(targetExpr, localSlot, val, opStr == "post++" || opStr == "post--");
+							var overloadState = invokeAbstractUnop(opStr, val, 7, mutation);
 							var finalVal:Dynamic = null;
 							var retVal:Dynamic = null;
 
-							if (overloadRes.success) {
-								finalVal = overloadRes.value;
-								retVal = finalVal;
-								if (opStr == "post++" || opStr == "post--") {
-									retVal = val;
-								}
-								if (localSlot != -1) {
-									frame.locals[localSlot] = finalVal;
-								} else {
-									interp.assign(targetExpr, finalVal, frame.scope);
-								}
+							if (overloadState == 1) {
+								continue;
 							} else {
 								switch (opStr) {
 									case "post++":
@@ -1394,10 +1930,16 @@ class VM {
 								args.unshift(stack.pop());
 							}
 
-							// Evaluate new instance using parser/interpreter helpers
-							var fakeNewExpr = {def: ENew(type, [for (a in args) {def: EValue(a), pos: currentPos()}]), pos: currentPos()};
-							var res = interp.eval(fakeNewExpr, frame.scope);
-							stack.push(res);
+							var construction = interp.prepareVMClassConstruction(type, args, frame.scope, currentPos());
+							if (construction != null) {
+								if (resumeConstruction(construction)) {
+									continue;
+								}
+							} else {
+								// Native and exposed constructor paths remain owned by the interpreter.
+								var fakeNewExpr = {def: ENew(type, [for (a in args) {def: EValue(a), pos: currentPos()}]), pos: currentPos()};
+								stack.push(interp.eval(fakeNewExpr, frame.scope));
+							}
 
 						case OP_CAST:
 							var typeIdx = inst[frame.ip++];
@@ -1414,9 +1956,10 @@ class VM {
 
 						case OP_DECLARE_CLASS:
 							var exprIdx = inst[frame.ip++];
-							var res = interp.eval(consts[exprIdx], frame.scope);
-							// In VM mode, any method body of the class will be compiled to bytecode upon invocation
-							stack.push(res);
+							var declaration = interp.prepareVMClassDeclaration(consts[exprIdx], frame.scope);
+							if (resumeClassDeclaration(declaration)) {
+								continue;
+							}
 
 						case OP_DECLARE_INTERFACE:
 							var exprIdx = inst[frame.ip++];
@@ -1430,8 +1973,10 @@ class VM {
 
 						case OP_DECLARE_ABSTRACT:
 							var exprIdx = inst[frame.ip++];
-							var res = interp.eval(consts[exprIdx], frame.scope);
-							stack.push(res);
+							var declaration = interp.prepareVMAbstractDeclaration(consts[exprIdx], frame.scope);
+							if (resumeAbstractDeclaration(declaration)) {
+								continue;
+							}
 
 						case OP_DECLARE_TYPEDEF:
 							var exprIdx = inst[frame.ip++];
@@ -1491,8 +2036,9 @@ class VM {
 
 							if (cacheHit) {
 								var receiver = (cache.cachedMethodDef != null || Std.isOfType(obj, HaxiomInstance)) ? null : obj;
-								var res = Reflect.callMethod(receiver, boundMethod, args);
-								stack.push(res);
+								if (invokeCallable(boundMethod, receiver, args)) {
+									continue;
+								}
 							} else {
 								if (obj != null && Std.isOfType(obj, haxiom.HaxiomSuperInstance)) {
 									var superInst:haxiom.HaxiomSuperInstance = cast obj;
@@ -1509,8 +2055,7 @@ class VM {
 										newCache.isMethod = true;
 										frame.chunk.inlineCaches.set(cacheKey, newCache);
 
-										var res = Reflect.callMethod(null, bm, args);
-										stack.push(res);
+										invokeCallable(bm, null, args);
 										continue;
 									} else {
 										throw 'Parent method or field "$fieldName" not found on class ${superInst.inst.cls.name}';
@@ -1531,8 +2076,7 @@ class VM {
 										newCache.isMethod = true;
 										frame.chunk.inlineCaches.set(cacheKey, newCache);
 
-										var res = Reflect.callMethod(null, boundMethod, args);
-										stack.push(res);
+										invokeCallable(boundMethod, null, args);
 										continue;
 									}
 								}
@@ -1552,8 +2096,7 @@ class VM {
 										newCache.isMethod = true;
 										frame.chunk.inlineCaches.set(cacheKey, newCache);
 
-										var res = Reflect.callMethod(null, boundMethod, args);
-										stack.push(res);
+										invokeCallable(boundMethod, null, args);
 										continue;
 									}
 								}
@@ -1570,8 +2113,7 @@ class VM {
 								newCache.isMethod = true;
 								frame.chunk.inlineCaches.set(cacheKey, newCache);
 
-								var res = Reflect.callMethod(obj, cast resolvedField, args);
-								stack.push(res);
+								invokeCallable(resolvedField, obj, args);
 							}
 
 						case OP_NEW_MAP:
@@ -1648,12 +2190,12 @@ class VM {
 								registerAwait(promise, (val) -> {
 									fiber.stack.push(val);
 									fiber.isSuspended = false;
-									executeLoop(interp, fiber, null, null, null, null, null);
+									executeLoop(interp, fiber, null, null, null, null, null, fiber.isExecutionBoundary);
 								}, (err) -> {
 									fiber.hasError = true;
 									fiber.error = err;
 									fiber.isSuspended = false;
-									executeLoop(interp, fiber, null, null, null, null, null);
+									executeLoop(interp, fiber, null, null, null, null, null, fiber.isExecutionBoundary);
 								});
 								return null;
 							} else {
@@ -1692,6 +2234,15 @@ class VM {
 					var fileInfo = "script";
 					var lineVal = 1;
 					var colVal = 1;
+					var errorNamespace = targetNamespace;
+					if (callFrames.length > 0) {
+						var errorThis = callFrames[callFrames.length - 1].thisContext;
+						if (Std.isOfType(errorThis, HaxiomInstance)) {
+							errorNamespace = (cast errorThis : HaxiomInstance).cls.name;
+						} else if (Std.isOfType(errorThis, HaxiomClass)) {
+							errorNamespace = (cast errorThis : HaxiomClass).name;
+						}
+					}
 
 					// Calculate position based on current frames before unwinding
 					if (callFrames.length > 0) {
@@ -1717,16 +2268,14 @@ class VM {
 						var f = callFrames[callFrames.length - 1];
 						if (f.tryStack.length > 0) {
 							var handler = f.tryStack.pop();
-							frame = f;
-							inst = frame.chunk.instructions;
-							consts = frame.chunk.constants;
-							posTable = frame.chunk.positions;
+							activateFrame(f);
 
 							// Reset stack size to pre-try size, push exception, restore scope, and jump to catch
 							while (stack.length > handler.stackSize) {
 								stack.pop();
 							}
-							stack.push(e);
+							var caughtValue:Dynamic = Std.isOfType(e, ScriptException) ? (cast e : ScriptException).rawValue : e;
+							stack.push(caughtValue);
 							frame.scope = handler.scope;
 							frame.ip = handler.catchIp;
 							foundHandler = true;
@@ -1734,7 +2283,7 @@ class VM {
 							break;
 						}
 						var popped = callFrames.pop();
-						recycleFrame(interp, popped);
+						releaseGuestFrame(popped);
 					}
 					if (foundHandler) {
 						continue;
@@ -1764,6 +2313,9 @@ class VM {
 						var formatted = traceLines.join("\n");
 						se = new ScriptException(e, vmCallStack, formatted, lineVal, colVal, fileInfo, interp.lastActiveLocals);
 						interp.lastActiveLocals = null;
+					}
+					if (se.runtimeNamespace == null && errorNamespace != "toplevel") {
+						se.runtimeNamespace = errorNamespace;
 					}
 					throw se;
 				}
@@ -1807,7 +2359,9 @@ class VM {
 				se = new ScriptException("Runtime Error: " + Std.string(e), [], "Runtime Error: " + Std.string(e), 1, 1, "script");
 			}
 
-			interp.haltNamespace(targetNamespace);
+			if (isExecutionBoundary) {
+				interp.haltNamespace(se.runtimeNamespace != null ? se.runtimeNamespace : targetNamespace);
+			}
 
 			if (fiber != null) {
 				if (!fiber.isSuspended) {
@@ -1838,12 +2392,14 @@ class VM {
 				}
 			}
 
-			if (interp.onRuntimeError != null) {
-				interp.onRuntimeError(se);
-			} else {
-				haxe.Log.trace("SCRIPT EXCEPTION ERROR: " + se.message, null);
-				if (se.stack != null && se.stack.length > 0) {
-					haxe.Log.trace("STACK TRACE: " + haxe.CallStack.toString(se.stack), null);
+			if (isExecutionBoundary) {
+				if (interp.onRuntimeError != null) {
+					interp.onRuntimeError(se);
+				} else {
+					haxe.Log.trace("SCRIPT EXCEPTION ERROR: " + se.message, null);
+					if (se.stack != null && se.stack.length > 0) {
+						haxe.Log.trace("STACK TRACE: " + haxe.CallStack.toString(se.stack), null);
+					}
 				}
 			}
 
@@ -1877,6 +2433,38 @@ class VM {
 					onReject(err);
 				}
 			}
+		}
+	}
+}
+
+@:allow(haxiom)
+class VMGuardEvaluation {
+	var caseScope:Scope;
+
+	function new(caseScope:Scope) {
+		this.caseScope = caseScope;
+	}
+}
+
+@:allow(haxiom)
+class VMUnaryMutation {
+	var targetExpr:Expr;
+	var localSlot:Int;
+	var originalValue:Dynamic;
+	var isPostfix:Bool;
+
+	function new(targetExpr:Expr, localSlot:Int, originalValue:Dynamic, isPostfix:Bool) {
+		this.targetExpr = targetExpr;
+		this.localSlot = localSlot;
+		this.originalValue = originalValue;
+		this.isPostfix = isPostfix;
+	}
+
+	function assign(interp:Interp, frame:VMCallFrame, value:Dynamic):Void {
+		if (localSlot >= 0) {
+			frame.locals[localSlot] = value;
+		} else {
+			interp.assign(targetExpr, value, frame.scope);
 		}
 	}
 }
@@ -1951,6 +2539,7 @@ class VMFiber {
 	var isSuspended:Bool = false;
 	var hasError:Bool = false;
 	var error:Dynamic = null;
+	var isExecutionBoundary:Bool = false;
 
 	function new() {
 		this.future = new haxiom.guest.Future();

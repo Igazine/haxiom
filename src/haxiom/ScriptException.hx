@@ -10,6 +10,7 @@ class ScriptException extends haxe.Exception {
     public var col(default, null):Int;
     public var file(default, null):String;
     public var locals(default, null):Null<Map<String, Dynamic>>;
+    public var runtimeNamespace:Null<String>;
 
     public function new(rawValue:Dynamic, virtualStack:Array<{method:String, pos:Pos}>, formattedStackTrace:String, line:Int = 1, col:Int = 1, ?file:String, ?locals:Null<Map<String, Dynamic>> = null) {
         var msg = formattedStackTrace;
@@ -30,6 +31,7 @@ class ScriptException extends haxe.Exception {
         this.col = col;
         this.file = file;
         this.locals = locals;
+        this.runtimeNamespace = null;
     }
 
     public static function makeCodeFrame(source:Null<String>, line:Int, col:Int, file:String):String {
@@ -79,4 +81,3 @@ class ScriptException extends haxe.Exception {
         return frame.join("\n");
     }
 }
-

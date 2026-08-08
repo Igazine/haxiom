@@ -403,6 +403,8 @@ class Interp {
 	private var importWhitelist:Array<String> = createDefaultWhitelist();
 	private var importedModules:Map<String, Scope> = new Map();
 	private var functionSignatures:FunctionSignatures = new FunctionSignatures();
+	private var vmGuestCallables:Array<{func:Dynamic, callable:haxiom.VM.VMGuestCallable}> = [];
+	private var vmBoundMethods:haxe.ds.ObjectMap<Dynamic, Array<{method:Dynamic, func:Dynamic}>> = new haxe.ds.ObjectMap();
 
 	var currentConstructorInstance:Dynamic = null;
 	var inAbstractMethod:Bool = false;
@@ -412,6 +414,7 @@ class Interp {
 	private var callStack:Array<{method:String, pos:Pos}> = [];
 	private var activeVMCallFrames:Dynamic = null;
 	private var activeSourceLabel:String = null;
+	private var suppressStaticFieldInitializers:Bool = false;
 	private var onRuntimeError:Null<ScriptException->Void> = null;
 
 	private function getCallerInfo():Null<ScriptStackFrame> {
@@ -548,6 +551,29 @@ class Interp {
 		framePool = [];
 		stackPool = [];
 		callFramesPool = [];
+		vmGuestCallables = [];
+		vmBoundMethods = new haxe.ds.ObjectMap();
+	}
+
+	private function registerVMGuestCallable(func:Dynamic, callable:haxiom.VM.VMGuestCallable):Void {
+		for (entry in vmGuestCallables) {
+			if (entry.func == func) {
+				entry.callable = callable;
+				return;
+			}
+		}
+		vmGuestCallables.push({func: func, callable: callable});
+	}
+
+	private function getVMGuestCallable(func:Dynamic):Null<haxiom.VM.VMGuestCallable> {
+		if (func != null) {
+			for (entry in vmGuestCallables) {
+				if (entry.func == func) {
+					return entry.callable;
+				}
+			}
+		}
+		return null;
 	}
 
 	private inline function pushFrame(methodName:String, pos:Pos) {
@@ -733,7 +759,7 @@ class Interp {
 
 	public var state(default, null):VMState = UNINITIALIZED;
 
-	private var useVM:Bool = false;
+	private var useVM:Bool = true;
 	private var debugMode:Bool = true;
 	private var maxInstructions:Int = 0;
 	private var instructionsCount:Int = 0;
@@ -1020,6 +1046,143 @@ class Interp {
 		}
 	}
 
+	private function prepareVMClassConstruction(typeDecl:TypeDecl, args:Array<Dynamic>, scope:Scope, pos:Pos):Null<VMClassConstruction> {
+		return switch (typeDecl) {
+			case TPath(path, params):
+				var callee = resolveTypePath(path, scope);
+				if (!Std.isOfType(callee, HaxiomClass)) {
+					null;
+				} else {
+					var cls:HaxiomClass = cast callee;
+					if (cls.isAbstract) {
+						throw new haxiom.CompileException('Cannot instantiate abstract class ${cls.name}', 0, 0, cls.name);
+					}
+					var inst = new HaxiomInstance(cls);
+					populateGenericBindings(inst, cls, params, null, null, scope);
+					var initializers:Array<VMFieldInitializer> = [];
+
+					var current = cls;
+					while (current != null) {
+						for (field in current.fields) {
+							if (!field.isStatic) {
+								if (field.expr == null) {
+									inst.fields.set(field.name, null);
+								} else {
+									var fieldDyn:Dynamic = field;
+									if (fieldDyn.bytecodeChunk == null) {
+										var implicitMembers:Map<String, Bool> = new Map();
+										var memberClass = cls;
+										while (memberClass != null) {
+											for (memberField in memberClass.fields) implicitMembers.set(memberField.name, true);
+											for (methodName in memberClass.methods.keys()) implicitMembers.set(methodName, true);
+											memberClass = memberClass.parent;
+										}
+										fieldDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(field.expr, [], false, false, debugMode,
+											cls.name + "." + field.name + "<init>", this, activeSourceLabel, implicitMembers);
+									}
+									initializers.push(new VMFieldInitializer(field.name, field.type, fieldDyn.bytecodeChunk,
+										field.expr.pos != null ? field.expr.pos : pos));
+								}
+							}
+						}
+						current = current.parent;
+					}
+
+					var constructor = findMethod(cls, "new");
+					if (constructor != null) {
+						checkMemberAccess(cls, constructor.isPublic, pos, "new");
+					}
+					trackNewAllocation(inst, pos);
+					new VMClassConstruction(inst, constructor, args, scope, initializers);
+				}
+			default:
+				null;
+		}
+	}
+
+	private function prepareVMClassDeclaration(expr:Expr, scope:Scope):VMClassDeclaration {
+		var previousSuppression = suppressStaticFieldInitializers;
+		suppressStaticFieldInitializers = true;
+		var cls:HaxiomClass;
+		try {
+			cls = cast eval(expr, scope);
+			suppressStaticFieldInitializers = previousSuppression;
+		} catch (error:Dynamic) {
+			suppressStaticFieldInitializers = previousSuppression;
+			throw error;
+		}
+
+		var initializers:Array<VMStaticFieldInitializer> = [];
+		switch (expr.def) {
+			case EClass(_, fields, _, _, _, _, _, _):
+				for (parsedField in fields) {
+					var field = cls.fields.get(parsedField.name);
+					if (field != null && field.isStatic && field.expr != null) {
+						var fieldDyn:Dynamic = field;
+						if (fieldDyn.bytecodeChunk == null) {
+							var implicitMembers:Map<String, Bool> = new Map();
+							for (memberField in cls.fields) implicitMembers.set(memberField.name, true);
+							for (methodName in cls.methods.keys()) implicitMembers.set(methodName, true);
+							fieldDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(field.expr, [], false, false, debugMode,
+								cls.name + "." + field.name + "<init>", this, activeSourceLabel, implicitMembers);
+						}
+						initializers.push(new VMStaticFieldInitializer(field.name, field.type, fieldDyn.bytecodeChunk,
+							field.expr.pos != null ? field.expr.pos : expr.pos));
+					}
+				}
+			default:
+		}
+		return new VMClassDeclaration(cls, scope, initializers);
+	}
+
+	private function prepareVMAbstractDeclaration(expr:Expr, scope:Scope):VMAbstractDeclaration {
+		var previousSuppression = suppressStaticFieldInitializers;
+		suppressStaticFieldInitializers = true;
+		var abstractType:HaxiomAbstract;
+		try {
+			abstractType = cast eval(expr, scope);
+			suppressStaticFieldInitializers = previousSuppression;
+		} catch (error:Dynamic) {
+			suppressStaticFieldInitializers = previousSuppression;
+			throw error;
+		}
+
+		var initializers:Array<VMStaticFieldInitializer> = [];
+		switch (expr.def) {
+			case EAbstract(_, _, fields, _, _, _):
+				for (parsedField in fields) {
+					var field = abstractType.fields.get(parsedField.name);
+					if (field != null && field.isStatic && field.expr != null) {
+						var fieldDyn:Dynamic = field;
+						if (fieldDyn.bytecodeChunk == null) {
+							var implicitMembers:Map<String, Bool> = new Map();
+							for (fieldName in abstractType.fields.keys()) implicitMembers.set(fieldName, true);
+							for (methodName in abstractType.methods.keys()) implicitMembers.set(methodName, true);
+							fieldDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(field.expr, [], false, false, debugMode,
+								abstractType.name + "." + field.name + "<init>", this, activeSourceLabel, implicitMembers);
+						}
+						initializers.push(new VMStaticFieldInitializer(field.name, field.type, fieldDyn.bytecodeChunk,
+							field.expr.pos != null ? field.expr.pos : expr.pos));
+					}
+				}
+			default:
+		}
+		return new VMAbstractDeclaration(abstractType, scope, initializers);
+	}
+
+	function registerMacroDeclaration(expr:Expr, scope:Scope, initializeStaticFields:Bool):Dynamic {
+		var previousSuppression = suppressStaticFieldInitializers;
+		suppressStaticFieldInitializers = previousSuppression || !initializeStaticFields;
+		try {
+			var result = eval(expr, scope);
+			suppressStaticFieldInitializers = previousSuppression;
+			return result;
+		} catch (error:Dynamic) {
+			suppressStaticFieldInitializers = previousSuppression;
+			throw error;
+		}
+	}
+
 	private function execute(expr:Expr):Dynamic {
 		var previousSourceLabel = activeSourceLabel;
 		activeSourceLabel = expr != null && expr.pos != null ? expr.pos.file : null;
@@ -1053,7 +1216,7 @@ class Interp {
 			if (useVM) {
 				var scriptName = expr != null && expr.pos != null ? expr.pos.file : null;
 				var chunk = BytecodeCompiler.compile(expr, null, true, false, debugMode, null, this, scriptName);
-				res = VM.runChunk(this, chunk, globals, null, "toplevel");
+				res = VM.runChunk(this, chunk, globals, null, "toplevel", null, true);
 			} else {
 				res = eval(expr, globals);
 			}
@@ -1106,6 +1269,7 @@ class Interp {
 
 			if (onRuntimeError != null) {
 				onRuntimeError(finalException);
+				state = IDLE;
 				return null;
 			}
 			throw finalException;
@@ -1149,7 +1313,7 @@ class Interp {
 			}
 		}
 		try {
-			var res = VM.runChunk(this, chunk, globals, null, "toplevel");
+			var res = VM.runChunk(this, chunk, globals, null, "toplevel", null, true);
 			state = IDLE;
 			return res;
 		} catch (e:ControlFlow) {
@@ -1200,6 +1364,7 @@ class Interp {
 
 			if (onRuntimeError != null) {
 				onRuntimeError(finalException);
+				state = IDLE;
 				return null;
 			}
 			throw finalException;
@@ -1869,7 +2034,7 @@ class Interp {
 			var abs = inst.abstractType;
 			if (abs.fields.exists(field)) {
 				var fDef = abs.fields.get(field);
-				if (fDef.property != null && !isInsideAccessor(field)) {
+				if (fDef.property != null && !isInsideAccessor(field, obj)) {
 					var getAccessor = fDef.property.get;
 					if (getAccessor == "get") {
 						var m = abs.methods.get("get_" + field);
@@ -1895,7 +2060,7 @@ class Interp {
 			var fDef = findFieldDef(inst.cls, field);
 			if (fDef != null) {
 				checkMemberAccess(inst.cls, fDef.isPublic, pos, field);
-				if (fDef.property != null && !isInsideAccessor(field)) {
+				if (fDef.property != null && !isInsideAccessor(field, obj)) {
 					var getAccessor = fDef.property.get;
 					if (getAccessor == "get") {
 						var m = findMethod(inst.cls, "get_" + field);
@@ -2075,7 +2240,7 @@ class Interp {
 			var abs = inst.abstractType;
 			if (abs.fields.exists(field)) {
 				var fDef = abs.fields.get(field);
-				if (fDef.property != null && !isInsideAccessor(field)) {
+				if (fDef.property != null && !isInsideAccessor(field, obj)) {
 					var setAccessor = fDef.property.set;
 					if (setAccessor == "set") {
 						var m = abs.methods.get("set_" + field);
@@ -2097,7 +2262,7 @@ class Interp {
 			var fDef = findFieldDef(inst.cls, field);
 			if (fDef != null) {
 				checkMemberAccess(inst.cls, fDef.isPublic, pos, field);
-				if (fDef.property != null && !isInsideAccessor(field)) {
+				if (fDef.property != null && !isInsideAccessor(field, obj)) {
 					var setAccessor = fDef.property.set;
 					if (setAccessor == "set") {
 						var m = findMethod(inst.cls, "set_" + field);
@@ -2252,6 +2417,12 @@ class Interp {
 						var m = findMethod(inst.cls, name);
 						if (m != null)
 							return bindMethod(currentThis, m);
+
+						var staticOwner = findStaticFieldOwner(inst.cls, name);
+						if (staticOwner != null)
+							return evalField(staticOwner, name, scope, pos);
+						if (findStaticMethod(inst.cls, name) != null)
+							return evalField(inst.cls, name, scope, pos);
 					} else if (Std.isOfType(currentThis, HaxiomClass)) {
 						var cls:HaxiomClass = cast currentThis;
 						var fDef = findFieldDef(cls, name);
@@ -2267,6 +2438,24 @@ class Interp {
 						var m = findStaticMethod(cls, name);
 						if (m != null)
 							return bindMethod(currentThis, m);
+					} else if (Std.isOfType(currentThis, HaxiomAbstractInstance)) {
+						var abstractInstance:HaxiomAbstractInstance = cast currentThis;
+						var abstractType = abstractInstance.abstractType;
+						var fieldDef = abstractType.fields.get(name);
+						if (fieldDef != null) {
+							if (fieldDef.isStatic) {
+								return evalField(abstractType, name, scope, pos);
+							}
+							if (fieldDef.property != null && fieldDef.property.get == "get" && !isInsideAccessor(name, currentThis)) {
+								var getter = abstractType.methods.get("get_" + name);
+								if (getter != null)
+									return Reflect.callMethod(null, bindMethod(currentThis, getter), []);
+							}
+							return evalField(currentThis, name, scope, pos);
+						}
+						var method = abstractType.methods.get(name);
+						if (method != null)
+							return bindMethod(currentThis, method);
 					} else {
 						// Native Haxe object field
 						var f = Reflect.field(currentThis, name);
@@ -2310,6 +2499,9 @@ class Interp {
 							// Assign to implicit this field
 							if (Std.isOfType(currentThis, HaxiomInstance)) {
 								var inst:HaxiomInstance = cast currentThis;
+								var staticOwner = findStaticFieldOwner(inst.cls, name);
+								if (staticOwner != null)
+									return assignField(staticOwner, name, val, scope, pos);
 								var fDef = findFieldDef(inst.cls, name);
 								if (fDef != null && fDef.property != null && fDef.property.set == "set" && !isInsideAccessor(name)) {
 									var m = findMethod(inst.cls, "set_" + name);
@@ -3365,9 +3557,10 @@ class Interp {
 						isPublic: f.isPublic,
 						isFinal: f.isFinal,
 						property: f.property,
+						bytecodeChunk: Reflect.field(f, "bytecodeChunk"),
 						meta: evaluateMetadata(f.meta, scope)
 					});
-					if (f.isStatic && fieldExpr != null) {
+					if (f.isStatic && fieldExpr != null && !suppressStaticFieldInitializers) {
 						cls.staticFields.set(f.name, eval(fieldExpr, scope));
 					}
 				}
@@ -3677,9 +3870,10 @@ class Interp {
 						isPublic: f.isPublic,
 						isFinal: f.isFinal,
 						property: f.property,
+						bytecodeChunk: Reflect.field(f, "bytecodeChunk"),
 						meta: evaluateMetadata(f.meta, scope)
 					});
-					if (f.isStatic && f.expr != null) {
+					if (f.isStatic && f.expr != null && !suppressStaticFieldInitializers) {
 						abs.staticFields.set(f.name, eval(f.expr, scope));
 					}
 				}
@@ -4031,21 +4225,23 @@ class Interp {
 				} catch (flow:ControlFlow) {
 					throw flow;
 				} catch (errVal:Dynamic) {
+					var caughtValue:Dynamic = Std.isOfType(errVal, ScriptException) ? (cast errVal : ScriptException).rawValue : errVal;
 					while (callStack.length > stackDepth) {
 						callStack.pop();
 					}
 					for (c in catches) {
 						var caseScope = Scope.create(scope);
 						var matched = false;
+						var caseValue = caughtValue;
 						try {
-							if (matchPattern(errVal, c.pattern, scope, caseScope)) {
+							if (matchPattern(caseValue, c.pattern, scope, caseScope)) {
 								var typeMatched = true;
 								if (c.type != null) {
 									try {
-										errVal = castOrCheckType(errVal, c.type, scope);
+										caseValue = castOrCheckType(caseValue, c.type, scope);
 										switch (c.pattern.def) {
 											case EIdent(name):
-												caseScope.set(name, errVal);
+												caseScope.set(name, caseValue);
 											default:
 										}
 									} catch (_:Dynamic) {
@@ -4396,6 +4592,11 @@ class Interp {
 					scope.checkAndSet(name, val, this);
 				} else if (currentThis != null && Std.isOfType(currentThis, HaxiomInstance)) {
 					var inst:HaxiomInstance = cast currentThis;
+					var staticOwner = findStaticFieldOwner(inst.cls, name);
+					if (staticOwner != null) {
+						assignField(staticOwner, name, val, scope, target.pos);
+						return;
+					}
 					var fDef = findFieldDef(inst.cls, name);
 					if (fDef != null && fDef.property != null && fDef.property.set == "set" && !isInsideAccessor(name)) {
 						var m = findMethod(inst.cls, "set_" + name);
@@ -4413,6 +4614,36 @@ class Interp {
 						checkType(val, fDef.type, scope, inst.genericBindings);
 					}
 					inst.fields.set(name, val);
+				} else if (Std.isOfType(currentThis, HaxiomClass)) {
+					var cls:HaxiomClass = cast currentThis;
+					var fieldDef = findFieldDef(cls, name);
+					if (fieldDef != null && fieldDef.isStatic) {
+						if (fieldDef.isFinal) {
+							throw 'Cannot reassign static final field $name';
+						}
+						if (fieldDef.type != null) {
+							val = castOrCheckType(val, fieldDef.type, scope);
+						}
+						cls.staticFields.set(name, val);
+					} else {
+						scope.checkAndSet(name, val, this);
+					}
+				} else if (Std.isOfType(currentThis, HaxiomAbstractInstance)) {
+					var abstractInstance:HaxiomAbstractInstance = cast currentThis;
+					var fieldDef = abstractInstance.abstractType.fields.get(name);
+					if (fieldDef != null && fieldDef.isStatic) {
+						if (fieldDef.isFinal) {
+							throw 'Cannot reassign static final field $name';
+						}
+						if (fieldDef.type != null) {
+							val = castOrCheckType(val, fieldDef.type, scope);
+						}
+						abstractInstance.abstractType.staticFields.set(name, val);
+					} else if (fieldDef != null) {
+						assignField(currentThis, name, val, scope, target.pos);
+					} else {
+						scope.checkAndSet(name, val, this);
+					}
 				} else {
 					scope.checkAndSet(name, val, this);
 				}
@@ -4494,24 +4725,18 @@ class Interp {
 		return false;
 	}
 
-	function isInsideAccessor(fieldName:String):Bool {
-		// haxe.Log.trace("isInsideAccessor check for " + fieldName + ", stack: " + [for (f in callStack) f.method].join(", "), null);
+	function isInsideAccessor(fieldName:String, ?target:Dynamic):Bool {
 		if (callStack.length == 0)
+			return false;
+		if (target != null && currentThis != target)
 			return false;
 		var suffix1 = ".get_" + fieldName;
 		var suffix2 = ".set_" + fieldName;
-		var i = callStack.length - 1;
-		while (i >= 0) {
-			var method = callStack[i].method;
-			if (StringTools.endsWith(method, suffix1)
-				|| StringTools.endsWith(method, suffix2)
-				|| method == "get_" + fieldName
-				|| method == "set_" + fieldName) {
-				return true;
-			}
-			i--;
-		}
-		return false;
+		var method = callStack[callStack.length - 1].method;
+		return StringTools.endsWith(method, suffix1)
+			|| StringTools.endsWith(method, suffix2)
+			|| method == "get_" + fieldName
+			|| method == "set_" + fieldName;
 	}
 
 	function getMetaPath(v:Dynamic):Null<String> {
@@ -4845,6 +5070,14 @@ class Interp {
 		return findFieldDef(cls.parent, name);
 	}
 
+	function findStaticFieldOwner(cls:HaxiomClass, name:String):HaxiomClass {
+		if (cls == null)
+			return null;
+		if (cls.fields.exists(name) && cls.fields.get(name).isStatic)
+			return cls;
+		return findStaticFieldOwner(cls.parent, name);
+	}
+
 	function findStaticMethod(cls:HaxiomClass, name:String):Dynamic {
 		if (cls == null)
 			return null;
@@ -4856,7 +5089,109 @@ class Interp {
 		return findStaticMethod(cls.parent, name);
 	}
 
+	function findVMPropertyAccessor(obj:Dynamic, fieldName:String, setter:Bool, pos:Pos):Null<ClassMethodInfo> {
+		if (obj == null || isInsideAccessor(fieldName, obj)) {
+			return null;
+		}
+		var accessorName = (setter ? "set_" : "get_") + fieldName;
+		var accessorValue = setter ? "set" : "get";
+
+		if (Std.isOfType(obj, HaxiomInstance)) {
+			var instance:HaxiomInstance = cast obj;
+			var field = findFieldDef(instance.cls, fieldName);
+			if (field != null && field.property != null
+					&& (setter ? field.property.set : field.property.get) == accessorValue) {
+				checkMemberAccess(instance.cls, field.isPublic, pos, fieldName);
+				return findMethod(instance.cls, accessorName);
+			}
+		} else if (Std.isOfType(obj, HaxiomAbstractInstance)) {
+			var instance:HaxiomAbstractInstance = cast obj;
+			var field = instance.abstractType.fields.get(fieldName);
+			if (field != null && field.property != null
+					&& (setter ? field.property.set : field.property.get) == accessorValue) {
+				return instance.abstractType.methods.get(accessorName);
+			}
+		} else if (Std.isOfType(obj, HaxiomClass)) {
+			var cls:HaxiomClass = cast obj;
+			var field = findFieldDef(cls, fieldName);
+			if (field != null && field.isStatic && field.property != null
+					&& (setter ? field.property.set : field.property.get) == accessorValue) {
+				checkMemberAccess(cls, field.isPublic, pos, fieldName);
+				return cast findStaticMethod(cls, accessorName);
+			}
+		}
+		return null;
+	}
+
+	function createVMMethodCallable(obj:Dynamic, method:ClassMethodInfo):Null<haxiom.VM.VMGuestCallable> {
+		var methodDyn:Dynamic = method;
+		if ((!useVM && activeVMCallFrames == null && methodDyn.bytecodeChunk == null) || methodDyn.isAbstract == true || methodDyn.isExtern == true) {
+			return null;
+		}
+		var isMethodAsync = false;
+		if (method.meta != null) {
+			for (meta in method.meta) {
+				if (meta.name == ":haxiom.async") {
+					isMethodAsync = true;
+					break;
+				}
+			}
+		}
+		if (methodDyn.bytecodeChunk == null && method.body != null) {
+			var implicitMembers:Map<String, Bool> = new Map();
+			if (Std.isOfType(obj, HaxiomInstance) || Std.isOfType(obj, HaxiomClass)) {
+				var cls:HaxiomClass = Std.isOfType(obj, HaxiomInstance) ? (cast obj : HaxiomInstance).cls : cast obj;
+				while (cls != null) {
+					for (field in cls.fields) implicitMembers.set(field.name, true);
+					for (methodName in cls.methods.keys()) implicitMembers.set(methodName, true);
+					cls = cls.parent;
+				}
+			} else if (Std.isOfType(obj, HaxiomAbstractInstance)) {
+				var abstractType = (cast obj : HaxiomAbstractInstance).abstractType;
+				for (fieldName in abstractType.fields.keys()) implicitMembers.set(fieldName, true);
+				for (methodName in abstractType.methods.keys()) implicitMembers.set(methodName, true);
+			}
+			methodDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(method.body, method.args, false, isMethodAsync, debugMode, method.name, this,
+				activeSourceLabel, implicitMembers);
+		}
+		if (methodDyn.bytecodeChunk == null) {
+			return null;
+		}
+
+		var className = "toplevel";
+		var bindings:Map<String, TypeDecl> = null;
+		if (obj != null) {
+			if (Std.isOfType(obj, HaxiomInstance)) {
+				var instance:HaxiomInstance = cast obj;
+				className = instance.cls.name;
+				bindings = instance.genericBindings;
+			} else if (Std.isOfType(obj, HaxiomAbstractInstance)) {
+				className = (cast obj : HaxiomAbstractInstance).abstractType.name;
+			} else if (Std.isOfType(obj, HaxiomClass)) {
+				className = (cast obj : HaxiomClass).name;
+			}
+		}
+		return new haxiom.VM.VMGuestCallable(methodDyn.bytecodeChunk, globals, method.args, method.retType, obj, className + "." + method.name,
+			method.body != null ? method.body.pos : (lastEvalPos != null ? lastEvalPos : {line: 1, col: 1}), bindings);
+	}
+
 	function bindMethod(obj:Dynamic, method:ClassMethodInfo):Dynamic {
+		var initialMethodDyn:Dynamic = method;
+		var cacheVMMethod = obj != null && (useVM || initialMethodDyn.bytecodeChunk != null) && initialMethodDyn.isExtern != true;
+		var receiverMethods:Array<{method:Dynamic, func:Dynamic}> = null;
+		if (cacheVMMethod) {
+			receiverMethods = vmBoundMethods.get(obj);
+			if (receiverMethods != null) {
+				for (entry in receiverMethods) {
+					if (entry.method == method) {
+						return entry.func;
+					}
+				}
+			} else {
+				receiverMethods = [];
+				vmBoundMethods.set(obj, receiverMethods);
+			}
+		}
 		var bindings = (obj != null && Std.isOfType(obj, HaxiomInstance)) ? (cast obj : HaxiomInstance).genericBindings : null;
 		var func = (callArgs:Array<Dynamic>) -> {
 			if (disposed)
@@ -5018,13 +5353,10 @@ class Interp {
 						+ '\n    at $className.${method.name} ($errFile:$errLine:$errCol)';
 					se = new ScriptException(e, callStack.copy(), formatted, errLine, errCol, errFile);
 				}
-
-				haltNamespace(className);
-
-				if (onRuntimeError != null) {
-					onRuntimeError(se);
-					return null;
+				if (se.runtimeNamespace == null && className != "toplevel") {
+					se.runtimeNamespace = className;
 				}
+
 				throw se;
 			}
 		};
@@ -5057,6 +5389,13 @@ class Interp {
 		var signatureRet = method.retType != null ? method.retType : TPath(["Dynamic"], []);
 		var resolvedRet = resolveGenericType(signatureRet, bindings, globals);
 		functionSignatures.set(boundFunc, TFun(signatureArgs, resolvedRet));
+		var guestCallable = createVMMethodCallable(obj, method);
+		if (guestCallable != null) {
+			registerVMGuestCallable(boundFunc, guestCallable);
+		}
+		if (cacheVMMethod) {
+			receiverMethods.push({method: method, func: boundFunc});
+		}
 		return boundFunc;
 	}
 
@@ -5987,10 +6326,14 @@ class Interp {
 	}
 
 	function _checkSafeToSerialize(v:Dynamic, visited:haxe.ds.ObjectMap<Dynamic, Bool>) {
-		if (v == null)
+		if (v == null || Std.isOfType(v, String))
 			return;
 		switch (Type.typeof(v)) {
-			case TObject | TClass(_):
+			case TObject:
+				if (visited.exists(v))
+					return;
+				visited.set(v, true);
+			case TClass(c) if (c != String):
 				if (visited.exists(v))
 					return;
 				visited.set(v, true);
@@ -6221,35 +6564,45 @@ class Interp {
 	}
 
 	function findAbstractBinopOverload(op:String, v1:Dynamic, v2:Dynamic):{success:Bool, value:Dynamic} {
+		var method = findAbstractBinopMethod(op, v1, v2);
+		return method == null ? {success: false, value: null} : {success: true, value: callAbstractOp(method, [v1, v2])};
+	}
+
+	function findAbstractUnopOverload(op:String, val:Dynamic):{success:Bool, value:Dynamic} {
+		var method = findAbstractUnopMethod(op, val);
+		return method == null ? {success: false, value: null} : {success: true, value: callAbstractOp(method, [val])};
+	}
+
+	function findAbstractBinopMethod(op:String, v1:Dynamic, v2:Dynamic):Null<ClassMethodInfo> {
 		if (Std.isOfType(v1, HaxiomAbstractInstance)) {
 			var inst:HaxiomAbstractInstance = cast v1;
 			var method = findAbstractOpMethod(inst.abstractType, op, true);
 			if (method != null) {
-				return {success: true, value: callAbstractOp(inst.abstractType, method, [v1, v2])};
+				return cast method;
 			}
 		}
 		if (Std.isOfType(v2, HaxiomAbstractInstance)) {
 			var inst:HaxiomAbstractInstance = cast v2;
 			var method = findAbstractOpMethod(inst.abstractType, op, true);
 			if (method != null) {
-				return {success: true, value: callAbstractOp(inst.abstractType, method, [v1, v2])};
+				return cast method;
 			}
 		}
-		return {success: false, value: null};
+		return null;
 	}
 
-	function findAbstractUnopOverload(op:String, val:Dynamic):{success:Bool, value:Dynamic} {
+	function findAbstractUnopMethod(op:String, val:Dynamic):Null<ClassMethodInfo> {
 		if (Std.isOfType(val, HaxiomAbstractInstance)) {
 			var inst:HaxiomAbstractInstance = cast val;
 			var method = findAbstractOpMethod(inst.abstractType, op, false);
 			if (method != null) {
-				return {success: true, value: callAbstractOp(inst.abstractType, method, [val])};
+				return cast method;
 			}
 		}
-		return {success: false, value: null};
+		return null;
 	}
 
-	function callAbstractOp(abs:HaxiomAbstract, method:Dynamic, args:Array<Dynamic>):Dynamic {
+	function callAbstractOp(method:ClassMethodInfo, args:Array<Dynamic>):Dynamic {
 		var func = bindMethod(null, method);
 		return Reflect.callMethod(null, func, args);
 	}
@@ -6380,17 +6733,90 @@ class Interp {
 }
 
 @:allow(haxiom)
+class VMClassConstruction {
+	var instance:HaxiomInstance;
+	var methodInfo:Null<ClassMethodInfo>;
+	var args:Array<Dynamic>;
+	var scope:Scope;
+	var initializers:Array<VMFieldInitializer>;
+	var initializerIndex:Int = 0;
+
+	function new(instance:HaxiomInstance, methodInfo:Null<ClassMethodInfo>, args:Array<Dynamic>, scope:Scope, initializers:Array<VMFieldInitializer>) {
+		this.instance = instance;
+		this.methodInfo = methodInfo;
+		this.args = args;
+		this.scope = scope;
+		this.initializers = initializers;
+	}
+}
+
+@:allow(haxiom)
+class VMFieldInitializer {
+	var name:String;
+	var type:Null<TypeDecl>;
+	var chunk:haxiom.VM.BytecodeChunk;
+	var pos:Pos;
+
+	function new(name:String, type:Null<TypeDecl>, chunk:haxiom.VM.BytecodeChunk, pos:Pos) {
+		this.name = name;
+		this.type = type;
+		this.chunk = chunk;
+		this.pos = pos;
+	}
+}
+
+@:allow(haxiom)
+class VMClassDeclaration {
+	var cls:HaxiomClass;
+	var scope:Scope;
+	var initializers:Array<VMStaticFieldInitializer>;
+	var initializerIndex:Int = 0;
+
+	function new(cls:HaxiomClass, scope:Scope, initializers:Array<VMStaticFieldInitializer>) {
+		this.cls = cls;
+		this.scope = scope;
+		this.initializers = initializers;
+	}
+}
+
+@:allow(haxiom)
+class VMAbstractDeclaration {
+	var abstractType:HaxiomAbstract;
+	var thisContext:HaxiomAbstractInstance;
+	var scope:Scope;
+	var initializers:Array<VMStaticFieldInitializer>;
+	var initializerIndex:Int = 0;
+
+	function new(abstractType:HaxiomAbstract, scope:Scope, initializers:Array<VMStaticFieldInitializer>) {
+		this.abstractType = abstractType;
+		this.thisContext = new HaxiomAbstractInstance(abstractType, null);
+		this.scope = scope;
+		this.initializers = initializers;
+	}
+}
+
+@:allow(haxiom)
+class VMStaticFieldInitializer {
+	var name:String;
+	var type:Null<TypeDecl>;
+	var chunk:haxiom.VM.BytecodeChunk;
+	var pos:Pos;
+
+	function new(name:String, type:Null<TypeDecl>, chunk:haxiom.VM.BytecodeChunk, pos:Pos) {
+		this.name = name;
+		this.type = type;
+		this.chunk = chunk;
+		this.pos = pos;
+	}
+}
+
+@:allow(haxiom)
 class FunctionSignatures {
-	#if neko
 	var pairs:Array<{k:Dynamic, v:haxiom.TypeDecl}> = [];
-	#else
-	var map:haxe.ds.ObjectMap<Dynamic, haxiom.TypeDecl> = new haxe.ds.ObjectMap();
-	#end
 
 	private function new() {}
 
 	private function set(k:Dynamic, v:haxiom.TypeDecl) {
-		#if neko
 		for (p in pairs) {
 			if (p.k == k) {
 				p.v = v;
@@ -6398,32 +6824,21 @@ class FunctionSignatures {
 			}
 		}
 		pairs.push({k: k, v: v});
-		#else
-		map.set(k, v);
-		#end
 	}
 
 	private function exists(k:Dynamic):Bool {
-		#if neko
 		for (p in pairs) {
 			if (p.k == k)
 				return true;
 		}
 		return false;
-		#else
-		return map.exists(k);
-		#end
 	}
 
 	private function get(k:Dynamic):haxiom.TypeDecl {
-		#if neko
 		for (p in pairs) {
 			if (p.k == k)
 				return p.v;
 		}
 		return null;
-		#else
-		return map.get(k);
-		#end
 	}
 }

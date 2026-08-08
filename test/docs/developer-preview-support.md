@@ -39,6 +39,14 @@ The following are not stable API promises in this developer preview:
 - Complete Haxe language compatibility.
 - Behavior on targets outside the active matrix.
 
+## Execution Mode Security
+
+New `Haxiom` instances use VM mode by default. AST execution requires explicitly setting `useVM = false`.
+
+The bytecode VM is the production execution path for untrusted scripts, deeply recursive workloads, and persisted HXBC payloads. Guest calls, constructors, accessors, declaration initializers, guards, and abstract operators execute through VM-managed frames so guest recursion does not consume the host call stack.
+
+The AST interpreter remains supported for compatibility, diagnostics, and parser-level regression testing. It is a recursive tree-walking evaluator and is not a stack-safe security boundary for adversarial or deeply recursive input. Host applications executing untrusted scripts must use VM mode and keep the applicable instruction and memory limits enabled.
+
 ## Runtime Isolation Rule
 
 Haxiom runtime state must remain instance-based. Runtime mutable state must not be stored in `static` fields. Static helper or factory functions are acceptable when they return new instances or operate only on arguments. Macros may use static structure as needed by Haxe macro conventions.

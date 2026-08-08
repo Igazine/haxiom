@@ -139,7 +139,7 @@ class Haxiom {
 	function updateInterpErrorHandler() {
 		if (_onRuntimeError != null) {
 			interp.onRuntimeError = (err:ScriptException) -> {
-				var ns = getActiveNamespace();
+				var ns = err.runtimeNamespace != null ? err.runtimeNamespace : getActiveNamespace();
 				if (ns != null) {
 					interp.haltNamespace(ns);
 				}
@@ -172,7 +172,7 @@ class Haxiom {
 	}
 
 	/**
-	 * If true, Haxiom compiles the AST to bytecode and executes it via the HXBC virtual machine.
+	 * If true (the default), Haxiom compiles the AST to bytecode and executes it via the HXBC virtual machine.
 	 * If false, Haxiom evaluates the AST nodes recursively in interpretation mode.
 	 */
 	public var useVM(get, set):Bool;

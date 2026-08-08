@@ -1,4 +1,5 @@
 --cmd haxe build.hxml
 --cmd haxe test_full.hxml
 --cmd haxe test_platforms.hxml
+--cmd haxe test/haxiom/scenarios/build.hxml
 --cmd haxe test_supporting.hxml

@@ -1069,11 +1069,14 @@ class Parser {
 
 	function parseAdditive():Expr {
 		var e = parseMultiplicative();
+		skipNewlines();
 		var t = peek();
 		while (is(TPlus) || is(TMinus)) {
 			var op = match(TPlus) ? "+" : {match(TMinus); "-";};
+			skipNewlines();
 			var e2 = parseMultiplicative();
 			e = mk(EBinop(op, e, e2), t.pos);
+			skipNewlines();
 			t = peek();
 		}
 		return e;
@@ -1211,6 +1214,8 @@ class Parser {
 				var type = parseType(false);
 				var args = parseCallArgs();
 				return mk(ENew(type, args), t.pos);
+			case TSwitch:
+				return parseSwitch();
 			case TIdent(v):
 				next();
 				// Check if it's an arrow function: arg -> body
@@ -1256,6 +1261,11 @@ class Parser {
 				// Backtrack if not lambda
 				pos = checkpoint;
 				var e = parseExpr();
+				if (match(TColon)) {
+					var type = parseType();
+					expect(TParenClose);
+					return mk(ECast(e, type), t.pos);
+				}
 				expect(TParenClose);
 				return e;
 			case TFunction:
@@ -1267,7 +1277,16 @@ class Parser {
 				var fnParams = parseOptParams();
 				var args = parseArgs();
 				var retType = parseOptType();
-				var body = parseBlock();
+				var body = if (is(TBraceOpen)) {
+					parseBlock();
+				} else if (is(TReturn)) {
+					var returnToken = next();
+					var returnExpr = parseExpr();
+					match(TSemicolon);
+					mk(EReturn(returnExpr), returnToken.pos);
+				} else {
+					parseStatement();
+				}
 				return mk(EFunction(name, args, retType, body, fnParams), t.pos);
 			case TBracketOpen:
 				next();

@@ -1,0 +1,5 @@
+-L haxiom
+--class-path test
+--main haxiom.scenarios.TestScenarios
+--debug
+--interp

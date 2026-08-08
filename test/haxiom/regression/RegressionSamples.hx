@@ -70,6 +70,20 @@ class RegressionSamples {
 				'
 			},
 			{
+				name: "single-statement-anonymous-function",
+				moduleName: "SingleStatementAnonymousFunction",
+				expected: Value("2|4|6"),
+				source: '
+					class SingleStatementAnonymousFunction {
+						static public function main():String {
+							var values = [1, 2, 3];
+							var doubled = values.map(function(value) return value * 2);
+							return doubled.join("|");
+						}
+					}
+				'
+			},
+			{
 				name: "try-catch-finally-flow",
 				moduleName: "TryCatchFlow",
 				expected: Value("caught:done"),
@@ -88,6 +102,49 @@ class RegressionSamples {
 				'
 			},
 			{
+				name: "caught-constructor-exception",
+				moduleName: "CaughtConstructorException",
+					expected: Value("negative:method:42"),
+				source: '
+					class FallibleValue {
+						var value:Int;
+
+						public function new(value:Int) {
+							if (value < 0) {
+								throw "negative";
+							}
+							this.value = value;
+						}
+
+						public function read():Int {
+							return value;
+						}
+
+						public function fail():Void {
+							throw "method";
+						}
+					}
+
+					class CaughtConstructorException {
+						static public function main():String {
+							var status = "missed";
+							try {
+								new FallibleValue(-1);
+							} catch (error:Dynamic) {
+								status = Std.string(error);
+							}
+							var value = new FallibleValue(42);
+							try {
+								value.fail();
+							} catch (error:Dynamic) {
+								status += ":" + Std.string(error);
+							}
+							return status + ":" + value.read();
+						}
+					}
+				'
+			},
+			{
 				name: "safe-navigation-and-coalesce",
 				moduleName: "SafeNavigationAndCoalesce",
 				expected: Value("fallback:42"),
@@ -98,6 +155,37 @@ class RegressionSamples {
 							var value = maybe?.field ?? "fallback";
 							var payload = { count: 42 };
 							return value + ":" + payload?.count;
+						}
+					}
+				'
+			},
+			{
+				name: "parenthesized-type-cast",
+				moduleName: "ParenthesizedTypeCast",
+				expected: Value("6"),
+				source: '
+					class ParenthesizedTypeCast {
+						static public function main():Int {
+							var dynamicValues:Dynamic = [1, 2, 3];
+							var total = 0;
+							for (value in (dynamicValues:Array<Int>)) {
+								total += value;
+							}
+							return total;
+						}
+					}
+				'
+			},
+			{
+				name: "multiline-additive-expression",
+				moduleName: "MultilineAdditiveExpression",
+				expected: Value("alpha:42:omega"),
+				source: '
+					class MultilineAdditiveExpression {
+						static public function main():String {
+							return "alpha"
+								+ ":" + 42
+								+ ":omega";
 						}
 					}
 				'
@@ -149,6 +237,23 @@ class RegressionSamples {
 				'
 			},
 			{
+				name: "switch-expression",
+				moduleName: "SwitchExpression",
+				expected: Value("answer"),
+				source: '
+					class SwitchExpression {
+						static public function main():String {
+							var value = 42;
+							return switch (value) {
+								case 0: "zero";
+								case 42: "answer";
+								default: "other";
+							};
+						}
+					}
+				'
+			},
+			{
 				name: "regex-literal",
 				moduleName: "RegexLiteral",
 				expected: Value("true"),
@@ -156,6 +261,36 @@ class RegressionSamples {
 					class RegexLiteral {
 						static public function main():Bool {
 							return ~/haxiom\\s+\\d+/i.match("HAXIOM 42");
+						}
+					}
+				'
+			},
+			{
+				name: "qualified-standard-type-path",
+				moduleName: "QualifiedStandardTypePath",
+				expected: Value("42"),
+				source: '
+					class QualifiedStandardTypePath {
+						static public function main():Int {
+							var encoded = haxe.Json.stringify({value: 42});
+							var decoded:Dynamic = haxe.Json.parse(encoded);
+							return decoded.value;
+						}
+					}
+				'
+			},
+			{
+				name: "json-nested-primitive-values",
+				moduleName: "JsonNestedPrimitiveValues",
+				expected: Value("Alice|true|7"),
+				source: '
+					class JsonNestedPrimitiveValues {
+						static public function main():String {
+							var encoded = haxe.Json.stringify({
+								user: {name: "Alice", active: true, score: 7}
+							});
+							var decoded:Dynamic = haxe.Json.parse(encoded);
+							return decoded.user.name + "|" + decoded.user.active + "|" + decoded.user.score;
 						}
 					}
 				'
@@ -171,6 +306,33 @@ class RegressionSamples {
 						static public function main():Int {
 							count++;
 							return count;
+						}
+					}
+				'
+			},
+			{
+				name: "property-accessor-dce",
+				moduleName: "PropertyAccessorDCE",
+				expected: Value("42"),
+				source: '
+					class AccessorValue {
+						public var value(default, set):Int;
+
+						public function new() {
+							value = 0;
+						}
+
+						function set_value(next:Int):Int {
+							value = next * 2;
+							return value;
+						}
+					}
+
+					class PropertyAccessorDCE {
+						static public function main():Int {
+							var item = new AccessorValue();
+							item.value = 21;
+							return item.value;
 						}
 					}
 				'
