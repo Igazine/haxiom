@@ -29,7 +29,7 @@ The wiki covers 12 modular documentation chapters, including:
 ## Key Features
 
 * **Dual Execution Modes**: Choose between dynamic AST Interpretation (`useVM = false`) or the high-performance Register Bytecode VM (`useVM = true`).
-* **Sandboxed Host Security**: Isolate guest scripts with instruction execution budgets (`maxInstructions`), memory allocation watchdogs (`maxMemory`), property access filters (`setFieldAccessFilter`), caller identification (`engine.currentCaller`), and un-spoofable opaque handles (`HostRef<T>`).
+* **Sandboxed Host Security**: Isolate guest scripts with instruction execution budgets (`maxInstructions`), memory allocation watchdogs (`maxMemory`), persisted-input size/depth limits (`maxPersistedBytes`, `maxPersistedDepth`), property access filters (`setFieldAccessFilter`), caller identification (`engine.currentCaller`), and un-spoofable opaque handles (`HostRef<T>`).
 * **Foreign Function Interface (FFI)**: Easily expose host classes, enums, functions, and packages to scripts via `exposeClass`, `exposePackage`, and `exposeValue`.
 * **LSP-Safe Host Integration (`extern`)**: Guest scripts can declare native `extern` classes for host types, enabling full autocompletion and diagnostic checks in VS Code.
 * **Cooperative Fibers & Async**: Non-blocking asynchronous execution using user-land fibers (`VMFiber`) and `Future` resolution.

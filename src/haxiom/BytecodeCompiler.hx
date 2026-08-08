@@ -111,6 +111,10 @@ class BytecodeCompiler {
 		return loc;
 	}
 
+	function allocateTempSlot():Int {
+		return maxSlots++;
+	}
+
 	function resolveLocal(name:String):Null<LocalVar> {
 		var i = locals.length - 1;
 		while (i >= 0) {
@@ -406,36 +410,36 @@ class BytecodeCompiler {
 							if (!capturedVars.exists(name)) {
 								compileExpr(expr);
 								if (loc.type != null) {
-									emit(OP_CHECK_TYPE, e.pos);
-									emitInt(addConst(loc.type), e.pos);
+									emit(OP_CHECK_TYPE, expr.pos);
+									emitInt(addConst(loc.type), expr.pos);
 								}
-								emit(OP_SET_LOCAL, e.pos);
-								emitInt(loc.slot, e.pos);
+								emit(OP_SET_LOCAL, expr.pos);
+								emitInt(loc.slot, expr.pos);
 							} else {
 								compileExpr(expr);
-								emit(OP_SET_VAR, e.pos);
-								emitInt(addConst(name), e.pos);
+								emit(OP_SET_VAR, expr.pos);
+								emitInt(addConst(name), expr.pos);
 							}
 						} else {
 							compileExpr(expr);
-							emit(OP_SET_VAR, e.pos);
-							emitInt(addConst(name), e.pos);
+							emit(OP_SET_VAR, expr.pos);
+							emitInt(addConst(name), expr.pos);
 						}
 					case EField(obj, field):
 						compileExpr(obj);
 						compileExpr(expr);
-						emit(OP_SET_FIELD, e.pos);
-						emitInt(addConst(field), e.pos);
+						emit(OP_SET_FIELD, expr.pos);
+						emitInt(addConst(field), expr.pos);
 					case ESafeField(obj, field):
 						compileExpr(obj);
 						compileExpr(expr);
-						emit(OP_SAFE_SET_FIELD, e.pos);
-						emitInt(addConst(field), e.pos);
+						emit(OP_SAFE_SET_FIELD, expr.pos);
+						emitInt(addConst(field), expr.pos);
 					case EBinop("[]", obj, indexExpr):
 						compileExpr(obj);
 						compileExpr(indexExpr);
 						compileExpr(expr);
-						emit(OP_ARRAY_ACCESS_SET, e.pos);
+						emit(OP_ARRAY_ACCESS_SET, expr.pos);
 					default:
 						throw "Invalid assignment target";
 				}
@@ -591,6 +595,31 @@ class BytecodeCompiler {
 					emit(OP_ON_DISPOSE, e.pos);
 				} else {
 					switch (callExpr.def) {
+						case ESafeField(obj, field):
+							var receiverSlot = allocateTempSlot();
+							compileExpr(obj);
+							emit(OP_SET_LOCAL, obj.pos);
+							emitInt(receiverSlot, obj.pos);
+							emit(OP_POP, obj.pos);
+							emit(OP_GET_LOCAL, obj.pos);
+							emitInt(receiverSlot, obj.pos);
+							emit(OP_JUMP_IF_NOT_NULL_PEEK, e.pos);
+							var nonNullJumpIdx = instructions.length;
+							emitInt(0, e.pos);
+							emit(OP_JUMP, e.pos);
+							var endJumpIdx = instructions.length;
+							emitInt(0, e.pos);
+
+							instructions[nonNullJumpIdx] = instructions.length;
+							emit(OP_POP, e.pos);
+							for (arg in args)
+								compileExpr(arg);
+							emit(OP_GET_LOCAL, obj.pos);
+							emitInt(receiverSlot, obj.pos);
+							emit(OP_CALL_METHOD, e.pos);
+							emitInt(addConst(field), e.pos);
+							emitInt(args.length, e.pos);
+							instructions[endJumpIdx] = instructions.length;
 						case EField(obj, field):
 							for (arg in args) {
 								compileExpr(arg);
@@ -932,6 +961,7 @@ class BytecodeCompiler {
 				emitInt(0, e.pos);
 
 				instructions[catchJumpIdx] = instructions.length;
+				var exitTryJumpIndices:Array<Int> = [];
 
 				// Catches block: top of stack has the exception
 				for (i in 0...catches.length) {
@@ -956,6 +986,7 @@ class BytecodeCompiler {
 					emit(OP_JUMP, e.pos);
 					var exitTryJumpIdx = instructions.length;
 					emitInt(0, e.pos);
+					exitTryJumpIndices.push(exitTryJumpIdx);
 
 					instructions[nextCatchJumpIdx] = instructions.length;
 					// If we exit this catch, continue to next or throw
@@ -964,18 +995,13 @@ class BytecodeCompiler {
 						emit(OP_THROW, e.pos);
 					}
 
-					// Patch exit Try jumps
-					instructions[exitTryJumpIdx] = endTryJumpIdx; // we patch it later to end of try
 				}
 
 				// Patch end Try jumps
 				var finalEndOffset = instructions.length;
 				instructions[endTryJumpIdx] = finalEndOffset;
-				for (i in catchJumpIdx...instructions.length) {
-					if (instructions[i] == endTryJumpIdx) {
-						instructions[i] = finalEndOffset;
-					}
-				}
+				for (jumpIdx in exitTryJumpIndices)
+					instructions[jumpIdx] = finalEndOffset;
 
 			case ESwitch(exprVal, cases, defExpr):
 				compileExpr(exprVal); // leaves match val on stack
@@ -1458,6 +1484,19 @@ class BytecodeCompiler {
 		var newInst:Array<Int> = [];
 		var newPos:Array<Pos> = [];
 		var oldToNewIP:Array<Int> = [for (i in 0...instructions.length) -1];
+		var controlFlowTargets:Array<Bool> = [for (i in 0...instructions.length) false];
+		while (ip < instructions.length) {
+			var op = instructions[ip];
+			switch (op) {
+				case OP_JUMP | OP_JUMP_IF_FALSE | OP_JUMP_IF_FALSE_PEEK | OP_JUMP_IF_TRUE_PEEK | OP_JUMP_IF_NOT_NULL_PEEK | OP_PUSH_TRY:
+					var target = instructions[ip + 1];
+					if (target >= 0 && target < controlFlowTargets.length)
+						controlFlowTargets[target] = true;
+				default:
+			}
+			ip += getInstructionLength(instructions, ip);
+		}
+		ip = 0;
 
 		while (ip < instructions.length) {
 			var op = instructions[ip];
@@ -1483,7 +1522,7 @@ class BytecodeCompiler {
 			if (op == OP_LOAD_CONST && ip + len < instructions.length) {
 				var nextIp = ip + len;
 				var nextOp = instructions[nextIp];
-				if (nextOp == OP_POP) {
+				if (nextOp == OP_POP && !controlFlowTargets[nextIp]) {
 					var nextLen = getInstructionLength(instructions, nextIp);
 					for (offset in 0...(len + nextLen)) {
 						if (ip + offset < instructions.length) {
@@ -1500,7 +1539,7 @@ class BytecodeCompiler {
 				var localSlot = instructions[ip + 1];
 				var nextIp = ip + len;
 				var nextOp = instructions[nextIp];
-				if (nextOp == OP_SET_LOCAL && instructions[nextIp + 1] == localSlot) {
+				if (nextOp == OP_SET_LOCAL && instructions[nextIp + 1] == localSlot && !controlFlowTargets[nextIp]) {
 					var nextLen = getInstructionLength(instructions, nextIp);
 					for (offset in 0...(len + nextLen)) {
 						if (ip + offset < instructions.length) {
@@ -1517,7 +1556,7 @@ class BytecodeCompiler {
 				var localSlot = instructions[ip + 1];
 				var nextIp = ip + len;
 				var nextOp = instructions[nextIp];
-				if (nextOp == OP_GET_LOCAL && instructions[nextIp + 1] == localSlot) {
+				if (nextOp == OP_GET_LOCAL && instructions[nextIp + 1] == localSlot && !controlFlowTargets[nextIp]) {
 					var nextLen = getInstructionLength(instructions, nextIp);
 					var dupPos = (positions != null && ip < positions.length) ? positions[ip] : {line: 1, col: 1};
 					newInst.push(OP_DUP);
@@ -1548,7 +1587,7 @@ class BytecodeCompiler {
 				var nextIp = ip + len;
 				var nextOp = instructions[nextIp];
 
-				if (nextOp == OP_JUMP_IF_FALSE) {
+				if (nextOp == OP_JUMP_IF_FALSE && !controlFlowTargets[nextIp]) {
 					var nextLen = getInstructionLength(instructions, nextIp);
 					var targetIp = instructions[nextIp + 1];
 					var isTruthy = (constVal != null && constVal != false);
@@ -1613,7 +1652,7 @@ class BytecodeCompiler {
 			if (op == OP_DUP && ip + len < instructions.length) {
 				var nextIp = ip + len;
 				var nextOp = instructions[nextIp];
-				if (nextOp == OP_POP) {
+				if (nextOp == OP_POP && !controlFlowTargets[nextIp]) {
 					var nextLen = getInstructionLength(instructions, nextIp);
 					for (offset in 0...(len + nextLen)) {
 						if (ip + offset < instructions.length) {
@@ -1629,7 +1668,7 @@ class BytecodeCompiler {
 			if (op == OP_GET_LOCAL && ip + len < instructions.length) {
 				var nextIp = ip + len;
 				var nextOp = instructions[nextIp];
-				if (nextOp == OP_POP) {
+				if (nextOp == OP_POP && !controlFlowTargets[nextIp]) {
 					var nextLen = getInstructionLength(instructions, nextIp);
 					for (offset in 0...(len + nextLen)) {
 						if (ip + offset < instructions.length) {

@@ -10,8 +10,50 @@ class PortableASTSerializer {
 		return Bytes.ofString(Json.stringify(exprToData(expr)));
 	}
 
-	static function deserializeFromBytes(bytes:Bytes):Expr {
-		return dataToExpr(Json.parse(bytes.toString()));
+	static function deserializeFromBytes(bytes:Bytes, ?maxBytes:Int = 64 * 1024 * 1024, ?maxDepth:Int = 512):Expr {
+		if (bytes == null)
+			throw "Invalid portable AST: data is null";
+		if (maxBytes > 0 && bytes.length > maxBytes)
+			throw 'Invalid portable AST: payload exceeds limit (${bytes.length} > $maxBytes bytes)';
+
+		var json = bytes.toString();
+		validateJsonDepth(json, maxDepth);
+		var data:Dynamic = Json.parse(json);
+		if (data == null || !Reflect.isObject(data) || !Reflect.hasField(data, "tag"))
+			throw "Invalid portable AST: root expression is missing its tag";
+		return dataToExpr(data);
+	}
+
+	static function validateJsonDepth(json:String, maxDepth:Int):Void {
+		if (maxDepth <= 0)
+			return;
+		var depth = 0;
+		var inString = false;
+		var escaped = false;
+		for (i in 0...json.length) {
+			var c = json.charCodeAt(i);
+			if (inString) {
+				if (escaped) {
+					escaped = false;
+				} else if (c == 92) {
+					escaped = true;
+				} else if (c == 34) {
+					inString = false;
+				}
+				continue;
+			}
+			if (c == 34) {
+				inString = true;
+			} else if (c == 123 || c == 91) {
+				depth++;
+				if (depth > maxDepth)
+					throw 'Invalid portable AST: JSON nesting exceeds limit ($maxDepth)';
+			} else if (c == 125 || c == 93) {
+				depth--;
+				if (depth < 0)
+					throw "Invalid portable AST: unbalanced JSON structure";
+			}
+		}
 	}
 
 	static function posToData(pos:Pos):Dynamic {

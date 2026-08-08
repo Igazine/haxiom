@@ -11,13 +11,25 @@ class LZ4 {
 	 * Decompresses an LZ4 compressed payload.
 	 * The input bytes start with a 4-byte little-endian uncompressed length header.
 	 */
-	public static function decompress(src:Bytes):Bytes {
+	public static function decompress(src:Bytes, ?expectedLength:Int = -1, ?maxOutputLength:Int = 0):Bytes {
 		if (src == null || src.length < 4) {
 			throw "LZ4 Decompress Error: Invalid payload (too short)";
 		}
 
 		var uncompressedLen = src.get(0) | (src.get(1) << 8) | (src.get(2) << 16) | (src.get(3) << 24);
+		if (uncompressedLen < 0) {
+			throw "LZ4 Decompress Error: Invalid uncompressed length";
+		}
+		if (expectedLength >= 0 && uncompressedLen != expectedLength) {
+			throw 'LZ4 Decompress Error: Uncompressed length mismatch (header $expectedLength, block $uncompressedLen)';
+		}
+		if (maxOutputLength > 0 && uncompressedLen > maxOutputLength) {
+			throw 'LZ4 Decompress Error: Uncompressed payload exceeds limit ($uncompressedLen > $maxOutputLength bytes)';
+		}
 		if (uncompressedLen == 0) {
+			if (src.length != 4) {
+				throw "LZ4 Decompress Error: Trailing data after empty block";
+			}
 			return Bytes.alloc(0);
 		}
 
@@ -33,35 +45,59 @@ class LZ4 {
 			if (literalLen == 15) {
 				var s = 0;
 				do {
+					if (ip >= srcLen) {
+						throw "LZ4 Decompress Error: Truncated literal length";
+					}
 					s = src.get(ip++);
 					literalLen += s;
-				} while (s == 255 && ip < srcLen);
+				} while (s == 255);
 			}
 
 			// Copy literals
 			if (literalLen > 0) {
+				if (literalLen > srcLen - ip) {
+					throw "LZ4 Decompress Error: Truncated literal data";
+				}
+				if (literalLen > uncompressedLen - op) {
+					throw "LZ4 Decompress Error: Literal exceeds output length";
+				}
 				dst.blit(op, src, ip, literalLen);
 				op += literalLen;
 				ip += literalLen;
 			}
 
-			if (ip >= srcLen || op >= uncompressedLen) {
+			if (ip >= srcLen) {
 				break;
+			}
+			if (op >= uncompressedLen) {
+				throw "LZ4 Decompress Error: Trailing compressed data";
 			}
 
 			// Read offset (16-bit LE)
+			if (srcLen - ip < 2) {
+				throw "LZ4 Decompress Error: Truncated match offset";
+			}
 			var offset = src.get(ip) | (src.get(ip + 1) << 8);
 			ip += 2;
+			if (offset == 0) {
+				throw "LZ4 Decompress Error: Invalid zero match offset";
+			}
 
 			var matchLen = token & 0x0F;
 			if (matchLen == 15) {
 				var s = 0;
 				do {
+					if (ip >= srcLen) {
+						throw "LZ4 Decompress Error: Truncated match length";
+					}
 					s = src.get(ip++);
 					matchLen += s;
-				} while (s == 255 && ip < srcLen);
+				} while (s == 255);
 			}
 			matchLen += 4;
+			if (matchLen > uncompressedLen - op) {
+				throw "LZ4 Decompress Error: Match exceeds output length";
+			}
 
 			// Copy match (handle overlapping bytes)
 			var matchPos = op - offset;
@@ -73,6 +109,9 @@ class LZ4 {
 				dst.set(op + i, dst.get(matchPos + i));
 			}
 			op += matchLen;
+		}
+		if (op != uncompressedLen) {
+			throw 'LZ4 Decompress Error: Output length mismatch (expected $uncompressedLen, decoded $op)';
 		}
 
 		return dst;

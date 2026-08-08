@@ -756,7 +756,11 @@ class VM {
 							var idx = inst[frame.ip++];
 							var name:String = consts[idx];
 							if (name == "this") {
-								stack.push(interp.currentThis);
+								if (frame.abstractContext && Std.isOfType(interp.currentThis, HaxiomAbstractInstance)) {
+									stack.push((cast interp.currentThis : HaxiomAbstractInstance).underlyingValue);
+								} else {
+									stack.push(interp.currentThis);
+								}
 							} else if (name == "super") {
 								if (interp.currentThis != null && Std.isOfType(interp.currentThis, HaxiomInstance)) {
 									stack.push(new haxiom.HaxiomSuperInstance(cast interp.currentThis, interp, frame.scope));
@@ -838,7 +842,11 @@ class VM {
 							var name:String = consts[idx];
 							var val = stack[stack.length - 1];
 								if (name == "this") {
-									interp.currentThis = val;
+									if (frame.abstractContext && Std.isOfType(interp.currentThis, HaxiomAbstractInstance)) {
+										(cast interp.currentThis : HaxiomAbstractInstance).underlyingValue = val;
+									} else {
+										interp.currentThis = val;
+									}
 								} else {
 									if (!frame.scope.exists(name) && interp.currentThis != null) {
 										var setterMethod = interp.findVMPropertyAccessor(interp.currentThis, name, true, currentPos());
@@ -1576,7 +1584,11 @@ class VM {
 							throw val;
 
 						case OP_GET_THIS:
-							stack.push(interp.currentThis);
+							if (frame.abstractContext && Std.isOfType(interp.currentThis, HaxiomAbstractInstance)) {
+								stack.push((cast interp.currentThis : HaxiomAbstractInstance).underlyingValue);
+							} else {
+								stack.push(interp.currentThis);
+							}
 
 						case OP_MAKE_FUNCTION:
 							var protoIdx = inst[frame.ip++];
@@ -2065,7 +2077,7 @@ class VM {
 									var classObj:HaxiomClass = cast obj;
 									var m = interp.findMethod(classObj, fieldName);
 									if (m != null) {
-										interp.checkMemberAccess(classObj, m.isPublic, currentPos());
+										interp.checkMemberAccess(classObj, m.isPublic, currentPos(), fieldName);
 										boundMethod = interp.bindMethod(classObj, m);
 
 										var newCache = new InlineCacheEntry();
@@ -2085,7 +2097,7 @@ class VM {
 									var instObj:HaxiomInstance = cast obj;
 									var m = interp.findMethod(instObj.cls, fieldName);
 									if (m != null) {
-										interp.checkMemberAccess(instObj.cls, m.isPublic, currentPos());
+										interp.checkMemberAccess(instObj.cls, m.isPublic, currentPos(), fieldName);
 										boundMethod = interp.bindMethod(instObj, m);
 
 										var newCache = new InlineCacheEntry();

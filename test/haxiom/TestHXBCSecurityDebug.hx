@@ -18,9 +18,33 @@ class TestHXBCSecurityDebug {
         testClassRedefinitionBlockage();
         testMainClassRouting();
         testScriptContextSourceLabelFallback();
+		testVMMethodSpecificAccessMetadata();
         
         trace("SUCCESS: All HXBC Security and Debug Symbols tests passed!");
     }
+
+	static function testVMMethodSpecificAccessMetadata():Void {
+		var source = '
+			class AccessTarget {
+				public function new() {}
+				function hidden():Int return 42;
+			}
+			class AccessCaller {
+				public function new() {}
+				@:access(AccessTarget.hidden)
+				public function read(target:AccessTarget):Int return target.hidden();
+			}
+			class VMAccessMetadata {
+				static public function main():Int {
+					return new AccessCaller().read(new AccessTarget());
+				}
+			}
+		';
+		var result:Int = new Haxiom().interpret(source, new ScriptContext("VMAccessMetadata"));
+		if (result != 42)
+			throw 'VM method-specific @:access returned $result';
+		trace("SUCCESS: VM method-specific @:access verified.");
+	}
 
     static function testBytecodeEncryption() {
         var engine = new Haxiom();

@@ -1,6 +1,7 @@
 package haxiom;
 
 import haxiom.VM.BytecodeChunk;
+import haxe.ds.ObjectMap;
 
 @:allow(haxiom)
 class BytecodeVerifier {
@@ -9,18 +10,33 @@ class BytecodeVerifier {
 			throw "Cannot verify null bytecode chunk";
 		}
 
-		// 1. Verify constant pool elements recursively
-		if (chunk.constants != null) {
-			for (c in chunk.constants) {
+		var pending = [chunk];
+		var seen = new ObjectMap<BytecodeChunk, Bool>();
+		while (pending.length > 0) {
+			var current = pending.pop();
+			if (seen.exists(current))
+				continue;
+			seen.set(current, true);
+
+			if (current.constants != null) {
+				for (c in current.constants) {
 				if (c != null && Reflect.hasField(c, "bodyChunk")) {
 					var body = Reflect.field(c, "bodyChunk");
 					if (body != null && Std.isOfType(body, BytecodeChunk)) {
-						verify(cast body);
+						pending.push(cast body);
 					}
 				}
 			}
+			}
+			verifyChunk(current);
 		}
+	}
 
+	static function verifyChunk(chunk:BytecodeChunk):Void {
+		if (chunk.maxSlots < 0)
+			throw 'Invalid negative maxSlots ${chunk.maxSlots}';
+		if (chunk.constants == null)
+			throw "Constants array is null";
 		var inst = chunk.instructions;
 		if (inst == null) {
 			throw "Instructions array is null";
@@ -53,7 +69,9 @@ class BytecodeVerifier {
 					var typeIdx = inst[ip++];
 					if (typeIdx >= 0)
 						checkConstIndex(typeIdx, chunk);
-					ip++; // isFinal (0 or 1)
+					var isFinal = inst[ip++];
+					if (isFinal != 0 && isFinal != 1)
+						throw 'Invalid final flag $isFinal at instruction index ${ip - 1}';
 
 				case 28, 29, 30, 31, 32: // OP_JUMP, OP_JUMP_IF_FALSE, OP_JUMP_IF_FALSE_PEEK, OP_JUMP_IF_TRUE_PEEK, OP_JUMP_IF_NOT_NULL_PEEK
 					checkOperands(ip, 1, inst.length);
@@ -61,7 +79,7 @@ class BytecodeVerifier {
 
 				case 33: // OP_CALL
 					checkOperands(ip, 1, inst.length);
-					ip++; // numArgs
+					checkNonNegative(inst[ip++], "argument count", ip - 1);
 
 				case 35, 36, 57, 58: // OP_GET_FIELD, OP_SET_FIELD, OP_SAFE_GET_FIELD, OP_SAFE_SET_FIELD
 					checkOperands(ip, 1, inst.length);
@@ -69,11 +87,12 @@ class BytecodeVerifier {
 
 				case 37, 70: // OP_NEW_ARRAY, OP_NEW_MAP
 					checkOperands(ip, 1, inst.length);
-					ip++; // length
+					checkNonNegative(inst[ip++], "element count", ip - 1);
 
 				case 38: // OP_NEW_OBJECT
 					checkOperands(ip, 1, inst.length);
 					var fieldCount = inst[ip++];
+					checkNonNegative(fieldCount, "object field count", ip - 1);
 					checkOperands(ip, fieldCount, inst.length);
 					for (i in 0...fieldCount) {
 						checkConstIndex(inst[ip++], chunk);
@@ -110,7 +129,7 @@ class BytecodeVerifier {
 				case 56: // OP_NEW
 					checkOperands(ip, 2, inst.length);
 					checkConstIndex(inst[ip++], chunk); // type
-					ip++; // numArgs
+					checkNonNegative(inst[ip++], "constructor argument count", ip - 1);
 
 				case 59: // OP_CAST
 					checkOperands(ip, 1, inst.length);
@@ -125,7 +144,7 @@ class BytecodeVerifier {
 				case 69: // OP_CALL_METHOD
 					checkOperands(ip, 2, inst.length);
 					checkConstIndex(inst[ip++], chunk); // method name
-					ip++; // numArgs
+					checkNonNegative(inst[ip++], "method argument count", ip - 1);
 
 				case 72: // OP_PUSH_CASE_SCOPE
 					// 0 operands
@@ -157,9 +176,17 @@ class BytecodeVerifier {
 	}
 
 	private static inline function checkOperands(ip:Int, count:Int, length:Int) {
+		if (count < 0) {
+			throw 'Invalid negative operand count $count at instruction index $ip';
+		}
 		if (ip + count > length) {
 			throw 'Unexpected end of instructions: missing $count operand(s) at instruction index $ip';
 		}
+	}
+
+	private static inline function checkNonNegative(value:Int, label:String, ip:Int) {
+		if (value < 0)
+			throw 'Invalid negative $label $value at instruction index $ip';
 	}
 
 	private static inline function checkConstIndex(idx:Int, chunk:BytecodeChunk) {

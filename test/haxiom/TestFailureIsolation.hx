@@ -17,6 +17,7 @@ class TestFailureIsolation {
 		runSync("Internal optimizer and VM tests", testInternalTests);
 		runSync("Follow-up suite: compilation features", () -> TestCompilationFeatures.runTests());
 		runSync("Follow-up suite: HXBC security debug", () -> TestHXBCSecurityDebug.runTests());
+		runSync("Follow-up suite: persisted input hardening", () -> TestPersistedInputHardening.runTests());
 		runSync("Follow-up suite: static type checker", () -> TestStaticTypeChecker.runTests());
 		runSync("Follow-up suite: DCE", () -> TestDCE.runTests());
 		runSync("Follow-up suite: regression samples", () -> TestRegressionSamples.runTests());

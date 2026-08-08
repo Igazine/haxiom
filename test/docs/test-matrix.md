@@ -34,13 +34,13 @@ This matrix describes the intended test coverage shape for the developer preview
 | AST interpreter | `TestHaxiom`, `TestFailureIsolation`, `TestRegressionSamples` | Every regression sample runs with `useVM = false`; continue extracting focused parser/runtime cases. |
 | VM execution | `TestHaxiom`, `TestFailureIsolation`, `TestRegressionSamples` | Every regression sample runs with `useVM = true`; continue extracting focused VM cases. |
 | AST persistence | `TestHaxiom`, `TestFailureIsolation`, `TestRegressionSamples` | Every regression sample round-trips through AST bytes; extend fixture-backed resource coverage, including `Bytes` payloads. |
-| HXBC bytecode | `TestHaxiom`, `TestFailureIsolation`, `TestBytecodeCLI`, `TestRegressionSamples` | Every regression sample runs through raw and compressed HXBC; retain CLI inspection and corrupted-byte rejection gates. |
+| HXBC bytecode | `TestHaxiom`, `TestFailureIsolation`, `TestBytecodeCLI`, `TestRegressionSamples`, `TestPersistedInputHardening` | Every regression sample runs through raw and compressed HXBC; retain CLI inspection and malformed-input rejection gates. |
 | Embedded resources | `TestHaxiom`, `TestFailureIsolation`, `TestScenarios` | Extend deterministic in-memory text and binary resource scenarios; add target-specific file fixtures only where useful. |
 | FFI and host interop | `TestHaxiom`, `TestExterns`, `TestCompilationFeatures`, macro package exposure in hxml | Split host globals, exposed values, exposed classes, externs, and package auto-registration. |
 | Type system | `TestTypeSystem`, `TestStaticTypeChecker`, `TestParseTypes`, `TestHaxiom` | Separate runtime type checks from opt-in static type checking. |
 | Optimizer and DCE | `TestDCE`, `InternalTests` | Keep optimizer behavior tested structurally and through runtime equivalence. |
 | Async and fibers | `TestAsyncVM` | Keep VM async tests isolated from synchronous platform gates where target support differs. |
-| Security and sandbox | `TestHXBCSecurityDebug`, `TestSafeguardsTCO`, `TestNSConflict`, `TestCallerIdentification` | Keep sandbox tests explicit: blocked APIs, namespace halting, caller identity, limits, debug leakage. |
+| Security and sandbox | `TestHXBCSecurityDebug`, `TestPersistedInputHardening`, `TestSafeguardsTCO`, `TestNSConflict`, `TestCallerIdentification` | Keep sandbox tests explicit: blocked APIs, malformed persisted data, namespace halting, caller identity, limits, debug leakage. |
 | Release-bar integrity | `TestReleaseBarAudit` | Keep source-level guards for accidentally commented-out core test calls in the release gate. |
 | Target parity | `test_platforms.hxml` | Add smaller target-specific hxml gates once the large suites are split. |
 | OpenFL integration | `test/haxiom/openfl` | Keep as integration smoke, separate from core engine gates. |
