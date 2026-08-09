@@ -11,7 +11,8 @@ private typedef RegressionRun = {
 }
 
 class TestRegressionSamples {
-	static final PATHS = ["AST interpret", "VM interpret", "AST bytes", "HXBC bytes", "compressed HXBC bytes"];
+	static final PATHS = ["AST interpret", "VM interpret", "AST bytes", "HXBC bytes", "compressed HXBC bytes", "keyed compressed HXBC bytes"];
+	static final BYTECODE_KEY = "haxiom-regression-suite-key";
 
 	public static function main():Void {
 		runTests();
@@ -60,14 +61,16 @@ class TestRegressionSamples {
 					configure(runner, sample, run);
 					run.value = runner.executeASTBytes(bytes, sample.source);
 				}
-			case 3 | 4:
+			case 3 | 4 | 5:
+				var keyed = path == 5;
+				var key = keyed ? BYTECODE_KEY : null;
 				var compiler = new Haxiom();
 				configure(compiler, sample, run);
-				var bytes = compiler.compileToBytecodeBytes(sample.source, context, null, false, path == 4);
+				var bytes = compiler.compileToBytecodeBytes(sample.source, context, key, sample.debugBytecode == true, path >= 4);
 				if (bytes != null) {
 					var runner = new Haxiom();
 					configure(runner, sample, run);
-					run.value = runner.executeBytecodeBytes(bytes, sample.source);
+					run.value = runner.executeBytecodeBytes(bytes, sample.source, key);
 				}
 			default:
 				throw 'Unknown regression path: $path';
@@ -129,6 +132,9 @@ class TestRegressionSamples {
 		}
 		if (error.file != sourceLabel(sample)) {
 			throw '${sample.name} failed via $path: expected source label ${sourceLabel(sample)}, got ${error.file}';
+		}
+		if (sample.expectedLine != null && error.line != sample.expectedLine) {
+			throw '${sample.name} failed via $path: expected line ${sample.expectedLine}, got ${error.line}';
 		}
 	}
 

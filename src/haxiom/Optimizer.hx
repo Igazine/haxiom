@@ -759,6 +759,39 @@ class Optimizer {
 	 * Only tracks reads — writes via EVar declarations are NOT counted here.
 	 * Call-site names, field objects, and loop variables are all counted as reads.
 	 */
+	function collectTypeUsage(type:TypeDecl, usages:Map<String, Int>):Void {
+		if (type == null)
+			return;
+		switch (type) {
+			case TPath(path, params):
+				if (path.length > 0) {
+					var name = path[path.length - 1];
+					usages.set(name, (usages.exists(name) ? usages.get(name) : 0) + 1);
+				}
+				for (param in params)
+					collectTypeUsage(param, usages);
+			case TFun(args, ret):
+				for (arg in args)
+					collectTypeUsage(arg, usages);
+				collectTypeUsage(ret, usages);
+			case TAnonymous(fields, extendsTypes):
+				for (field in fields)
+					collectTypeUsage(field.type, usages);
+				if (extendsTypes != null)
+					for (extendedType in extendsTypes)
+						collectTypeUsage(extendedType, usages);
+		}
+	}
+
+	function collectArgsAndParams(args:Array<FunctionArg>, params:Array<TypeParamDef>, usages:Map<String, Int>):Void {
+		if (args != null)
+			for (arg in args)
+				collectTypeUsage(arg.type, usages);
+		if (params != null)
+			for (param in params)
+				collectTypeUsage(param.constraint, usages);
+	}
+
 	function collectUsages(expr:Expr, usages:Map<String, Int>):Void {
 		if (expr == null)
 			return;
@@ -766,8 +799,9 @@ class Optimizer {
 			case EIdent(name):
 				usages.set(name, (usages.exists(name) ? usages.get(name) : 0) + 1);
 
-			case EVar(_, _, initExpr, _, _):
-				// The variable NAME is not a usage of itself — only recurse into init
+			case EVar(_, type, initExpr, _, _):
+				// The variable name is a binding, but its declared type is a runtime dependency.
+				collectTypeUsage(type, usages);
 				if (initExpr != null)
 					collectUsages(initExpr, usages);
 
@@ -798,12 +832,7 @@ class Optimizer {
 
 			case ENew(type, args):
 				// Mark the instantiated class name as used so it isn't eliminated as dead
-				switch (type) {
-					case TPath(path, _) if (path.length > 0):
-						var name = path[path.length - 1];
-						usages.set(name, (usages.exists(name) ? usages.get(name) : 0) + 1);
-					default:
-				}
+				collectTypeUsage(type, usages);
 				for (a in args)
 					collectUsages(a, usages);
 
@@ -844,6 +873,7 @@ class Optimizer {
 			case ETry(tryExpr, catches):
 				collectUsages(tryExpr, usages);
 				for (c in catches) {
+					collectTypeUsage(c.type, usages);
 					if (c.guard != null)
 						collectUsages(c.guard, usages);
 					collectUsages(c.body, usages);
@@ -863,43 +893,77 @@ class Optimizer {
 					collectUsages(v.value, usages);
 				}
 
-			case ECast(e, _):
+			case ECast(e, type):
+				collectTypeUsage(type, usages);
 				collectUsages(e, usages);
 
 			case EMeta(_, e):
 				collectUsages(e, usages);
 
-			case EFunction(_, _, _, body):
+			case EFunction(_, args, retType, body, params):
+				collectArgsAndParams(args, params, usages);
+				collectTypeUsage(retType, usages);
 				collectUsages(body, usages);
 
-			case EClass(_, fields, methods, parent, interfaces, _, _):
-				if (parent != null) {
-					switch (parent) {
-						case TPath(path, _) if (path.length > 0):
-							var name = path[path.length - 1];
-							usages.set(name, (usages.exists(name) ? usages.get(name) : 0) + 1);
-						default:
-					}
-				}
+			case EClass(_, fields, methods, parent, interfaces, params, _):
+				collectTypeUsage(parent, usages);
 				if (interfaces != null) {
-					for (itf in interfaces) {
-						switch (itf) {
-							case TPath(path, _) if (path.length > 0):
-								var name = path[path.length - 1];
-								usages.set(name, (usages.exists(name) ? usages.get(name) : 0) + 1);
-							default:
-						}
-					}
+					for (itf in interfaces)
+						collectTypeUsage(itf, usages);
 				}
-				for (f in fields)
+				collectArgsAndParams(null, params, usages);
+				for (f in fields) {
+					collectTypeUsage(f.type, usages);
 					if (f.expr != null)
 						collectUsages(f.expr, usages);
-				for (m in methods)
+				}
+				for (m in methods) {
+					collectArgsAndParams(m.args, m.params, usages);
+					collectTypeUsage(m.retType, usages);
 					if (m.body != null)
 						collectUsages(m.body, usages);
+				}
+
+			case EInterface(_, fields, methods, parents, params, _):
+				if (parents != null)
+					for (parent in parents)
+						collectTypeUsage(parent, usages);
+				collectArgsAndParams(null, params, usages);
+				for (field in fields)
+					collectTypeUsage(field.type, usages);
+				for (method in methods) {
+					collectArgsAndParams(method.args, method.params, usages);
+					collectTypeUsage(method.retType, usages);
+					if (method.body != null)
+						collectUsages(method.body, usages);
+				}
+
+			case EEnum(_, constructors, params):
+				collectArgsAndParams(null, params, usages);
+				for (constructor in constructors)
+					collectArgsAndParams(constructor.args, null, usages);
+
+			case EAbstract(_, underlyingType, fields, methods, params, _):
+				collectTypeUsage(underlyingType, usages);
+				collectArgsAndParams(null, params, usages);
+				for (field in fields) {
+					collectTypeUsage(field.type, usages);
+					if (field.expr != null)
+						collectUsages(field.expr, usages);
+				}
+				for (method in methods) {
+					collectArgsAndParams(method.args, method.params, usages);
+					collectTypeUsage(method.retType, usages);
+					if (method.body != null)
+						collectUsages(method.body, usages);
+				}
+
+			case ETypedef(_, type, params):
+				collectTypeUsage(type, usages);
+				collectArgsAndParams(null, params, usages);
 
 			default:
-				// EValue, EBreak, EContinue, EPackage, EImport, EEnum, EInterface, ETypedef — no sub-exprs
+				// EValue, EBreak, EContinue, EPackage, EImport, EUsing — no sub-exprs
 		}
 	}
 
