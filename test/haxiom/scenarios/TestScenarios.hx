@@ -23,6 +23,7 @@ class TestScenarios {
 			passed++;
 			trace('SUCCESS: ${scenario.name}');
 		}
+		ModuleRecoveryTests.runTests();
 
 		trace('ALL APPLICATION SCENARIOS PASSED ($passed scenarios).');
 	}
