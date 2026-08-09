@@ -9,9 +9,32 @@ class ScenarioCatalog {
 			workflow(),
 			inventory(),
 			dataPipeline(),
+			moduleLifecycle(),
 			resourcePipeline(),
 			vmStress()
 		];
+	}
+
+	static function moduleLifecycle():ScenarioDefinition {
+		return {
+			name: "module-lifecycle",
+			moduleName: "ModuleLifecycleScenario",
+			expected: "1250|3650|2",
+			configure: engine -> {
+				engine.moduleResolver = modulePath -> switch (modulePath) {
+					case "scenario.modules.pricing.PricingRules": requiredResource("haxiom.scenario.module.pricing");
+					default: null;
+				};
+			},
+			source: requiredResource("haxiom.scenario.module.orders")
+		};
+	}
+
+	static function requiredResource(name:String):String {
+		var source = haxe.Resource.getString(name);
+		if (source == null)
+			throw 'Missing bundled scenario resource: $name';
+		return source;
 	}
 
 	static function commerce():ScenarioDefinition {

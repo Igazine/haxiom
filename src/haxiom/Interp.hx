@@ -6670,18 +6670,26 @@ class Interp {
 				var ast = parser.parse();
 
 				var oldPkg = currentPackage;
+				var oldSuppression = suppressStaticFieldInitializers;
 				currentPackage = [];
+				suppressStaticFieldInitializers = false;
 
-				switch (ast.def) {
-					case EBlock(exprs):
-						for (expr in exprs) {
-							eval(expr, moduleScope);
-						}
-					default:
-						eval(ast, moduleScope);
+				try {
+					switch (ast.def) {
+						case EBlock(exprs):
+							for (expr in exprs) {
+								eval(expr, moduleScope);
+							}
+						default:
+							eval(ast, moduleScope);
+					}
+					currentPackage = oldPkg;
+					suppressStaticFieldInitializers = oldSuppression;
+				} catch (error:Dynamic) {
+					currentPackage = oldPkg;
+					suppressStaticFieldInitializers = oldSuppression;
+					throw error;
 				}
-
-				currentPackage = oldPkg;
 
 				importedModules.set(fqName, moduleScope);
 				return moduleScope;

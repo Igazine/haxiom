@@ -2,6 +2,8 @@
 --class-path test
 --main haxiom.scenarios.TestScenarios
 --debug
+--resource test/haxiom/scenarios/guest/modules/pricing/PricingRules.hx@haxiom.scenario.module.pricing
+--resource test/haxiom/scenarios/guest/modules/orders/ModuleLifecycleScenario.hx@haxiom.scenario.module.orders
 
 --each
 
