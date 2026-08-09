@@ -6,4 +6,6 @@ typedef RegressionSample = {
 	var source:String;
 	var expected:RegressionExpectation;
 	@:optional var staticTypes:Bool;
+	@:optional var debugBytecode:Bool;
+	@:optional var expectedLine:Int;
 }

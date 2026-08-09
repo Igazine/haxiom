@@ -338,6 +338,139 @@ class RegressionSamples {
 				'
 			},
 			{
+				name: "filtered-comprehension-parity",
+				moduleName: "FilteredComprehensionParity",
+				expected: Value("0,2,4,6,8"),
+				source: '
+					class FilteredComprehensionParity {
+						static public function main():String {
+							var values = [for (value in 0...10) if (value % 2 == 0) value];
+							return values.join(",");
+						}
+					}
+				'
+			},
+			{
+				name: "guarded-catch-parity",
+				moduleName: "GuardedCatchParity",
+				expected: Value("code:404"),
+				source: '
+					enum GuardedCatchFailure {
+						Code(value:Int);
+						Message(value:String);
+					}
+
+					class GuardedCatchParity {
+						static public function main():String {
+							try {
+								throw Code(404);
+							} catch (Code(value) if (value >= 400)) {
+								return "code:" + value;
+							} catch (Message(value)) {
+								return "message:" + value;
+							}
+							return "missed";
+						}
+					}
+				'
+			},
+			{
+				name: "abstract-underlying-parity",
+				moduleName: "AbstractUnderlyingParity",
+				expected: Value("42:50"),
+				source: '
+					abstract RegressionScore(Int) {
+						public function new(value:Int) {
+							this = value;
+						}
+
+						public function value():Int {
+							return this;
+						}
+						public var doubled(get, never):Int;
+						function get_doubled():Int {
+							return this * 2;
+						}
+
+						@:op(A + B)
+						public static function add(a:RegressionScore, b:RegressionScore):RegressionScore {
+							return new RegressionScore(a.value() + b.value());
+						}
+					}
+
+					class AbstractUnderlyingParity {
+						static public function main():String {
+							var left = new RegressionScore(21);
+							var total = left + new RegressionScore(29);
+							return left.doubled + ":" + total.value();
+						}
+					}
+				'
+			},
+			{
+				name: "safe-method-short-circuit",
+				moduleName: "SafeMethodShortCircuit",
+				expected: Value("null:0"),
+				source: '
+					class SafeCallTarget {
+						public function new() {}
+						public function consume(value:Int):Int return value;
+					}
+
+					class SafeMethodShortCircuit {
+						static var evaluations:Int = 0;
+
+						static function argument():Int {
+							evaluations++;
+							return 42;
+						}
+
+						static public function main():String {
+							var target:SafeCallTarget = null;
+							var result = target?.consume(argument());
+							return Std.string(result) + ":" + evaluations;
+						}
+					}
+				'
+			},
+			{
+				name: "method-specific-access-metadata",
+				moduleName: "MethodSpecificAccessMetadata",
+				expected: Value("42"),
+				source: '
+					class AccessMetadataTarget {
+						public function new() {}
+						function hidden():Int return 42;
+					}
+
+					class AccessMetadataReader {
+						public function new() {}
+
+						@:access(AccessMetadataTarget.hidden)
+						public function read(target:AccessMetadataTarget):Int return target.hidden();
+					}
+
+					class MethodSpecificAccessMetadata {
+						static public function main():Int {
+							return new AccessMetadataReader().read(new AccessMetadataTarget());
+						}
+					}
+				'
+			},
+			{
+				name: "persisted-error-position",
+				moduleName: "PersistedErrorPosition",
+				expected: RuntimeFailure("persisted-position-failure"),
+				debugBytecode: true,
+				expectedLine: 4,
+				source: 'class PersistedErrorPosition {
+					static public function main():Void {
+						var marker = 42;
+						throw "persisted-position-failure";
+					}
+				}'
+			},
+			{
 				name: "parser-error",
 				moduleName: "ParserError",
 				expected: CompileFailure("Unexpected"),
