@@ -4,4 +4,12 @@
 --debug
 --resource test/haxiom/scenarios/guest/modules/pricing/PricingRules.hx@haxiom.scenario.module.pricing
 --resource test/haxiom/scenarios/guest/modules/orders/ModuleLifecycleScenario.hx@haxiom.scenario.module.orders
+--resource test/haxiom/scenarios/guest/modules/recovery/RecoveryScenario.hx@haxiom.scenario.recovery.entry
+--resource test/haxiom/scenarios/guest/modules/recovery/RecoveryDependencyBroken.hx@haxiom.scenario.recovery.dependency.broken
+--resource test/haxiom/scenarios/guest/modules/recovery/RecoveryDependencyFixed.hx@haxiom.scenario.recovery.dependency.fixed
+--resource test/haxiom/scenarios/guest/modules/recovery/RecoveryLeaf.hx@haxiom.scenario.recovery.leaf
+--resource test/haxiom/scenarios/guest/modules/cycle/CycleScenario.hx@haxiom.scenario.cycle.entry
+--resource test/haxiom/scenarios/guest/modules/cycle/CycleA.hx@haxiom.scenario.cycle.a
+--resource test/haxiom/scenarios/guest/modules/cycle/CycleAFixed.hx@haxiom.scenario.cycle.a.fixed
+--resource test/haxiom/scenarios/guest/modules/cycle/CycleB.hx@haxiom.scenario.cycle.b
 --interp

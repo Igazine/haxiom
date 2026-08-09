@@ -402,6 +402,7 @@ class Interp {
 	private var moduleResolver:String->String = null;
 	private var importWhitelist:Array<String> = createDefaultWhitelist();
 	private var importedModules:Map<String, Scope> = new Map();
+	private var moduleLoadStack:Array<String> = [];
 	private var functionSignatures:FunctionSignatures = new FunctionSignatures();
 	private var vmGuestCallables:Array<{func:Dynamic, callable:haxiom.VM.VMGuestCallable}> = [];
 	private var vmBoundMethods:haxe.ds.ObjectMap<Dynamic, Array<{method:Dynamic, func:Dynamic}>> = new haxe.ds.ObjectMap();
@@ -522,6 +523,7 @@ class Interp {
 		instructionsCount = 0;
 		memoryUsage = 0;
 		callStack = [];
+		moduleLoadStack = [];
 	}
 
 	private function dispose():Void {
@@ -537,6 +539,7 @@ class Interp {
 		state = DISPOSED;
 		globals = new Scope(null, this); // Clear root scope and references
 		importedModules.clear();
+		moduleLoadStack = [];
 		externClasses.clear();
 		haltedNamespaces.clear();
 		lastActiveLocals = null;
@@ -6661,20 +6664,28 @@ class Interp {
 			return importedModules.get(fqName);
 		}
 		if (moduleResolver != null) {
-			var src = moduleResolver(fqName);
-			if (src != null) {
-				var moduleScope = new Scope(globals);
-				var lexer = new Lexer(src, fqName, preprocessorFlags);
-				var tokens = lexer.tokenize();
-				var parser = new Parser(tokens);
-				var ast = parser.parse();
+			var cycleStart = moduleLoadStack.indexOf(fqName);
+			if (cycleStart != -1) {
+				var cycle = moduleLoadStack.slice(cycleStart);
+				cycle.push(fqName);
+				throw 'Cyclic module import: ${cycle.join(" -> ")}';
+			}
 
-				var oldPkg = currentPackage;
-				var oldSuppression = suppressStaticFieldInitializers;
-				currentPackage = [];
-				suppressStaticFieldInitializers = false;
+			var oldPkg = currentPackage;
+			var oldSuppression = suppressStaticFieldInitializers;
+			moduleLoadStack.push(fqName);
+			try {
+				var src = moduleResolver(fqName);
+				if (src != null) {
+					var moduleScope = new Scope(globals);
+					var lexer = new Lexer(src, fqName, preprocessorFlags);
+					var tokens = lexer.tokenize();
+					var parser = new Parser(tokens);
+					var ast = parser.parse();
 
-				try {
+					currentPackage = [];
+					suppressStaticFieldInitializers = false;
+
 					switch (ast.def) {
 						case EBlock(exprs):
 							for (expr in exprs) {
@@ -6683,16 +6694,21 @@ class Interp {
 						default:
 							eval(ast, moduleScope);
 					}
-					currentPackage = oldPkg;
-					suppressStaticFieldInitializers = oldSuppression;
-				} catch (error:Dynamic) {
-					currentPackage = oldPkg;
-					suppressStaticFieldInitializers = oldSuppression;
-					throw error;
-				}
 
-				importedModules.set(fqName, moduleScope);
-				return moduleScope;
+					importedModules.set(fqName, moduleScope);
+					currentPackage = oldPkg;
+					suppressStaticFieldInitializers = oldSuppression;
+					moduleLoadStack.pop();
+					return moduleScope;
+				}
+				currentPackage = oldPkg;
+				suppressStaticFieldInitializers = oldSuppression;
+				moduleLoadStack.pop();
+			} catch (error:Dynamic) {
+				currentPackage = oldPkg;
+				suppressStaticFieldInitializers = oldSuppression;
+				moduleLoadStack.pop();
+				throw error;
 			}
 		}
 		return null;
