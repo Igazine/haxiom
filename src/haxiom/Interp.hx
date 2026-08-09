@@ -765,6 +765,8 @@ class Interp {
 	private var instructionsCount:Int = 0;
 	private var maxMemory:Int = 0;
 	private var memoryUsage:Int = 0;
+	private var maxPersistedBytes:Int = 64 * 1024 * 1024;
+	private var maxPersistedDepth:Int = 512;
 
 	private var enablePooling:Bool = true;
 	private var scopePool:Array<Scope> = [];
@@ -1425,6 +1427,13 @@ class Interp {
 		}
 	}
 
+	inline function fixedArityCallable(methodName:String, minArgs:Int, maxArgs:Int, fn:Array<Dynamic>->Dynamic):Dynamic {
+		return Reflect.makeVarArgs(function(args:Array<Dynamic>) {
+			checkArgCount(args, minArgs, maxArgs, methodName);
+			return fn(args);
+		});
+	}
+
 	private var fieldAccessFilter:Null<(target:Dynamic, field:String) -> Bool> = null;
 
 	private function evalField(obj:Dynamic, field:String, scope:Scope, pos:Pos):Dynamic {
@@ -1477,10 +1486,10 @@ class Interp {
 				return str.length;
 			switch (field) {
 				case "split":
-					return (delim:Dynamic) -> {
-						checkString(delim, "String.split", "delimiter");
-						return str.split(delim);
-					};
+					return fixedArityCallable("String.split", 1, 1, args -> {
+						checkString(args[0], "String.split", "delimiter");
+						return str.split(args[0]);
+					});
 				case "indexOf":
 					return (sub:Dynamic, ?start:Dynamic) -> {
 						checkString(sub, "String.indexOf", "substring");
@@ -1898,10 +1907,10 @@ class Interp {
 				return Math.POSITIVE_INFINITY;
 			switch (field) {
 				case "abs":
-					return (x:Dynamic) -> {
-						checkNum(x, "Math.abs");
-						return Math.abs(x);
-					};
+					return fixedArityCallable("Math.abs", 1, 1, args -> {
+						checkNum(args[0], "Math.abs");
+						return Math.abs(args[0]);
+					});
 				case "sin":
 					return (x:Dynamic) -> {
 						checkNum(x, "Math.sin");
@@ -1952,11 +1961,11 @@ class Interp {
 				case "random":
 					return () -> Math.random();
 				case "min":
-					return (a:Dynamic, b:Dynamic) -> {
-						checkNum(a, "Math.min", "a");
-						checkNum(b, "Math.min", "b");
-						return Math.min(a, b);
-					};
+					return fixedArityCallable("Math.min", 2, 2, args -> {
+						checkNum(args[0], "Math.min", "a");
+						checkNum(args[1], "Math.min", "b");
+						return Math.min(args[0], args[1]);
+					});
 				case "max":
 					return (a:Dynamic, b:Dynamic) -> {
 						checkNum(a, "Math.max", "a");

@@ -14,8 +14,8 @@ class Serializer {
 		return PortableASTSerializer.serializeToBytes(expr);
 	}
 
-	static function deserializeFromBytes(bytes:Bytes):Expr {
-		return PortableASTSerializer.deserializeFromBytes(bytes);
+	static function deserializeFromBytes(bytes:Bytes, ?maxBytes:Int = 64 * 1024 * 1024, ?maxDepth:Int = 512):Expr {
+		return PortableASTSerializer.deserializeFromBytes(bytes, maxBytes, maxDepth);
 	}
 
 	static function crypt(data:Bytes, key:HXBCKey):Bytes {
@@ -51,9 +51,24 @@ class Serializer {
 			return b;
 		} else if (b == 240) {
 			return input.readUInt16();
-		} else {
+		} else if (b == 241) {
 			return input.readInt32();
 		}
+		throw 'Invalid bytecode: unsupported variable integer marker $b';
+	}
+
+	static function readBoundedLength(input:BytesInput, label:String, maxValue:Int):Int {
+		var value = readVarInt(input);
+		if (value < 0)
+			throw 'Invalid bytecode: negative $label ($value)';
+		if (maxValue > 0 && value > maxValue)
+			throw 'Invalid bytecode: $label exceeds limit ($value > $maxValue)';
+		return value;
+	}
+
+	static function requireRemaining(input:BytesInput, count:Int, label:String):Void {
+		if (count < 0 || count > input.length - input.position)
+			throw 'Invalid bytecode: truncated $label';
 	}
 
 	static function bytesEqual(a:Bytes, b:Bytes):Bool {
@@ -287,7 +302,13 @@ class Serializer {
 		return headerOut.getBytes();
 	}
 
-	static function deserializeBytecode(bytes:Bytes, ?key:HXBCKey):BytecodeChunk {
+	static function deserializeBytecode(bytes:Bytes, ?key:HXBCKey, ?maxDecodedBytes:Int = 64 * 1024 * 1024):BytecodeChunk {
+		if (bytes == null) {
+			throw "Invalid bytecode: data is null";
+		}
+		if (maxDecodedBytes > 0 && bytes.length > maxDecodedBytes) {
+			throw 'Invalid bytecode: encoded payload exceeds limit (${bytes.length} > $maxDecodedBytes bytes)';
+		}
 		var input = new BytesInput(bytes);
 		input.bigEndian = false;
 		if (input.length < 18) {
@@ -305,12 +326,27 @@ class Serializer {
 		}
 
 		var flags = input.readByte();
+		if ((flags & ~7) != 0) {
+			throw 'Invalid bytecode flags: 0x${StringTools.hex(flags, 2)}';
+		}
 		var isAsync = (flags & 1) == 1;
 		var isEncrypted = (flags & 2) == 2;
 		var isCompressed = (flags & 4) == 4;
 		var maxSlots = input.readInt32();
 		var uncompressedSize = input.readInt32();
 		var checksum = input.readInt32();
+		if (maxSlots < 0) {
+			throw 'Invalid bytecode: negative maxSlots ($maxSlots)';
+		}
+		if (maxDecodedBytes > 0 && maxSlots > maxDecodedBytes) {
+			throw 'Invalid bytecode: maxSlots exceeds limit ($maxSlots > $maxDecodedBytes)';
+		}
+		if (uncompressedSize < 0) {
+			throw 'Invalid bytecode: negative uncompressed payload size ($uncompressedSize)';
+		}
+		if (maxDecodedBytes > 0 && uncompressedSize > maxDecodedBytes) {
+			throw 'Invalid bytecode: decoded payload exceeds limit ($uncompressedSize > $maxDecodedBytes bytes)';
+		}
 
 		if (isEncrypted && (key == null || !key.isValid())) {
 			throw "Bytecode is encrypted and requires a key to load";
@@ -324,7 +360,9 @@ class Serializer {
 
 		// Decompress if compressed
 		if (isCompressed) {
-			payloadBytes = LZ4.decompress(payloadBytes);
+			payloadBytes = LZ4.decompress(payloadBytes, uncompressedSize, maxDecodedBytes);
+		} else if (payloadBytes.length != uncompressedSize) {
+			throw 'Invalid bytecode: payload length mismatch (header $uncompressedSize, actual ${payloadBytes.length})';
 		}
 
 		// Decrypt if encrypted
@@ -346,23 +384,32 @@ class Serializer {
 		payloadInput.bigEndian = false;
 
 		// 1. Read string pool
-		var stringPoolLength = readVarInt(payloadInput);
+		var stringPoolLength = readBoundedLength(payloadInput, "string pool count", maxDecodedBytes);
+		if (stringPoolLength > payloadInput.length - payloadInput.position)
+			throw "Invalid bytecode: string pool count exceeds remaining payload";
 		var stringPool = [
 			for (i in 0...stringPoolLength) {
-				var len = readVarInt(payloadInput);
+				var len = readBoundedLength(payloadInput, "string length", maxDecodedBytes);
+				requireRemaining(payloadInput, len, "string pool entry");
 				payloadInput.readString(len);
 			}
 		];
 
 		// 2. Read instructions
-		var instsLength = readVarInt(payloadInput);
+		var instsLength = readBoundedLength(payloadInput, "instruction count", maxDecodedBytes);
+		if (instsLength > payloadInput.length - payloadInput.position)
+			throw "Invalid bytecode: instruction count exceeds remaining payload";
 		var instructions = [for (i in 0...instsLength) readVarInt(payloadInput)];
 
 		// 3. Read positions (RLE)
-		var rleLength = readVarInt(payloadInput);
+		var rleLength = readBoundedLength(payloadInput, "position run count", maxDecodedBytes);
+		if (rleLength > payloadInput.length - payloadInput.position)
+			throw "Invalid bytecode: position run count exceeds remaining payload";
 		var positions = [];
 		for (i in 0...rleLength) {
-			var count = readVarInt(payloadInput);
+			var count = readBoundedLength(payloadInput, "position run length", maxDecodedBytes);
+			if (maxDecodedBytes > 0 && positions.length > maxDecodedBytes - count)
+				throw "Invalid bytecode: expanded position table exceeds limit";
 			var line = readVarInt(payloadInput);
 			var col = readVarInt(payloadInput);
 			var fileIdx = readVarInt(payloadInput) - 1;
@@ -374,9 +421,15 @@ class Serializer {
 		}
 
 		// 4. Read constants
-		var constsLen = readVarInt(payloadInput);
+		var constsLen = readBoundedLength(payloadInput, "constant payload length", maxDecodedBytes);
+		requireRemaining(payloadInput, constsLen, "constant payload");
 		var constsStr = payloadInput.readString(constsLen);
-		var constants:Array<Dynamic> = haxe.Unserializer.run(constsStr);
+		var constantsValue:Dynamic = haxe.Unserializer.run(constsStr);
+		if (!Std.isOfType(constantsValue, Array))
+			throw "Invalid bytecode: constant payload is not an array";
+		var constants:Array<Dynamic> = cast constantsValue;
+		if (maxDecodedBytes > 0 && constants.length > maxDecodedBytes)
+			throw "Invalid bytecode: constant count exceeds limit";
 		for (i in 0...constants.length) {
 			var c = constants[i];
 			#if haxiom_debug
@@ -392,7 +445,9 @@ class Serializer {
 		}
 
 		// 5. Read debug symbols
-		var debugSymLength = readVarInt(payloadInput);
+		var debugSymLength = readBoundedLength(payloadInput, "debug symbol count", maxDecodedBytes);
+		if (debugSymLength > payloadInput.length - payloadInput.position)
+			throw "Invalid bytecode: debug symbol count exceeds remaining payload";
 		var debugSymbols:Array<DebugSymbol> = null;
 		if (debugSymLength > 0) {
 			debugSymbols = [
@@ -416,13 +471,20 @@ class Serializer {
 		// 6. Read embedded resources
 		var resources:Map<String, Bytes> = null;
 		if (payloadInput.position < payloadInput.length) {
-			var resCount = readVarInt(payloadInput);
+			var resCount = readBoundedLength(payloadInput, "resource count", maxDecodedBytes);
+			if (resCount > payloadInput.length - payloadInput.position)
+				throw "Invalid bytecode: resource count exceeds remaining payload";
 			if (resCount > 0) {
 				resources = new Map<String, Bytes>();
 				for (i in 0...resCount) {
 					var keyIdx = readVarInt(payloadInput);
-					var resKey = (keyIdx >= 0 && keyIdx < stringPool.length) ? stringPool[keyIdx] : "";
-					var resLen = readVarInt(payloadInput);
+					if (keyIdx < 0 || keyIdx >= stringPool.length)
+						throw 'Invalid bytecode: resource key index $keyIdx out of bounds';
+					var resKey = stringPool[keyIdx];
+					if (resources.exists(resKey))
+						throw 'Invalid bytecode: duplicate resource key "$resKey"';
+					var resLen = readBoundedLength(payloadInput, "resource length", maxDecodedBytes);
+					requireRemaining(payloadInput, resLen, "resource payload");
 					var resBytes = payloadInput.read(resLen);
 					resources.set(resKey, resBytes);
 				}

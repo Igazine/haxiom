@@ -282,6 +282,36 @@ class Haxiom {
 		return interp.maxMemory = v;
 
 	/**
+	 * Maximum encoded or decoded size accepted by persisted AST and HXBC loaders.
+	 * Defaults to 64 MiB. Set to `0` to disable the size limit.
+	 */
+	public var maxPersistedBytes(get, set):Int;
+
+	inline function get_maxPersistedBytes()
+		return interp.maxPersistedBytes;
+
+	inline function set_maxPersistedBytes(v)
+		return interp.maxPersistedBytes = requireNonNegativeLimit(v, "maxPersistedBytes");
+
+	/**
+	 * Maximum JSON nesting accepted by the portable AST loader.
+	 * Defaults to 512. Set to `0` to disable the depth limit.
+	 */
+	public var maxPersistedDepth(get, set):Int;
+
+	inline function get_maxPersistedDepth()
+		return interp.maxPersistedDepth;
+
+	inline function set_maxPersistedDepth(v)
+		return interp.maxPersistedDepth = requireNonNegativeLimit(v, "maxPersistedDepth");
+
+	inline function requireNonNegativeLimit(value:Int, name:String):Int {
+		if (value < 0)
+			throw '$name cannot be negative';
+		return value;
+	}
+
+	/**
 	 * Identifies the active script caller (file, className, methodName, line, column)
 	 * during an active FFI host function call. Returns `null` if the call originated natively from host code
 	 * or if the engine is idle.
@@ -466,12 +496,12 @@ class Haxiom {
 	 * @param source The script source code string.
 	 * @param context Optional logical identity and compilation settings for this script.
 	 * @param key Optional encryption key to obfuscate/secure the bytecode payload (VM mode only).
-	 * @param debugMode If true, embeds variable symbol lifespan tables and positions (VM mode only).
+	 * @param debugMode Whether to embed variable symbols and positions in VM mode. Defaults to the engine's debug mode.
 	 * @return The serialized binary bytes representing the compiled output.
 	 */
-	public function compileToBytes(source:String, ?context:ScriptContext, ?key:HXBCKey, ?debugMode:Bool = false):haxe.io.Bytes {
+	public function compileToBytes(source:String, ?context:ScriptContext, ?key:HXBCKey, ?debugMode:Null<Bool>):haxe.io.Bytes {
 		if (useVM) {
-			return compileToBytecodeBytes(source, context, key, debugMode);
+			return compileToBytecodeBytes(source, context, key, debugMode != null ? debugMode : interp.debugMode);
 		}
 		return compileToASTBytes(source, context);
 	}
@@ -727,7 +757,7 @@ class Haxiom {
 		if (sourceCode != null) {
 			interp.lastSource = sourceCode;
 		}
-		var ast = Serializer.deserializeFromBytes(bytes);
+		var ast = Serializer.deserializeFromBytes(bytes, interp.maxPersistedBytes, interp.maxPersistedDepth);
 		var oldUseVM = interp.useVM;
 		interp.useVM = false;
 		try {
@@ -752,7 +782,7 @@ class Haxiom {
 		if (sourceCode != null) {
 			interp.lastSource = sourceCode;
 		}
-		var chunk = Serializer.deserializeBytecode(bytes, key);
+		var chunk = Serializer.deserializeBytecode(bytes, key, interp.maxPersistedBytes);
 		return cast interp.executeChunk(chunk);
 	}
 
@@ -765,7 +795,7 @@ class Haxiom {
 	 * @param key Optional decryption key if bytecode payload is encrypted.
 	 * @return Strongly-typed HXBCInfo structure containing metadata and analysis.
 	 */
-	public static function inspectBytecode(bytes:haxe.io.Bytes, ?key:HXBCKey):HXBCInfo {
+	public static function inspectBytecode(bytes:haxe.io.Bytes, ?key:HXBCKey, ?maxPersistedBytes:Int = 64 * 1024 * 1024):HXBCInfo {
 		if (bytes == null || bytes.length < 18) {
 			return {
 				fileSize: bytes != null ? bytes.length : 0,
@@ -834,7 +864,7 @@ class Haxiom {
 		}
 
 		try {
-			var chunk = Serializer.deserializeBytecode(bytes, key);
+			var chunk = Serializer.deserializeBytecode(bytes, key, maxPersistedBytes);
 			info.instructionCount = chunk.instructions != null ? chunk.instructions.length : 0;
 			info.constantPoolSize = chunk.constants != null ? chunk.constants.length : 0;
 			info.debugSymbolCount = chunk.debugSymbols != null ? chunk.debugSymbols.length : 0;
@@ -957,7 +987,7 @@ class Haxiom {
 	 * Instance helper to inspect compiled HXBC bytecode bytes before execution.
 	 */
 	public inline function inspect(bytes:haxe.io.Bytes, ?key:HXBCKey):HXBCInfo {
-		return inspectBytecode(bytes, key);
+		return inspectBytecode(bytes, key, interp.maxPersistedBytes);
 	}
 
 	/**

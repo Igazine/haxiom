@@ -58,13 +58,13 @@ class InternalTests {
 		}
 		trace("SUCCESS: Peephole optimization (JUMP to next IP) verified.");
 
-		// Test 4: Jump remapping to next IP (Pass 2 optimization)
+		// Test 4: A jump target inside a peephole pair must preserve the pair.
 		var chunk4 = new VM.BytecodeChunk([29, 4, 2, 0, 42], [], [], 1);
 		BytecodeCompiler.optimizeChunk(chunk4);
-		if (chunk4.instructions.length != 2 || chunk4.instructions[0] != 42 || chunk4.instructions[1] != 0) {
-			throw "Peephole optimization failed: Pass 2 remapped jump was not optimized to [42, 0] (got: " + chunk4.instructions + ")";
+		if (chunk4.instructions.join(",") != "29,4,2,0,42") {
+			throw "Peephole optimization crossed a control-flow boundary (got: " + chunk4.instructions + ")";
 		}
-		trace("SUCCESS: Peephole optimization (Pass 2 remapped JUMP) verified.");
+		trace("SUCCESS: Peephole optimization control-flow boundary verified.");
 	}
 
 	static function runBytecodeSerializationTests(bcLoaderEngine:Haxiom) {
