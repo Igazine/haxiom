@@ -12,4 +12,13 @@
 --resource test/haxiom/scenarios/guest/modules/cycle/CycleA.hx@haxiom.scenario.cycle.a
 --resource test/haxiom/scenarios/guest/modules/cycle/CycleAFixed.hx@haxiom.scenario.cycle.a.fixed
 --resource test/haxiom/scenarios/guest/modules/cycle/CycleB.hx@haxiom.scenario.cycle.b
+--resource test/haxiom/scenarios/guest/initializers/StaticInitializerScenario.hx@haxiom.scenario.initializer.valid
+--resource test/haxiom/scenarios/guest/initializers/InvalidStaticThis.hx@haxiom.scenario.initializer.invalid.this
+--resource test/haxiom/scenarios/guest/initializers/InvalidStaticField.hx@haxiom.scenario.initializer.invalid.field
+--resource test/haxiom/scenarios/guest/initializers/InvalidStaticMethod.hx@haxiom.scenario.initializer.invalid.method
+--resource test/haxiom/scenarios/guest/initializers/InvalidStaticAwait.hx@haxiom.scenario.initializer.invalid.await
+--resource test/haxiom/scenarios/guest/initializers/StaticInitializerImportSandbox.hx@haxiom.scenario.initializer.sandbox.import
+--resource test/haxiom/scenarios/guest/initializers/StaticInitializerFieldSandbox.hx@haxiom.scenario.initializer.sandbox.field
+--resource test/haxiom/scenarios/guest/initializers/StaticInitializerMacroSandbox.hx@haxiom.scenario.initializer.sandbox.macro
+--resource test/haxiom/scenarios/guest/initializers/StaticInitializerInstructionLimit.hx@haxiom.scenario.initializer.limit.instructions
 --interp

@@ -1106,6 +1106,7 @@ class Interp {
 	}
 
 	private function prepareVMClassDeclaration(expr:Expr, scope:Scope):VMClassDeclaration {
+		StaticInitializerValidator.validate(expr);
 		var previousSuppression = suppressStaticFieldInitializers;
 		suppressStaticFieldInitializers = true;
 		var cls:HaxiomClass;
@@ -1141,6 +1142,7 @@ class Interp {
 	}
 
 	private function prepareVMAbstractDeclaration(expr:Expr, scope:Scope):VMAbstractDeclaration {
+		StaticInitializerValidator.validate(expr);
 		var previousSuppression = suppressStaticFieldInitializers;
 		suppressStaticFieldInitializers = true;
 		var abstractType:HaxiomAbstract;
@@ -3572,9 +3574,6 @@ class Interp {
 						bytecodeChunk: Reflect.field(f, "bytecodeChunk"),
 						meta: evaluateMetadata(f.meta, scope)
 					});
-					if (f.isStatic && fieldExpr != null && !suppressStaticFieldInitializers) {
-						cls.staticFields.set(f.name, eval(fieldExpr, scope));
-					}
 				}
 				for (m in methods) {
 					var mDyn:Dynamic = m;
@@ -3817,12 +3816,44 @@ class Interp {
 					}
 				}
 
+				var scopeHadClass = scope.variables.exists(name);
+				var previousScopeClass = scope.variables.get(name);
+				var globalsHadClass = globals.variables.exists(name);
+				var previousGlobalsClass = globals.variables.get(name);
+				var fqContainer = currentPackage.length > 0 ? getRegistrationContainer(fqName, globals) : null;
+				var fqField = currentPackage.length > 0 ? fqName.substring(fqName.lastIndexOf(".") + 1) : null;
+				var fqHadClass = fqContainer != null && Reflect.hasField(fqContainer, fqField);
+				var previousFqClass = fqHadClass ? Reflect.field(fqContainer, fqField) : null;
+
 				scope.declare(name, cls);
-				if (globals != scope) {
+				if (globals != scope)
 					globals.declare(name, cls);
-				}
-				if (currentPackage.length > 0) {
+				if (currentPackage.length > 0)
 					registerFullyQualified(fqName, cls, globals);
+
+				if (!suppressStaticFieldInitializers) {
+					var oldThis = currentThis;
+					currentThis = cls;
+					try {
+						for (f in fields) {
+							var field = cls.fields.get(f.name);
+							if (field.isStatic && field.expr != null) {
+								currentThis = cls;
+								var value = eval(field.expr, scope);
+								if (field.type != null)
+									value = castOrCheckType(value, field.type, scope);
+								cls.staticFields.set(field.name, value);
+							}
+						}
+						currentThis = oldThis;
+					} catch (error:Dynamic) {
+						currentThis = oldThis;
+						restoreScopeBinding(scope, name, scopeHadClass, previousScopeClass);
+						if (globals != scope)
+							restoreScopeBinding(globals, name, globalsHadClass, previousGlobalsClass);
+						restoreQualifiedBinding(fqName, fqHadClass, previousFqClass, globals);
+						throw error;
+					}
 				}
 				return cls;
 
@@ -3885,9 +3916,6 @@ class Interp {
 						bytecodeChunk: Reflect.field(f, "bytecodeChunk"),
 						meta: evaluateMetadata(f.meta, scope)
 					});
-					if (f.isStatic && f.expr != null && !suppressStaticFieldInitializers) {
-						abs.staticFields.set(f.name, eval(f.expr, scope));
-					}
 				}
 				for (m in methods) {
 					var mDyn:Dynamic = m;
@@ -3902,12 +3930,45 @@ class Interp {
 						meta: evaluateMetadata(m.meta, scope)
 					});
 				}
+				var scopeHadAbstract = scope.variables.exists(name);
+				var previousScopeAbstract = scope.variables.get(name);
+				var globalsHadAbstract = globals.variables.exists(name);
+				var previousGlobalsAbstract = globals.variables.get(name);
+				var fqContainer = currentPackage.length > 0 ? getRegistrationContainer(fqName, globals) : null;
+				var fqField = currentPackage.length > 0 ? fqName.substring(fqName.lastIndexOf(".") + 1) : null;
+				var fqHadAbstract = fqContainer != null && Reflect.hasField(fqContainer, fqField);
+				var previousFqAbstract = fqHadAbstract ? Reflect.field(fqContainer, fqField) : null;
+
 				scope.declare(name, abs);
-				if (globals != scope) {
+				if (globals != scope)
 					globals.declare(name, abs);
-				}
-				if (currentPackage.length > 0) {
+				if (currentPackage.length > 0)
 					registerFullyQualified(fqName, abs, globals);
+
+				if (!suppressStaticFieldInitializers) {
+					var oldThis = currentThis;
+					var abstractContext = new HaxiomAbstractInstance(abs, null);
+					currentThis = abstractContext;
+					try {
+						for (f in fields) {
+							var field = abs.fields.get(f.name);
+							if (field.isStatic && field.expr != null) {
+								currentThis = abstractContext;
+								var value = eval(field.expr, scope);
+								if (field.type != null)
+									value = castOrCheckType(value, field.type, scope);
+								abs.staticFields.set(field.name, value);
+							}
+						}
+						currentThis = oldThis;
+					} catch (error:Dynamic) {
+						currentThis = oldThis;
+						restoreScopeBinding(scope, name, scopeHadAbstract, previousScopeAbstract);
+						if (globals != scope)
+							restoreScopeBinding(globals, name, globalsHadAbstract, previousGlobalsAbstract);
+						restoreQualifiedBinding(fqName, fqHadAbstract, previousFqAbstract, globals);
+						throw error;
+					}
 				}
 				return abs;
 
@@ -6192,6 +6253,39 @@ class Interp {
 		Reflect.setField(current, parts[parts.length - 1], value);
 	}
 
+	private function getRegistrationContainer(fullName:String, scope:Scope):Dynamic {
+		var parts = fullName.split(".");
+		if (parts.length < 2 || !scope.exists(parts[0]))
+			return null;
+		var current:Dynamic = scope.get(parts[0]);
+		for (i in 1...parts.length - 1) {
+			if (current == null || !Reflect.hasField(current, parts[i]))
+				return null;
+			current = Reflect.field(current, parts[i]);
+		}
+		return current;
+	}
+
+	private function restoreScopeBinding(scope:Scope, name:String, existed:Bool, value:Dynamic):Void {
+		if (existed)
+			scope.variables.set(name, value);
+		else
+			scope.variables.remove(name);
+	}
+
+	private function restoreQualifiedBinding(fullName:String, existed:Bool, value:Dynamic, scope:Scope):Void {
+		if (fullName.indexOf(".") == -1)
+			return;
+		var container = getRegistrationContainer(fullName, scope);
+		if (container == null)
+			return;
+		var field = fullName.substring(fullName.lastIndexOf(".") + 1);
+		if (existed)
+			Reflect.setField(container, field, value);
+		else
+			Reflect.deleteField(container, field);
+	}
+
 	function isAutoWhitelisted(fqName:String):Bool {
 		if (autoWhitelistedTypesMap == null) {
 			autoWhitelistedTypesMap = new Map();
@@ -6682,6 +6776,7 @@ class Interp {
 					var tokens = lexer.tokenize();
 					var parser = new Parser(tokens);
 					var ast = parser.parse();
+					StaticInitializerValidator.validate(ast);
 
 					currentPackage = [];
 					suppressStaticFieldInitializers = false;

@@ -24,6 +24,7 @@ class TestScenarios {
 			trace('SUCCESS: ${scenario.name}');
 		}
 		ModuleRecoveryTests.runTests();
+		StaticInitializerTests.runTests();
 
 		trace('ALL APPLICATION SCENARIOS PASSED ($passed scenarios).');
 	}
