@@ -834,6 +834,27 @@ class VM {
 								#if haxiom_debug
 								trace('OP_GET_VAR: ' + name + ' = ' + Std.string(val));
 								#end
+								var resolved = frame.scope.exists(name);
+								if (!resolved && interp.currentThis != null) {
+									if (Std.isOfType(interp.currentThis, HaxiomInstance)) {
+										var instance:HaxiomInstance = cast interp.currentThis;
+										resolved = interp.findFieldDef(instance.cls, name) != null
+											|| interp.findMethod(instance.cls, name) != null
+											|| interp.findStaticFieldOwner(instance.cls, name) != null
+											|| interp.findStaticMethod(instance.cls, name) != null;
+									} else if (Std.isOfType(interp.currentThis, HaxiomClass)) {
+										var cls:HaxiomClass = cast interp.currentThis;
+										var fieldDef = interp.findFieldDef(cls, name);
+										resolved = (fieldDef != null && fieldDef.isStatic) || interp.findStaticMethod(cls, name) != null;
+									} else if (Std.isOfType(interp.currentThis, HaxiomAbstractInstance)) {
+										var abstractType = (cast interp.currentThis : HaxiomAbstractInstance).abstractType;
+										resolved = abstractType.fields.exists(name) || abstractType.methods.exists(name);
+									}
+								}
+								if (!resolved) {
+									var identifierPos = currentPos();
+									throw 'Identifier "$name" not found at ${identifierPos.line}:${identifierPos.col}';
+								}
 								stack.push(val);
 							}
 
@@ -2189,6 +2210,9 @@ class VM {
 							stack.push(new EReg(pattern, flags));
 
 						case OP_AWAIT:
+							if (!frame.chunk.isAsync) {
+								throw "HaxiomHost.await is only allowed inside async functions (annotated with @:haxiom.async)";
+							}
 							var promise = stack.pop();
 							if (isPromiseLike(promise)) {
 								if (fiber == null) {

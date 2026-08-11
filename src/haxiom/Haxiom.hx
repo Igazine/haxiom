@@ -395,12 +395,14 @@ class Haxiom {
 			var parser = new Parser(tokens, fileInfo);
 			var ast = parser.parse();
 			ast = appendMainCallIfPresent(ast, scriptName);
+			haxiom.StaticInitializerValidator.validate(ast);
 
 			// Pass 1: Scan and register macro definitions in interpreter scope
 			haxiom.MacroExpander.registerMacros(ast, interp);
 
 			// Pass 2: Crawl AST and expand macro static calls
 			ast = haxiom.MacroExpander.expand(ast, interp);
+			haxiom.StaticInitializerValidator.validate(ast);
 
 			var folded = Optimizer.foldConstants(ast);
 
@@ -458,6 +460,7 @@ class Haxiom {
 	 * @return The computed return value from script execution.
 	 */
 	public function execute<T>(ast:haxiom.AST.Expr, ?context:ScriptContext):T {
+		haxiom.StaticInitializerValidator.validate(ast);
 		var packageName = context != null ? context.packageName : null;
 		if (packageName != null) {
 			if (!isValidNamespace(packageName)) {
@@ -742,6 +745,7 @@ class Haxiom {
 			?compress:Bool = false):haxe.io.Bytes {
 		if (ast == null)
 			return null;
+		haxiom.StaticInitializerValidator.validate(ast);
 		var chunk = BytecodeCompiler.compile(ast, null, true, false, debugMode, null, interp, resolveSourceLabel(context));
 		return Serializer.serializeBytecode(chunk, key, compress);
 	}
