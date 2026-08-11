@@ -50,6 +50,8 @@ The AST interpreter remains supported for compatibility, diagnostics, and parser
 
 Persisted loaders default to a 64 MiB encoded/decoded size limit through `maxPersistedBytes`. Portable AST JSON additionally defaults to a nesting limit of 512 through `maxPersistedDepth`. Both limits are instance-based, reject negative configuration, and may be set to `0` when a trusted host explicitly needs unlimited input.
 
+HXBC loading validates constant serialization before object allocation, permits only internal persisted classes and enums, and verifies nested chunks, instruction boundaries, operand types, stack flow, source metadata, and debug metadata before execution. VM frames additionally reject bytecode requesting more than 1,048,576 local slots, including when the general persisted-size limit is disabled.
+
 ## Runtime Isolation Rule
 
 Haxiom runtime state must remain instance-based. Runtime mutable state must not be stored in `static` fields. Static helper or factory functions are acceptable when they return new instances or operate only on arguments. Macros may use static structure as needed by Haxe macro conventions.
