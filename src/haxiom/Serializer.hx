@@ -413,7 +413,13 @@ class Serializer {
 			var line = readVarInt(payloadInput);
 			var col = readVarInt(payloadInput);
 			var fileIdx = readVarInt(payloadInput) - 1;
-			var file = (fileIdx >= 0 && fileIdx < stringPool.length) ? stringPool[fileIdx] : null;
+			if (fileIdx < -1 || fileIdx >= stringPool.length)
+				throw 'Invalid bytecode: position file index $fileIdx out of bounds';
+			if (line < 0 || col < 0)
+				throw "Invalid bytecode: negative source position";
+			if (count == 0)
+				throw "Invalid bytecode: zero-length position run";
+			var file = fileIdx >= 0 ? stringPool[fileIdx] : null;
 			var pos:haxiom.AST.Pos = (line == 0 && col == 0 && fileIdx == -1) ? null : {line: line, col: col, file: file};
 			for (j in 0...count) {
 				positions.push(pos);
@@ -424,7 +430,10 @@ class Serializer {
 		var constsLen = readBoundedLength(payloadInput, "constant payload length", maxDecodedBytes);
 		requireRemaining(payloadInput, constsLen, "constant payload");
 		var constsStr = payloadInput.readString(constsLen);
-		var constantsValue:Dynamic = haxe.Unserializer.run(constsStr);
+		HXBCConstantGuard.validate(constsStr, maxDecodedBytes);
+		var constantReader = new haxe.Unserializer(constsStr);
+		constantReader.setResolver(new HXBCTypeResolver());
+		var constantsValue:Dynamic = constantReader.unserialize();
 		if (!Std.isOfType(constantsValue, Array))
 			throw "Invalid bytecode: constant payload is not an array";
 		var constants:Array<Dynamic> = cast constantsValue;
@@ -456,7 +465,9 @@ class Serializer {
 					var slot = readVarInt(payloadInput);
 					var startIp = readVarInt(payloadInput);
 					var endIp = readVarInt(payloadInput);
-					var name = (nameIdx >= 0 && nameIdx < stringPool.length) ? stringPool[nameIdx] : "";
+					if (nameIdx < 0 || nameIdx >= stringPool.length)
+						throw 'Invalid bytecode: debug symbol name index $nameIdx out of bounds';
+					var name = stringPool[nameIdx];
 					var sym:DebugSymbol = {
 						name: name,
 						slot: slot,
@@ -493,21 +504,27 @@ class Serializer {
 
 		for (i in 0...constants.length) {
 			var c = constants[i];
-			if (c != null && (Std.isOfType(c, BinaryResourceRefHolder) || Reflect.hasField(c, "key"))) {
+			if (c != null && Std.isOfType(c, BinaryResourceRefHolder)) {
 				var resKey:String = Reflect.field(c, "key");
-				if (resKey != null && resources != null && resources.exists(resKey)) {
+				if (resKey == null)
+					throw "Invalid bytecode: byte constant has no resource key";
+				// Nested chunks share the outer chunk's resource table, so unresolved
+				// references must remain typed holders until execution installs it.
+				if (resources != null && resources.exists(resKey))
 					constants[i] = resources.get(resKey);
-				}
 			}
 		}
 
 		var scriptName:String = null;
 		if (payloadInput.position < payloadInput.length) {
 			var scriptNameIdx = readVarInt(payloadInput) - 1;
-			if (scriptNameIdx >= 0 && scriptNameIdx < stringPool.length) {
+			if (scriptNameIdx < -1 || scriptNameIdx >= stringPool.length)
+				throw 'Invalid bytecode: script name index $scriptNameIdx out of bounds';
+			if (scriptNameIdx >= 0)
 				scriptName = stringPool[scriptNameIdx];
-			}
 		}
+		if (payloadInput.position != payloadInput.length)
+			throw "Invalid bytecode: trailing payload data";
 
 		var chunk = new BytecodeChunk(instructions, constants, positions, maxSlots, isAsync, debugSymbols, resources, scriptName);
 		BytecodeVerifier.verify(chunk);
