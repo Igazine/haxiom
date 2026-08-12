@@ -77,8 +77,8 @@ class TestNSConflict {
         }
         trace("Verification 4 (Dynamic Namespace Validation): PASSED");
 
-        // 5. Host-Driven Sandboxed Namespace Loading (Single Haxiom instance)
-        trace("Verification 5: Single Instance sandboxed modules");
+        // 5. Host-Driven Shared Module Context (Single Haxiom instance)
+        trace("Verification 5: Single Instance shared module context");
         var engine = new Haxiom();
         engine.useVM = true;
         
@@ -121,9 +121,9 @@ class TestNSConflict {
         trace("Verification 5 (Mod B Message): " + msgB);
 
         if (msgA != "Hello from Mod A" || msgB != "Hello from Mod B") {
-            throw "Host-Driven Sandboxed Namespace execution failed: class definitions collided or returned wrong values";
+            throw "Host-Driven Shared Module Context execution failed: class definitions collided or returned wrong values";
         }
-        trace("Verification 5 (Single Instance sandboxed modules): PASSED");
+        trace("Verification 5 (Single Instance shared module context): PASSED");
 
         // Verification 6: Error Callbacks and Namespace Halting
         trace("Verification 6: Testing Error Callbacks and Namespace Halting...");
