@@ -2,5 +2,21 @@
 -L haxiom
 --main host.Host
 --debug
---neko test/haxiom/interfacing/bin/Host.n
---cmd neko test/haxiom/interfacing/bin/Host.n
+--resource test/haxiom/interfacing/plugin/Plugin.hx@typed_plugin
+--resource test/haxiom/interfacing/plugin/NoInterfacePlugin.hx@no_interface_plugin
+--resource test/haxiom/interfacing/plugin/BadSignaturePlugin.hx@bad_signature_plugin
+--resource test/haxiom/interfacing/plugin/RequiredConstructorPlugin.hx@required_constructor_plugin
+
+--each
+
+--next
+--cpp test/haxiom/tmp_interfacing/cpp
+--cmd ./test/haxiom/tmp_interfacing/cpp/Host-debug
+
+--next
+--js test/haxiom/tmp_interfacing/js/Host.js
+--cmd node test/haxiom/tmp_interfacing/js/Host.js
+
+--next
+--neko test/haxiom/tmp_interfacing/neko/Host.n
+--cmd neko test/haxiom/tmp_interfacing/neko/Host.n

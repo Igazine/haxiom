@@ -1051,6 +1051,132 @@ class Interp {
 		}
 	}
 
+	private function constructGuestClass(cls:HaxiomClass):HaxiomInstance {
+		if (disposed || state == DISPOSED)
+			throw "Cannot construct a guest class on a disposed Haxiom engine instance";
+		if (cls == null)
+			throw "Cannot construct a null guest class";
+		var path = cls.name.split(".");
+		var pos:Pos = {line: 1, col: 1, file: activeSourceLabel != null ? activeSourceLabel : cls.name};
+		var expression:Expr = {def: ENew(TPath(path, []), []), pos: pos};
+		var result:Dynamic = execute(expression);
+		if (result == null || !Std.isOfType(result, HaxiomInstance))
+			throw 'Guest class ${cls.name} did not produce a guest instance';
+		return cast result;
+	}
+
+	private function validateGuestInterface(className:String, interfaceName:String,
+		methods:Array<{name:String, argTypes:Array<String>, returnType:String}>,
+		fields:Array<{name:String, typeName:String, readable:Bool, writable:Bool}>):HaxiomClass {
+		if (disposed || state == DISPOSED)
+			throw "Cannot construct a guest class on a disposed Haxiom engine instance";
+		if (className == null || className == "")
+			throw "construct() requires a guest class name";
+		var segments = className.split(".");
+		var identifier = ~/^[A-Za-z_][A-Za-z0-9_]*$/;
+		for (segment in segments) {
+			if (!identifier.match(segment))
+				throw 'Invalid guest class name: $className';
+		}
+		var resolved = resolveTypePath(segments, globals);
+		if (resolved == null || !Std.isOfType(resolved, HaxiomClass))
+			throw 'Guest class not found: $className';
+		var cls:HaxiomClass = cast resolved;
+		if (!guestClassImplementsInterface(cls, interfaceName))
+			throw 'Guest class ${cls.name} does not implement host interface $interfaceName';
+		var constructor:ClassMethodInfo = cast findMethod(cls, "new");
+		if (constructor != null && constructor.args.length > 0)
+			throw 'Guest class ${cls.name} requires constructor arguments; construct() currently supports zero-argument constructors only';
+
+		for (contract in methods) {
+			var method:ClassMethodInfo = cast findMethod(cls, contract.name);
+			if (method == null || method.isStatic)
+				throw 'Guest class ${cls.name} does not implement instance method ${contract.name} required by $interfaceName';
+			if (!method.isPublic)
+				throw 'Guest method ${cls.name}.${contract.name} must be public to implement $interfaceName';
+			if (method.args.length != contract.argTypes.length)
+				throw 'Guest method ${cls.name}.${contract.name} has ${method.args.length} arguments; $interfaceName requires ${contract.argTypes.length}';
+			for (i in 0...contract.argTypes.length) {
+				var actual = method.args[i].type == null ? null : normalizeContractType(typeToString(method.args[i].type));
+				var expected = normalizeContractType(contract.argTypes[i]);
+				if (actual == null || actual != expected)
+					throw 'Guest method ${cls.name}.${contract.name} argument ${method.args[i].name} has type ${actual == null ? "untyped" : actual}; $interfaceName requires $expected';
+			}
+			var actualReturn = method.retType == null ? null : normalizeContractType(typeToString(method.retType));
+			var expectedReturn = normalizeContractType(contract.returnType);
+			if (actualReturn == null || actualReturn != expectedReturn)
+				throw 'Guest method ${cls.name}.${contract.name} returns ${actualReturn == null ? "an untyped value" : actualReturn}; $interfaceName requires $expectedReturn';
+		}
+
+		for (contract in fields) {
+			var field:Dynamic = findFieldDef(cls, contract.name);
+			if (field == null || field.isStatic)
+				throw 'Guest class ${cls.name} does not implement instance field ${contract.name} required by $interfaceName';
+			if (!field.isPublic)
+				throw 'Guest field ${cls.name}.${contract.name} must be public to implement $interfaceName';
+			var actualType = field.type == null ? null : normalizeContractType(typeToString(field.type));
+			var expectedType = normalizeContractType(contract.typeName);
+			if (actualType == null || actualType != expectedType)
+				throw 'Guest field ${cls.name}.${contract.name} has type ${actualType == null ? "untyped" : actualType}; $interfaceName requires $expectedType';
+			var property = field.property;
+			var readable = property == null || (property.get != "never" && property.get != "null");
+			var writable = !field.isFinal && (property == null || (property.set != "never" && property.set != "null"));
+			if (contract.readable && !readable)
+				throw 'Guest field ${cls.name}.${contract.name} is not readable as required by $interfaceName';
+			if (contract.writable && !writable)
+				throw 'Guest field ${cls.name}.${contract.name} is not writable as required by $interfaceName';
+		}
+		return cls;
+	}
+
+	private function normalizeContractType(name:String):String {
+		if (name == null)
+			return null;
+		return StringTools.replace(StringTools.replace(name, "StdTypes.", ""), " ", "");
+	}
+
+	private function guestClassImplementsInterface(cls:HaxiomClass, interfaceName:String):Bool {
+		var shortName = interfaceName.substring(interfaceName.lastIndexOf(".") + 1);
+		var current = cls;
+		while (current != null) {
+			for (decl in current.interfaces) {
+				if (guestInterfaceDeclMatches(decl, interfaceName, shortName, new Map()))
+					return true;
+			}
+			current = current.parent;
+		}
+		return false;
+	}
+
+	private function guestInterfaceDeclMatches(decl:TypeDecl, interfaceName:String, shortName:String, visited:Map<String, Bool>):Bool {
+		return switch (decl) {
+			case TPath(path, _):
+				var declaredName = path.join(".");
+				if (declaredName == interfaceName || (path.length == 1 && declaredName == shortName)) {
+					true;
+				} else if (visited.exists(declaredName)) {
+					false;
+				} else {
+					visited.set(declaredName, true);
+					var resolved = resolveTypePath(path, globals);
+					if (resolved != null && Std.isOfType(resolved, HaxiomInterface)) {
+						var guestInterface:HaxiomInterface = cast resolved;
+						var matches = false;
+						for (parent in guestInterface.parents) {
+							if (guestInterfaceDeclMatches(parent, interfaceName, shortName, visited)) {
+								matches = true;
+								break;
+							}
+						}
+						matches;
+					} else {
+						false;
+					}
+				}
+			default: false;
+		}
+	}
+
 	private function prepareVMClassConstruction(typeDecl:TypeDecl, args:Array<Dynamic>, scope:Scope, pos:Pos):Null<VMClassConstruction> {
 		return switch (typeDecl) {
 			case TPath(path, params):
