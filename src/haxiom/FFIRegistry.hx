@@ -10,6 +10,7 @@ class FFIRegistry {
 	var exposedAbstracts = new Map<String, {implClass:String, methods:Array<String>, underlying:String}>();
 	var exposedGenerics = new Map<String, String>();
 	var abstractImpls = new Map<String, Dynamic>();
+	var stdlibClasses = new Map<String, Dynamic>();
 	var exposedModules = new Map<String, Array<String>>();
 	var memberResolvers:Array<(obj:Dynamic, field:String) -> Dynamic> = [];
 	var memberAssigners:Array<(obj:Dynamic, field:String, val:Dynamic) -> Bool> = [];

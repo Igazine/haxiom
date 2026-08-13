@@ -2,6 +2,9 @@ package haxiom;
 
 class TestRuntimeStaticState {
 	public static function runTests():Void {
+		assertGeneratedRegistryFactory("haxiom.macro.StdlibRegistry", "createClasses", "classes");
+		assertGeneratedRegistryFactory("haxiom.macro.AbstractRegistry", "createImpls", "impls");
+
 		#if sys
 		var violations = [];
 		scanDirectory("src/haxiom", violations);
@@ -12,6 +15,25 @@ class TestRuntimeStaticState {
 		#else
 		trace("SKIPPED: Runtime static state scan requires sys filesystem access.");
 		#end
+	}
+
+	static function assertGeneratedRegistryFactory(className:String, factoryName:String, legacyFieldName:String):Void {
+		var registryClass = Type.resolveClass(className);
+		if (registryClass == null) {
+			throw 'Generated registry is missing: $className';
+		}
+		if (Type.getClassFields(registryClass).indexOf(legacyFieldName) != -1) {
+			throw 'Generated registry exposes shared static state: $className.$legacyFieldName';
+		}
+		var factory = Reflect.field(registryClass, factoryName);
+		if (factory == null || !Reflect.isFunction(factory)) {
+			throw 'Generated registry factory is missing: $className.$factoryName';
+		}
+		var first:Dynamic = Reflect.callMethod(registryClass, factory, []);
+		var second:Dynamic = Reflect.callMethod(registryClass, factory, []);
+		if (first == null || second == null || first == second) {
+			throw 'Generated registry factory did not return independent maps: $className.$factoryName';
+		}
 	}
 
 	#if sys

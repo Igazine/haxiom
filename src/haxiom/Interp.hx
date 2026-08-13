@@ -639,6 +639,7 @@ class Interp {
 
 	private function new() {
 		globals = new Scope(null, this);
+		ffi.stdlibClasses = createGeneratedRegistry("haxiom.macro.StdlibRegistry", "createClasses");
 		initDefaultFlags();
 		// Core standard print/trace redirection with PosInfos
 		globals.declare("trace", Reflect.makeVarArgs((args:Array<Dynamic>) -> {
@@ -758,6 +759,21 @@ class Interp {
 
 		// Ensure DCE keep
 		HaxiomAnchor.keep();
+	}
+
+	private function createGeneratedRegistry(className:String, factoryName:String):Map<String, Dynamic> {
+		var registryClass = Type.resolveClass(className);
+		if (registryClass == null)
+			return new Map();
+		var factory = Reflect.field(registryClass, factoryName);
+		if (factory == null || !Reflect.isFunction(factory))
+			return new Map();
+		var result:Dynamic = Reflect.callMethod(registryClass, factory, []);
+		return result != null ? cast result : new Map();
+	}
+
+	private function loadGeneratedAbstractImpls():Void {
+		ffi.abstractImpls = createGeneratedRegistry("haxiom.macro.AbstractRegistry", "createImpls");
 	}
 
 	public var state(default, null):VMState = UNINITIALIZED;
@@ -1707,11 +1723,11 @@ class Interp {
 						return StringTools.endsWith(str, end);
 					};
 				case "trim":
-					return () -> StringTools.trim(str);
+					return () -> PortableStringTools.trim(str);
 				case "ltrim":
-					return () -> StringTools.ltrim(str);
+					return () -> PortableStringTools.ltrim(str);
 				case "rtrim":
-					return () -> StringTools.rtrim(str);
+					return () -> PortableStringTools.rtrim(str);
 				case "replace":
 					return (sub:Dynamic, by:Dynamic) -> {
 						checkString(sub, "StringTools.replace", "sub");
@@ -1993,17 +2009,17 @@ class Interp {
 				case "trim":
 					return (s:Dynamic) -> {
 						checkString(s, "StringTools.trim", "s");
-						return StringTools.trim(s);
+						return PortableStringTools.trim(s);
 					};
 				case "ltrim":
 					return (s:Dynamic) -> {
 						checkString(s, "StringTools.ltrim", "s");
-						return StringTools.ltrim(s);
+						return PortableStringTools.ltrim(s);
 					};
 				case "rtrim":
 					return (s:Dynamic) -> {
 						checkString(s, "StringTools.rtrim", "s");
-						return StringTools.rtrim(s);
+						return PortableStringTools.rtrim(s);
 					};
 				case "replace":
 					return (s:Dynamic, sub:Dynamic, by:Dynamic) -> {
@@ -3059,13 +3075,13 @@ class Interp {
 									return StringTools.endsWith(str, args[0]);
 								case "trim":
 									checkArgCount(args, 0, 0, "StringTools.trim");
-									return StringTools.trim(str);
+									return PortableStringTools.trim(str);
 								case "ltrim":
 									checkArgCount(args, 0, 0, "StringTools.ltrim");
-									return StringTools.ltrim(str);
+									return PortableStringTools.ltrim(str);
 								case "rtrim":
 									checkArgCount(args, 0, 0, "StringTools.rtrim");
-									return StringTools.rtrim(str);
+									return PortableStringTools.rtrim(str);
 								case "replace":
 									checkArgCount(args, 2, 2, "StringTools.replace");
 									checkString(args[0], "StringTools.replace", "sub");
@@ -3290,15 +3306,15 @@ class Interp {
 								case "trim":
 									checkArgCount(args, 1, 1, "StringTools.trim");
 									checkString(args[0], "StringTools.trim", "s");
-									return StringTools.trim(args[0]);
+									return PortableStringTools.trim(args[0]);
 								case "ltrim":
 									checkArgCount(args, 1, 1, "StringTools.ltrim");
 									checkString(args[0], "StringTools.ltrim", "s");
-									return StringTools.ltrim(args[0]);
+									return PortableStringTools.ltrim(args[0]);
 								case "rtrim":
 									checkArgCount(args, 1, 1, "StringTools.rtrim");
 									checkString(args[0], "StringTools.rtrim", "s");
-									return StringTools.rtrim(args[0]);
+									return PortableStringTools.rtrim(args[0]);
 								case "replace":
 									checkArgCount(args, 3, 3, "StringTools.replace");
 									checkString(args[0], "StringTools.replace", "s");
@@ -4253,17 +4269,13 @@ class Interp {
 						}
 					}
 
-					// 4. Scan StdlibRegistry
-					var registryCls = Type.resolveClass("haxiom.macro.StdlibRegistry");
-					if (registryCls != null) {
-						var classes:Map<String, Dynamic> = Reflect.field(registryCls, "classes");
-						if (classes != null) {
-							for (fq in classes.keys()) {
-								if (StringTools.startsWith(fq, prefix) && isImportWhitelisted(fq)) {
-									var parts = fq.split(".");
-									var clsShort = parts[parts.length - 1];
-									scope.declare(clsShort, classes.get(fq));
-								}
+					// 4. Scan the instance-bound standard library registry
+					if (ffi.stdlibClasses != null) {
+						for (fq in ffi.stdlibClasses.keys()) {
+							if (StringTools.startsWith(fq, prefix) && isImportWhitelisted(fq)) {
+								var parts = fq.split(".");
+								var clsShort = parts[parts.length - 1];
+								scope.declare(clsShort, ffi.stdlibClasses.get(fq));
 							}
 						}
 					}
@@ -6892,13 +6904,8 @@ class Interp {
 				return c;
 			return {__isHaxiomVectorClass: true};
 		}
-		var registryCls = Type.resolveClass("haxiom.macro.StdlibRegistry");
-		if (registryCls != null) {
-			var classes:Map<String, Dynamic> = Reflect.field(registryCls, "classes");
-			if (classes != null && classes.exists(fqName)) {
-				return classes.get(fqName);
-			}
-		}
+		if (ffi.stdlibClasses.exists(fqName))
+			return ffi.stdlibClasses.get(fqName);
 		return Type.resolveClass(fqName);
 	}
 

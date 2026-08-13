@@ -53,45 +53,12 @@ class FFIMacro {
             "haxe.Exception", "haxe.ValueException", "haxe.IMap"
         ];
         
-        // Dynamically define a class that references all core classes to force compiling them
-        var fields = [];
-        var pos = Context.currentPos();
-        var i = 0;
+        // Keep the supported standard-library classes without creating shared runtime fields.
         for (cls in coreClasses) {
             try {
                 Compiler.keep(cls);
-                var t = Context.getType(cls);
-                var isClass = false;
-                switch (t) {
-                    case TInst(classRef, _):
-                        var c = classRef.get();
-                        if (!c.isInterface) {
-                            isClass = true;
-                        }
-                    default:
-                }
-                if (isClass) {
-                    var clsExpr = Context.parseInlineString(cls, pos);
-                    fields.push({
-                        name: "ref" + i,
-                        pos: pos,
-                        kind: FieldType.FVar(macro:Dynamic, clsExpr),
-                        access: [APublic, AStatic]
-                    });
-                    i++;
-                }
             } catch (e:Dynamic) {}
         }
-        
-        var t:haxe.macro.Expr.TypeDefinition = {
-            pack: ["haxiom", "macro"],
-            name: "StdlibKeep",
-            pos: pos,
-            kind: TDClass(),
-            fields: fields
-        };
-        Context.defineType(t);
-        Compiler.keep("haxiom.macro.StdlibKeep");
         
         Context.onAfterTyping(function(modules) {
             for (module in modules) {
@@ -303,9 +270,13 @@ class FFIMacro {
                     kind: TDClass(),
                     fields: [
                         {
-                            name: "impls",
+                            name: "createImpls",
                             pos: Context.currentPos(),
-                            kind: FieldType.FVar(macro:Map<String, Dynamic>, initExpr),
+                            kind: FieldType.FFun({
+                                args: [],
+                                ret: macro:Map<String, Dynamic>,
+                                expr: macro return $initExpr
+                            }),
                             access: [APublic, AStatic]
                         }
                     ]
@@ -325,9 +296,13 @@ class FFIMacro {
                     kind: TDClass(),
                     fields: [
                         {
-                            name: "classes",
+                            name: "createClasses",
                             pos: Context.currentPos(),
-                            kind: FieldType.FVar(macro:Map<String, Dynamic>, initExpr),
+                            kind: FieldType.FFun({
+                                args: [],
+                                ret: macro:Map<String, Dynamic>,
+                                expr: macro return $initExpr
+                            }),
                             access: [APublic, AStatic]
                         }
                     ]

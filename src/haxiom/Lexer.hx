@@ -98,12 +98,12 @@ class Lexer {
 				var dirStart = pos;
 				while (pos < input.length && isAlpha(peek()))
 					advance();
-				var dir = input.substring(dirStart, pos);
+				var dir = slice(input, dirStart, pos);
 
 				var argStart = pos;
 				while (pos < input.length && peek() != "\n")
 					advance();
-				var arg = StringTools.trim(input.substring(argStart, pos));
+				var arg = PortableStringTools.trim(slice(input, argStart, pos));
 
 				if (flags != null) {
 					processPreprocessor(dir, arg, startLine, startCol);
@@ -203,7 +203,7 @@ class Lexer {
 				var start = pos;
 				while (pos < input.length && (isAlphanumeric(peek()) || peek() == "_"))
 					advance();
-				var id = input.substring(start, pos);
+				var id = slice(input, start, pos);
 				var def = switch (id) {
 					case "break": TBreak;
 					case "case": TCase;
@@ -260,8 +260,8 @@ class Lexer {
 					advance();
 					while (pos < input.length && isHexDigit(peek()))
 						advance();
-					var s = input.substring(start, pos);
-					tokens.push({def: TInt(Std.parseInt(s)), pos: {line: startLine, col: startCol, file: file}});
+					var s = slice(input, start, pos);
+					tokens.push({def: TInt(parseInteger(s, 16, 2)), pos: {line: startLine, col: startCol, file: file}});
 					continue;
 				}
 				if (char == "0" && (peek(1) == "b" || peek(1) == "B")) {
@@ -269,7 +269,7 @@ class Lexer {
 					advance();
 					while (pos < input.length && (peek() == "0" || peek() == "1"))
 						advance();
-					var s = input.substring(start + 2, pos);
+					var s = slice(input, start + 2, pos);
 					var val = 0;
 					for (i in 0...s.length) {
 						val = (val << 1) | (s.charAt(i) == "1" ? 1 : 0);
@@ -292,8 +292,8 @@ class Lexer {
 					while (pos < input.length && isDigit(peek()))
 						advance();
 				}
-				var s = input.substring(start, pos);
-				var def = (s.indexOf(".") != -1 || s.toLowerCase().indexOf("e") != -1) ? TFloat(Std.parseFloat(s)) : TInt(Std.parseInt(s));
+				var s = slice(input, start, pos);
+				var def = (s.indexOf(".") != -1 || s.toLowerCase().indexOf("e") != -1) ? TFloat(Std.parseFloat(s)) : TInt(parseInteger(s, 10));
 				tokens.push({def: def, pos: {line: startLine, col: startCol, file: file}});
 				continue;
 			}
@@ -528,6 +528,24 @@ class Lexer {
 		col++;
 	}
 
+	static function slice(value:String, start:Int, end:Int):String {
+		var result = new StringBuf();
+		for (i in start...end) {
+			result.addChar(StringTools.fastCodeAt(value, i));
+		}
+		return result.toString();
+	}
+
+	static function parseInteger(value:String, base:Int, start:Int = 0):Int {
+		var result = 0;
+		for (i in start...value.length) {
+			var code = StringTools.fastCodeAt(value, i);
+			var digit = code >= 48 && code <= 57 ? code - 48 : (code | 32) - 87;
+			result = result * base + digit;
+		}
+		return result;
+	}
+
 	inline function add(tokens:Array<Token>, def:TokenDef, len:Int = 1) {
 		tokens.push({def: def, pos: {line: line, col: col, file: file}});
 		for (i in 0...len)
@@ -535,12 +553,12 @@ class Lexer {
 	}
 
 	inline function isAlpha(c:String):Bool {
-		var code = c.charCodeAt(0);
+		var code = StringTools.fastCodeAt(c, 0);
 		return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
 	}
 
 	inline function isDigit(c:String):Bool {
-		var code = c.charCodeAt(0);
+		var code = StringTools.fastCodeAt(c, 0);
 		return code >= 48 && code <= 57;
 	}
 
@@ -587,7 +605,7 @@ class Lexer {
 							depth--;
 						j++;
 					}
-					var exprStr = s.substring(startIdx, j - 1);
+					var exprStr = slice(s, startIdx, j - 1);
 					i = j;
 
 					var subLexer = new Lexer(exprStr, file, flags);
@@ -617,7 +635,7 @@ class Lexer {
 					while (j < len && (isAlphanumeric(s.charAt(j)) || s.charAt(j) == "_")) {
 						j++;
 					}
-					var id = s.substring(startIdx, j);
+					var id = slice(s, startIdx, j);
 					i = j;
 
 					if (hasTokens)
