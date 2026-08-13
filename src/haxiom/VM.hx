@@ -979,7 +979,13 @@ class VM {
 							} else if (overloadState == 0 && (TypeSystem.isString(v1) || TypeSystem.isString(v2))) {
 								stack.push(Std.string(v1) + Std.string(v2));
 							} else if (overloadState == 0) {
-								stack.push((v1 + v2 : Dynamic));
+								if (TypeSystem.isInt(v1) && TypeSystem.isInt(v2)) {
+									var sum:Int = (cast v1 : Int) + (cast v2 : Int);
+									stack.push(sum);
+								} else {
+									var sum:Float = (cast v1 : Float) + (cast v2 : Float);
+									stack.push(sum);
+								}
 							}
 
 						case OP_SUB:

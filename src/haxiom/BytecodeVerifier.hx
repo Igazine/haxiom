@@ -12,7 +12,8 @@ class BytecodeVerifier {
 		var pending = [chunk];
 		var seen = new ObjectMap<BytecodeChunk, Bool>();
 		while (pending.length > 0) {
-			var current = pending.pop();
+			var current = pending[pending.length - 1];
+			pending.pop();
 			if (seen.exists(current))
 				continue;
 			seen.set(current, true);
@@ -44,19 +45,19 @@ class BytecodeVerifier {
 		collectNestedChunks(chunk.constants, pending);
 
 		var inst = chunk.instructions;
-		var starts = new Map<Int, Bool>();
-		var nextByIp = new Map<Int, Int>();
-		var requiredByIp = new Map<Int, Int>();
-		var deltaByIp = new Map<Int, Int>();
-		var branchByIp = new Map<Int, Int>();
-		var catchByIp = new Map<Int, Int>();
-		var terminal = new Map<Int, Bool>();
-		var unconditional = new Map<Int, Bool>();
+		var starts = [for (_ in 0...inst.length) false];
+		var nextByIp = [for (_ in 0...inst.length) -1];
+		var requiredByIp = [for (_ in 0...inst.length) 0];
+		var deltaByIp = [for (_ in 0...inst.length) 0];
+		var branchByIp = [for (_ in 0...inst.length) -1];
+		var catchByIp = [for (_ in 0...inst.length) -1];
+		var terminal = [for (_ in 0...inst.length) false];
+		var unconditional = [for (_ in 0...inst.length) false];
 
 		var ip = 0;
 		while (ip < inst.length) {
 			var start = ip;
-			starts.set(start, true);
+			starts[start] = true;
 			var op:Int = inst[ip++];
 			if (op < 0 || op > 77)
 				throw 'Invalid opcode $op at instruction index $start';
@@ -110,9 +111,9 @@ class BytecodeVerifier {
 					checkOperands(ip, 1, inst.length);
 					var target = inst[ip++];
 					checkJumpRange(target, inst.length);
-					branchByIp.set(start, target);
+					branchByIp[start] = target;
 					if (op == 28)
-						unconditional.set(start, true);
+						unconditional[start] = true;
 					else {
 						required = 1;
 						if (op == 29)
@@ -128,7 +129,7 @@ class BytecodeVerifier {
 
 				case 34, 39: // OP_RETURN, OP_THROW
 					required = 1;
-					terminal.set(start, true);
+					terminal[start] = true;
 
 				case 35, 57: // OP_GET_FIELD, OP_SAFE_GET_FIELD
 					checkOperands(ip, 1, inst.length);
@@ -197,7 +198,7 @@ class BytecodeVerifier {
 					checkOperands(ip, 1, inst.length);
 					var target = inst[ip++];
 					checkJumpRange(target, inst.length);
-					catchByIp.set(start, target);
+					catchByIp[start] = target;
 
 				case 50: // OP_MATCH_CASE
 					checkOperands(ip, 2, inst.length);
@@ -281,15 +282,17 @@ class BytecodeVerifier {
 					// Remaining defined opcodes have no operands and no data-stack effect.
 			}
 
-			nextByIp.set(start, ip);
-			requiredByIp.set(start, required);
-			deltaByIp.set(start, delta);
+			nextByIp[start] = ip;
+			requiredByIp[start] = required;
+			deltaByIp[start] = delta;
 		}
 
-		for (source => target in branchByIp)
-			checkJumpBoundary(source, target, inst.length, starts);
-		for (source => target in catchByIp)
-			checkJumpBoundary(source, target, inst.length, starts);
+		for (source in 0...inst.length) {
+			if (branchByIp[source] >= 0)
+				checkJumpBoundary(source, branchByIp[source], inst.length, starts);
+			if (catchByIp[source] >= 0)
+				checkJumpBoundary(source, catchByIp[source], inst.length, starts);
+		}
 
 		verifyDebugSymbols(chunk, starts);
 		verifyStackFlow(inst, starts, nextByIp, requiredByIp, deltaByIp, branchByIp, catchByIp, terminal, unconditional);
@@ -312,7 +315,7 @@ class BytecodeVerifier {
 		}
 	}
 
-	static function verifyDebugSymbols(chunk:BytecodeChunk, starts:Map<Int, Bool>):Void {
+	static function verifyDebugSymbols(chunk:BytecodeChunk, starts:Array<Bool>):Void {
 		if (chunk.debugSymbols == null)
 			return;
 		for (i in 0...chunk.debugSymbols.length) {
@@ -323,53 +326,54 @@ class BytecodeVerifier {
 				throw 'Debug symbol slot ${symbol.slot} out of bounds at index $i';
 			if (symbol.startIp < 0 || symbol.endIp < symbol.startIp || symbol.endIp > chunk.instructions.length)
 				throw 'Invalid debug symbol range at index $i';
-			if (symbol.startIp < chunk.instructions.length && !starts.exists(symbol.startIp))
+			if (symbol.startIp < chunk.instructions.length && !starts[symbol.startIp])
 				throw 'Debug symbol start ${symbol.startIp} is not an instruction boundary';
-			if (symbol.endIp < chunk.instructions.length && !starts.exists(symbol.endIp))
+			if (symbol.endIp < chunk.instructions.length && !starts[symbol.endIp])
 				throw 'Debug symbol end ${symbol.endIp} is not an instruction boundary';
 		}
 	}
 
-	static function verifyStackFlow(instructions:Array<Int>, starts:Map<Int, Bool>, nextByIp:Map<Int, Int>, requiredByIp:Map<Int, Int>, deltaByIp:Map<Int, Int>,
-			branchByIp:Map<Int, Int>, catchByIp:Map<Int, Int>, terminal:Map<Int, Bool>, unconditional:Map<Int, Bool>):Void {
+	static function verifyStackFlow(instructions:Array<Int>, starts:Array<Bool>, nextByIp:Array<Int>, requiredByIp:Array<Int>, deltaByIp:Array<Int>,
+			branchByIp:Array<Int>, catchByIp:Array<Int>, terminal:Array<Bool>, unconditional:Array<Bool>):Void {
 		var length = instructions.length;
 		if (length == 0)
 			return;
-		var depths = new Map<Int, Int>();
+		var depths = [for (_ in 0...length) -1];
 		var pending = [0];
-		depths.set(0, 0);
-
-		function enqueue(target:Int, depth:Int):Void {
-			if (target == length)
-				return;
-			if (!starts.exists(target))
-				throw 'Control flow target $target is not an instruction boundary';
-			if (depths.exists(target)) {
-				if (depths.get(target) != depth)
-					throw 'Inconsistent stack depth at instruction index $target';
-				return;
-			}
-			depths.set(target, depth);
-			pending.push(target);
-		}
+		depths[0] = 0;
 
 		while (pending.length > 0) {
-			var current = pending.pop();
-			var depth = depths.get(current);
-			var required = requiredByIp.get(current);
+			var current = pending[pending.length - 1];
+			pending.pop();
+			var depth = depths[current];
+			var required = requiredByIp[current];
 			if (depth < required)
 				throw 'Stack underflow at instruction index $current, opcode ${instructions[current]} (requires $required value(s), has $depth)';
-			var nextDepth = depth + deltaByIp.get(current);
+			var nextDepth = depth + deltaByIp[current];
 			if (instructions[current] == 42 && nextDepth < 0)
 				nextDepth = 0;
 
-			if (catchByIp.exists(current))
-				enqueue(catchByIp.get(current), depth + 1);
-			if (branchByIp.exists(current))
-				enqueue(branchByIp.get(current), nextDepth);
-			if (!terminal.exists(current) && !unconditional.exists(current))
-				enqueue(nextByIp.get(current), nextDepth);
+			if (catchByIp[current] >= 0)
+				enqueueStackFlow(catchByIp[current], depth + 1, length, starts, depths, pending);
+			if (branchByIp[current] >= 0)
+				enqueueStackFlow(branchByIp[current], nextDepth, length, starts, depths, pending);
+			if (!terminal[current] && !unconditional[current])
+				enqueueStackFlow(nextByIp[current], nextDepth, length, starts, depths, pending);
 		}
+	}
+
+	static function enqueueStackFlow(target:Int, depth:Int, length:Int, starts:Array<Bool>, depths:Array<Int>, pending:Array<Int>):Void {
+		if (target == length)
+			return;
+		if (!starts[target])
+			throw 'Control flow target $target is not an instruction boundary';
+		if (depths[target] >= 0) {
+			if (depths[target] != depth)
+				throw 'Inconsistent stack depth at instruction index $target';
+			return;
+		}
+		depths[target] = depth;
+		pending.push(target);
 	}
 
 	static function checkFunctionPrototype(idx:Int, chunk:BytecodeChunk):Void {
@@ -436,8 +440,8 @@ class BytecodeVerifier {
 			throw 'Jump target $target out of bounds (instructions length = $length)';
 	}
 
-	static function checkJumpBoundary(source:Int, target:Int, length:Int, starts:Map<Int, Bool>):Void {
-		if (target != length && !starts.exists(target))
+	static function checkJumpBoundary(source:Int, target:Int, length:Int, starts:Array<Bool>):Void {
+		if (target != length && !starts[target])
 			throw 'Jump target $target at instruction index $source is not an instruction boundary';
 	}
 }

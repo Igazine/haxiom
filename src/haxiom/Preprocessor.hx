@@ -32,14 +32,14 @@ class Preprocessor {
 		for (part in parts) {
 			if (part.length == 0)
 				return false;
-			var firstChar = part.charCodeAt(0);
+			var firstChar = StringTools.fastCodeAt(part, 0);
 			var isFirstValid = (firstChar >= 'a'.code && firstChar <= 'z'.code)
 				|| (firstChar >= 'A'.code && firstChar <= 'Z'.code)
 				|| firstChar == '_'.code;
 			if (!isFirstValid)
 				return false;
 			for (i in 1...part.length) {
-				var c = part.charCodeAt(i);
+				var c = StringTools.fastCodeAt(part, i);
 				var isValidChar = (c >= 'a'.code && c <= 'z'.code)
 					|| (c >= 'A'.code && c <= 'Z'.code)
 					|| (c >= '0'.code && c <= '9'.code)
@@ -85,7 +85,7 @@ class Preprocessor {
 	}
 
 	static function evaluate(exprStr:String, flags:Map<String, Bool>):Bool {
-		if (exprStr == null || StringTools.trim(exprStr) == "")
+		if (exprStr == null || PortableStringTools.trim(exprStr) == "")
 			return true;
 		try {
 			var lexer = new Lexer(exprStr, "preprocessor", flags);

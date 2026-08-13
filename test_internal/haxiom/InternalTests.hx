@@ -237,7 +237,7 @@ class InternalTests {
 		var results = new sys.thread.Deque<Bool>();
 
 		for (i in 0...threadCount) {
-			sys.thread.Thread.createWithEventLoop(function() {
+			sys.thread.Thread.create(function() {
 				try {
 					var engine = new Haxiom();
 					engine.registerStaticField("TestTarget", "val", i * 10);

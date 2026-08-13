@@ -56,8 +56,8 @@ class Haxiom {
 
 	function cachePart(value:String):String {
 		if (value == null)
-			return "0:";
-		return Std.string(value.length) + ":" + value;
+			return "\x00\x02";
+		return value.split("\x00").join("\x00\x00") + "\x00\x01";
 	}
 
 	function makeAstCacheKey(source:String, ?context:ScriptContext):String {
@@ -1489,16 +1489,8 @@ class Haxiom {
 			}
 		}
 
-		// 2b. Load runtime abstract implementation references
-		var registryCls = Type.resolveClass("haxiom.macro.AbstractRegistry");
-		if (registryCls != null) {
-			var impls:Map<String, Dynamic> = Reflect.field(registryCls, "impls");
-			if (impls != null) {
-				for (k in impls.keys()) {
-					interp.ffi.abstractImpls.set(k, impls.get(k));
-				}
-			}
-		}
+		// 2b. Create runtime abstract implementation references for this engine instance.
+		interp.loadGeneratedAbstractImpls();
 
 		// 3. Load exposed generics
 		var genRes = haxe.Resource.getString("haxiom_exposed_generics");
