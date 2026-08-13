@@ -11,7 +11,7 @@ class Host {
 		// 1. Test source construction
 		var source = sys.io.File.getContent("test/haxiom/interfacing/plugin/Plugin.hx");
 		haxiom.interpret(source);
-		var plugin = haxiom.construct(IPlugin, "Plugin");
+		var plugin:IPlugin = haxiom.construct("Plugin");
 		plugin.doSomething();
 		trace(plugin.calc(1, 2));
 
@@ -25,7 +25,7 @@ class Host {
 		final haxiom2 = new Haxiom();
 		haxiom2.importWhitelist = ["interfaces.*"];
 		haxiom2.executeBytecodeBytes(bytes);
-		var bytecodePlugin = haxiom2.construct(IPlugin, "Plugin");
+		var bytecodePlugin = haxiom2.construct("Plugin", IPlugin);
 		bytecodePlugin.doSomething();
 		trace(bytecodePlugin.calc(10, 20));
 	}

@@ -1159,18 +1159,20 @@ class Haxiom {
 	/**
 	 * Compile-time macro to construct and cast a guest class instance to a host-defined interface dynamically.
 	 * 
-	 * @param scriptPath The relative or absolute path to the guest script.
+	 * @param className The fully-qualified guest class name to instantiate.
+	 * @param targetInterface Optional host interface type when it cannot be inferred from context.
 	 * @return An instance of the generated compile-time proxy implementing the expected interface.
 	 */
-	public macro function construct<T>(ethis:Expr, arg1:Expr, ?arg2:Expr):haxe.macro.Expr.ExprOf<T> {
+	public macro function construct<T>(ethis:Expr, className:Expr, ?targetInterfaceExpr:Expr):haxe.macro.Expr.ExprOf<T> {
 		var expectedType = Context.getExpectedType();
 		var targetInterface:Type = null;
-		var className:Expr = null;
+		var hasExplicitInterface = targetInterfaceExpr != null && switch (targetInterfaceExpr.expr) {
+			case EConst(CIdent("null")): false;
+			default: true;
+		};
 
-		if (arg2 == null) {
+		if (!hasExplicitInterface) {
 			// Case 1: haxiom.construct(className)
-			className = arg1;
-
 			if (expectedType != null) {
 				switch (Context.follow(expectedType)) {
 					case TInst(tRef, _):
@@ -1182,18 +1184,17 @@ class Haxiom {
 				}
 			}
 		} else {
-			// Case 2: haxiom.construct(targetInterfaceExpr, className)
-			className = arg2;
-			var typeName = haxe.macro.ExprTools.toString(arg1);
+			// Case 2: haxiom.construct(className, targetInterfaceExpr)
+			var typeName = haxe.macro.ExprTools.toString(targetInterfaceExpr);
 			try {
 				targetInterface = Context.getType(typeName);
 			} catch (e:Dynamic) {
-				Context.error("Could not resolve target interface type: " + typeName, arg1.pos);
+				Context.error("Could not resolve target interface type: " + typeName, targetInterfaceExpr.pos);
 			}
 		}
 
 		if (targetInterface == null || haxe.macro.TypeTools.toString(targetInterface) == "Dynamic") {
-			Context.error("Could not determine target interface type. Please specify it explicitly, e.g. construct(IPlugin, className) or via variable type annotation",
+			Context.error("Could not determine target interface type. Use a typed context or specify it explicitly, e.g. construct(className, IPlugin)",
 				className.pos);
 		}
 
