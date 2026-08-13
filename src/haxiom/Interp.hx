@@ -1129,6 +1129,18 @@ class Interp {
 		return cls;
 	}
 
+	@:noCompletion
+	public function assertHostInterfaceIdentityAvailable(interfaceName:String, hostIdentity:Dynamic):Void {
+		var existing = resolveTypePath(interfaceName.split("."), globals);
+		if (existing == null)
+			return;
+		if (existing == hostIdentity)
+			return;
+		if (Reflect.hasField(existing, "__haxiomHostInterface") && Reflect.field(existing, "__haxiomHostInterface") == interfaceName)
+			return;
+		throw 'Cannot register host interface $interfaceName: a guest or host value already occupies that fully-qualified name';
+	}
+
 	private function normalizeContractType(name:String):String {
 		if (name == null)
 			return null;
@@ -1136,11 +1148,10 @@ class Interp {
 	}
 
 	private function guestClassImplementsInterface(cls:HaxiomClass, interfaceName:String):Bool {
-		var shortName = interfaceName.substring(interfaceName.lastIndexOf(".") + 1);
 		var current = cls;
 		while (current != null) {
 			for (decl in current.interfaces) {
-				if (guestInterfaceDeclMatches(decl, interfaceName, shortName, new Map()))
+				if (guestInterfaceDeclMatches(decl, interfaceName, new Map()))
 					return true;
 			}
 			current = current.parent;
@@ -1148,11 +1159,11 @@ class Interp {
 		return false;
 	}
 
-	private function guestInterfaceDeclMatches(decl:TypeDecl, interfaceName:String, shortName:String, visited:Map<String, Bool>):Bool {
+	private function guestInterfaceDeclMatches(decl:TypeDecl, interfaceName:String, visited:Map<String, Bool>):Bool {
 		return switch (decl) {
 			case TPath(path, _):
 				var declaredName = path.join(".");
-				if (declaredName == interfaceName || (path.length == 1 && declaredName == shortName)) {
+				if (declaredName == interfaceName) {
 					true;
 				} else if (visited.exists(declaredName)) {
 					false;
@@ -1163,7 +1174,7 @@ class Interp {
 						var guestInterface:HaxiomInterface = cast resolved;
 						var matches = false;
 						for (parent in guestInterface.parents) {
-							if (guestInterfaceDeclMatches(parent, interfaceName, shortName, visited)) {
+							if (guestInterfaceDeclMatches(parent, interfaceName, visited)) {
 								matches = true;
 								break;
 							}
@@ -1174,6 +1185,26 @@ class Interp {
 					}
 				}
 			default: false;
+		}
+	}
+
+	private function normalizeImplementedInterface(decl:TypeDecl, scope:Scope):TypeDecl {
+		return switch (decl) {
+			case TPath(path, params):
+				var resolved = resolveTypePath(path, scope);
+				if (resolved != null && Reflect.hasField(resolved, "__haxiomHostInterface")) {
+					var hostName:Dynamic = Reflect.field(resolved, "__haxiomHostInterface");
+					if (hostName != null && Std.isOfType(hostName, String))
+						TPath((cast hostName : String).split("."), params);
+					else
+						decl;
+				} else if (resolved != null && Std.isOfType(resolved, Class)) {
+					var nativeName = Type.getClassName(cast resolved);
+					nativeName == null ? decl : TPath(nativeName.split("."), params);
+				} else {
+					decl;
+				}
+			default: decl;
 		}
 	}
 
@@ -3666,11 +3697,12 @@ class Interp {
 						default:
 					}
 				}
+				var normalizedInterfaces = interfaceTypes == null ? [] : [for (interfaceType in interfaceTypes) normalizeImplementedInterface(interfaceType, scope)];
 				var cls = new HaxiomClass(name, parentCls);
 				cls.name = fqName;
 				cls.parentType = parentType;
 				cls.params = params != null ? params : [];
-				cls.interfaces = interfaceTypes != null ? interfaceTypes : [];
+				cls.interfaces = normalizedInterfaces;
 				cls.meta = evaluateMetadata(meta, scope);
 
 				var hasAbstractMeta = false;
@@ -3771,13 +3803,13 @@ class Interp {
 					}
 				}
 
-				var implementedInterfaces = interfaceTypes != null ? interfaceTypes : [];
+				var implementedInterfaces = normalizedInterfaces;
 				if (implementedInterfaces.length > 0) {
 					for (itfDecl in implementedInterfaces) {
 						switch (itfDecl) {
 							case TPath(itfPath, itfConcreteParams):
 								var itfName = itfPath.join(".");
-								var itfVal = scope.get(itfName);
+								var itfVal = resolveTypePath(itfPath, scope);
 								if (itfVal != null
 									&& (Reflect.hasField(itfVal, "__isInterface") || !Std.isOfType(itfVal, HaxiomInterface))) {
 									if (Reflect.hasField(itfVal, "__isInterface")
@@ -4293,10 +4325,9 @@ class Interp {
 							}
 						}
 					}
-					return null;
-				}
-
-				// Check if the FQ name resolves to a Haxiom-defined class/interface/enum/abstract in the globals/scope package namespaces
+						return null;
+					}
+					// Check if the FQ name resolves to a Haxiom-defined class/interface/enum/abstract in the globals/scope package namespaces
 				var parts = path;
 				var currentObj:Dynamic = null;
 				if (scope.exists(parts[0])) {

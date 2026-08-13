@@ -6,6 +6,8 @@
 --resource test/haxiom/interfacing/plugin/NoInterfacePlugin.hx@no_interface_plugin
 --resource test/haxiom/interfacing/plugin/BadSignaturePlugin.hx@bad_signature_plugin
 --resource test/haxiom/interfacing/plugin/RequiredConstructorPlugin.hx@required_constructor_plugin
+--resource test/haxiom/interfacing/plugin/SpoofedInterfacePlugin.hx@spoofed_interface_plugin
+--resource test/haxiom/interfacing/plugin/QualifiedSpoofedInterfacePlugin.hx@qualified_spoofed_interface_plugin
 
 --each
 

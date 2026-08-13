@@ -8,6 +8,69 @@ import haxe.macro.Type;
 class ProxyGenerator {
     static var definedProxies:Map<String, Bool> = new Map();
 
+    static function boundaryType(type:Type, pos:Position, ?nullable:Bool = false):Expr {
+        switch (type) {
+            case TAbstract(ref, params):
+                var abstractType = ref.get();
+                var name = abstractType.pack.concat([abstractType.name]).join(".");
+                if (name == "Null" && params.length == 1)
+                    return boundaryType(params[0], pos, true);
+            default:
+        }
+
+        return switch (Context.follow(type)) {
+            case TAbstract(ref, _):
+                var abstractType = ref.get();
+                var name = abstractType.pack.concat([abstractType.name]).join(".");
+                var kind = switch (name) {
+                    case "Bool": "bool";
+                    case "Int": "int";
+                    case "Float": "float";
+                    case "Void": "void";
+                    default:
+                        Context.error('Typed interface boundary does not support abstract type $name', pos);
+                        "unsupported";
+                };
+                macro new haxiom.ProxyBoundaryType($v{kind}, $v{nullable});
+            case TInst(ref, params):
+                var classType = ref.get();
+                var name = classType.pack.concat([classType.name]).join(".");
+                switch (name) {
+                    case "String": macro new haxiom.ProxyBoundaryType("string", $v{nullable});
+                    case "haxe.io.Bytes": macro new haxiom.ProxyBoundaryType("bytes", $v{nullable});
+                    case "Array":
+                        if (params.length != 1)
+                            Context.error("Array boundary type requires one type parameter", pos);
+                        var element = boundaryType(params[0], pos);
+                        macro new haxiom.ProxyBoundaryType("array", $v{nullable}, $element);
+                    case "haxiom.HostRef": macro new haxiom.ProxyBoundaryType("hostref", true);
+                    default:
+                        Context.error('Typed interface boundary does not support class type $name; use a supported structure or haxiom.HostRef', pos);
+                        macro new haxiom.ProxyBoundaryType("unsupported");
+                }
+            case TAnonymous(ref):
+                var fields = [];
+                for (field in ref.get().fields) {
+                    var fieldType = boundaryType(field.type, field.pos);
+                    var optional = field.meta.has(":optional");
+                    fields.push(macro new haxiom.ProxyBoundaryType.ProxyBoundaryField($v{field.name}, $fieldType, $v{optional}));
+                }
+                macro new haxiom.ProxyBoundaryType("anonymous", $v{nullable}, null, $a{fields});
+            case TDynamic(_): macro new haxiom.ProxyBoundaryType("dynamic", true);
+            case TFun(_, _):
+                Context.error("Functions cannot cross a typed interface boundary", pos);
+                macro new haxiom.ProxyBoundaryType("unsupported");
+            case TEnum(ref, _):
+                var enumType = ref.get();
+                var name = enumType.pack.concat([enumType.name]).join(".");
+                Context.error('Typed interface boundary does not yet support enum type $name', pos);
+                macro new haxiom.ProxyBoundaryType("unsupported");
+            default:
+                Context.error('Unsupported typed interface boundary type ${haxe.macro.TypeTools.toString(type)}', pos);
+                macro new haxiom.ProxyBoundaryType("unsupported");
+        }
+    }
+
     public static function generateProxy(interfaceType:Type):String {
         switch (Context.follow(interfaceType)) {
             case TInst(tRef, _):
@@ -96,6 +159,7 @@ class ProxyGenerator {
                                 case TFun(args, retType):
                                     var methodArgs:Array<FunctionArg> = [];
                                     var callArgsExprs:Array<Expr> = [];
+                                    var argBoundaryTypes:Array<Expr> = [];
                                     
                                     for (arg in args) {
                                         methodArgs.push({
@@ -104,28 +168,20 @@ class ProxyGenerator {
                                             opt: arg.opt
                                         });
                                         callArgsExprs.push({ expr: EConst(CIdent(arg.name)), pos: Context.currentPos() });
+                                        argBoundaryTypes.push(boundaryType(arg.t, field.pos));
                                     }
                                     
                                     var retTypeExpr = Context.toComplexType(retType);
                                     var isVoid = (haxe.macro.TypeTools.toString(retType) == "Void");
+                                    var returnBoundaryType = boundaryType(retType, field.pos);
                                     
                                     var delegationExpr = if (isVoid) {
                                         macro {
-                                            var func = this._haxiom.resolveField(this._guest, $v{fieldName});
-                                            if (func != null) {
-                                                Reflect.callMethod(null, func, $a{callArgsExprs});
-                                            } else {
-                                                throw "Method " + $v{fieldName} + " not implemented on guest class";
-                                            }
+                                            this._haxiom.invokeProxyMethod(this._guest, $v{fieldName}, $a{callArgsExprs}, $a{argBoundaryTypes}, $returnBoundaryType);
                                         };
                                     } else {
                                         macro {
-                                            var func = this._haxiom.resolveField(this._guest, $v{fieldName});
-                                            if (func != null) {
-                                                return Reflect.callMethod(null, func, $a{callArgsExprs});
-                                            } else {
-                                                throw "Method " + $v{fieldName} + " not implemented on guest class";
-                                            }
+                                            return this._haxiom.invokeProxyMethod(this._guest, $v{fieldName}, $a{callArgsExprs}, $a{argBoundaryTypes}, $returnBoundaryType);
                                         };
                                     };
                                     
@@ -154,6 +210,7 @@ class ProxyGenerator {
                                 case AccNo | AccNever: false;
                                 default: true;
                             };
+                            var propertyBoundaryType = boundaryType(fieldType, field.pos);
                             fields.push({
                                 name: fieldName,
                                 access: [APublic],
@@ -169,7 +226,7 @@ class ProxyGenerator {
                                         args: [],
                                         ret: complexType,
                                         expr: macro {
-                                            return this._haxiom.resolveField(this._guest, $v{fieldName});
+                                            return this._haxiom.readProxyField(this._guest, $v{fieldName}, $propertyBoundaryType);
                                         }
                                     })
                                 });
@@ -183,8 +240,7 @@ class ProxyGenerator {
                                         args: [{ name: "value", type: complexType }],
                                         ret: complexType,
                                         expr: macro {
-                                            this._haxiom.setField(this._guest, $v{fieldName}, value);
-                                            return value;
+                                            return this._haxiom.writeProxyField(this._guest, $v{fieldName}, value, $propertyBoundaryType);
                                         }
                                     })
                                 });
