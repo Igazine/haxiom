@@ -70,6 +70,18 @@ class ProxyGenerator {
                     }
                 }
                 collectFields(t);
+                var accessorFields:Array<String> = [];
+                for (field in allFields) {
+                    switch (field.kind) {
+                        case FVar(_, _):
+                            accessorFields.push("get_" + field.name);
+                            accessorFields.push("set_" + field.name);
+                        default:
+                    }
+                }
+                for (name in accessorFields) {
+                    allFields.remove(name);
+                }
                 
                 // 3. Delegation Fields
                 for (field in allFields) {
@@ -129,41 +141,54 @@ class ProxyGenerator {
                                     });
                                 default:
                             }
-                        default:
+                        case FVar(read, write):
                             // Variable/Property delegation
+                            if (read == AccNormal || write == AccNormal) {
+                                Context.error('Interface field $fieldName must use delegating accessors such as (get, never) or (get, set)', field.pos);
+                            }
+                            var canRead = switch (read) {
+                                case AccNo | AccNever: false;
+                                default: true;
+                            };
+                            var canWrite = switch (write) {
+                                case AccNo | AccNever: false;
+                                default: true;
+                            };
                             fields.push({
                                 name: fieldName,
                                 access: [APublic],
                                 pos: Context.currentPos(),
-                                kind: FProp("get", "set", complexType)
+                                kind: FProp(canRead ? "get" : "never", canWrite ? "set" : "never", complexType)
                             });
-                            
-                            fields.push({
-                                name: "get_" + fieldName,
-                                access: [APublic],
-                                pos: Context.currentPos(),
-                                kind: FFun({
-                                    args: [],
-                                    ret: complexType,
-                                    expr: macro {
-                                        return this._haxiom.resolveField(this._guest, $v{fieldName});
-                                    }
-                                })
-                            });
-                            
-                            fields.push({
-                                name: "set_" + fieldName,
-                                access: [APublic],
-                                pos: Context.currentPos(),
-                                kind: FFun({
-                                    args: [{ name: "value", type: complexType }],
-                                    ret: complexType,
-                                    expr: macro {
-                                        this._haxiom.setField(this._guest, $v{fieldName}, value);
-                                        return value;
-                                    }
-                                })
-                            });
+                            if (canRead) {
+                                fields.push({
+                                    name: "get_" + fieldName,
+                                    access: [APublic],
+                                    pos: Context.currentPos(),
+                                    kind: FFun({
+                                        args: [],
+                                        ret: complexType,
+                                        expr: macro {
+                                            return this._haxiom.resolveField(this._guest, $v{fieldName});
+                                        }
+                                    })
+                                });
+                            }
+                            if (canWrite) {
+                                fields.push({
+                                    name: "set_" + fieldName,
+                                    access: [APublic],
+                                    pos: Context.currentPos(),
+                                    kind: FFun({
+                                        args: [{ name: "value", type: complexType }],
+                                        ret: complexType,
+                                        expr: macro {
+                                            this._haxiom.setField(this._guest, $v{fieldName}, value);
+                                            return value;
+                                        }
+                                    })
+                                });
+                            }
                     }
                 }
                 
