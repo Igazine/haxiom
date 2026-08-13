@@ -1050,6 +1050,34 @@ class Haxiom {
 		return interp.evalField(target, field, interp.globals, {line: 1, col: 1, file: "host"});
 	}
 
+	@:noCompletion
+	public function invokeProxyMethod(target:Dynamic, field:String, args:Array<Dynamic>, argTypes:Array<ProxyBoundaryType>, returnType:ProxyBoundaryType):Dynamic {
+		if (interp.disposed)
+			throw "Cannot invoke a typed proxy on a disposed Haxiom engine instance";
+		if (args.length != argTypes.length)
+			throw 'Typed proxy method $field expected ${argTypes.length} arguments, got ${args.length}';
+		var convertedArgs = [for (index in 0...args.length) ProxyBoundary.convert(args[index], argTypes[index], '$field argument ${index + 1}')];
+		var func = resolveField(target, field);
+		if (func == null)
+			throw 'Method $field not implemented on guest class';
+		var result = Reflect.callMethod(null, func, convertedArgs);
+		return ProxyBoundary.convert(result, returnType, '$field return value');
+	}
+
+	@:noCompletion
+	public function readProxyField(target:Dynamic, field:String, type:ProxyBoundaryType):Dynamic {
+		return ProxyBoundary.convert(resolveField(target, field), type, '$field property read');
+	}
+
+	@:noCompletion
+	public function writeProxyField(target:Dynamic, field:String, value:Dynamic, type:ProxyBoundaryType):Dynamic {
+		if (interp.disposed)
+			throw "Cannot write through a typed proxy on a disposed Haxiom engine instance";
+		var converted = ProxyBoundary.convert(value, type, '$field property write');
+		setField(target, field, converted);
+		return ProxyBoundary.convert(converted, type, '$field property result');
+	}
+
 	static function appendMainCallIfPresent(expr:haxiom.AST.Expr, ?fileBaseName:String):haxiom.AST.Expr {
 		var mainClasses:Array<String> = [];
 
@@ -1282,7 +1310,8 @@ class Haxiom {
 
 		var registerExprs = [];
 		if (expectedTypeStr != null) {
-			registerExprs.push(macro Haxiom.registerInterface($ethis, $v{expectedTypeStr}));
+			var hostInterfaceIdentity = Context.parse(expectedTypeStr, className.pos);
+			registerExprs.push(macro Haxiom.registerInterface($ethis, $v{expectedTypeStr}, $hostInterfaceIdentity));
 		}
 
 		var proxyFqName = haxiom.macro.ProxyGenerator.generateProxy(targetInterface);
@@ -1302,8 +1331,10 @@ class Haxiom {
 	 * 
 	 * @param haxiom The scripting engine instance.
 	 * @param name The fully-qualified name of the interface.
+	 * @param hostIdentity The native interface object used to detect guest namespace collisions.
 	 */
-	public static function registerInterface(haxiom:Haxiom, name:String):Void {
+	public static function registerInterface(haxiom:Haxiom, name:String, hostIdentity:Dynamic):Void {
+		haxiom.interp.assertHostInterfaceIdentityAvailable(name, hostIdentity);
 		haxiom.registerValue(name, {__isInterface: true, __haxiomHostInterface: name});
 	}
 

@@ -22,9 +22,26 @@ class Host {
 		}
 	}
 
+	static function verifyBoundary(plugin:IPlugin):Void {
+		var inputBytes = haxe.io.Bytes.ofHex("102030");
+		var outputBytes = plugin.mutateBytes(inputBytes);
+		if (inputBytes.get(0) != 0x10 || outputBytes.get(0) != 0x11 || outputBytes == inputBytes)
+			throw "Bytes did not cross the typed boundary by copy";
+		var inputNumbers = [10, 20];
+		var outputNumbers = plugin.mutateNumbers(inputNumbers);
+		if (inputNumbers[0] != 10 || outputNumbers[0] != 11 || outputNumbers == inputNumbers)
+			throw "Array did not cross the typed boundary by copy";
+		var inputPayload = {name: "boundary", count: 7};
+		var outputPayload = plugin.updatePayload(inputPayload);
+		if (inputPayload.count != 7 || outputPayload.count != 8 || outputPayload == inputPayload)
+			throw "Anonymous structure did not cross the typed boundary by copy";
+		expectFailure("guest value leak", "raw guest runtime values", () -> plugin.leakGuestValue());
+	}
+
 	static public function main() {
 		final haxiom = new Haxiom();
 		haxiom.importWhitelist = ["interfaces.*"];
+		haxiom.exposeClass("haxe.io.Bytes", haxe.io.Bytes);
 
 		// 1. Test source construction
 		var source = resource("typed_plugin");
@@ -36,25 +53,30 @@ class Host {
 		plugin.counter = 41;
 		if (plugin.counter != 41)
 			throw "Source proxy property assignment failed";
+		verifyBoundary(plugin);
 
 		// 2. Test bytecode construction
 		var bytes = haxiom.compileToBytecodeBytes(source, new ScriptContext("Plugin", "plugin/Plugin.hx"));
 		final haxiom2 = new Haxiom();
 		haxiom2.importWhitelist = ["interfaces.*"];
+		haxiom2.exposeClass("haxe.io.Bytes", haxe.io.Bytes);
 		haxiom2.executeBytecodeBytes(bytes);
 		var bytecodePlugin = haxiom2.construct("plugins.example.Plugin", IPlugin);
 		bytecodePlugin.doSomething();
 		if (bytecodePlugin.calc(10, 20) != 30 || bytecodePlugin.pluginName != "typed-plugin")
 			throw "HXBC proxy method/property delegation failed";
+		verifyBoundary(bytecodePlugin);
 
 		var astEngine = new Haxiom();
 		astEngine.useVM = false;
 		astEngine.importWhitelist = ["interfaces.*"];
+		astEngine.exposeClass("haxe.io.Bytes", haxe.io.Bytes);
 		astEngine.interpret(source);
 		var astPlugin:IPlugin = astEngine.construct("plugins.example.Plugin");
 		astPlugin.counter = 9;
 		if (astPlugin.calc(2, 3) != 5 || astPlugin.counter != 9)
 			throw "AST proxy method/property delegation failed";
+		verifyBoundary(astPlugin);
 
 		// 3. Contract failures occur at construct(), not on first method call.
 		var noInterface = new Haxiom();
@@ -75,6 +97,18 @@ class Host {
 		requiredConstructor.interpret(resource("required_constructor_plugin"));
 		expectFailure("required constructor", "requires constructor arguments", () -> {
 			var _:IPlugin = requiredConstructor.construct("RequiredConstructorPlugin");
+		});
+
+		var spoofedInterface = new Haxiom();
+		spoofedInterface.interpret(resource("spoofed_interface_plugin"));
+		expectFailure("spoofed interface", "does not implement host interface", () -> {
+			var _:IPlugin = spoofedInterface.construct("SpoofedInterfacePlugin");
+		});
+
+		var qualifiedSpoof = new Haxiom();
+		qualifiedSpoof.interpret(resource("qualified_spoofed_interface_plugin"));
+		expectFailure("qualified interface spoof", "already occupies that fully-qualified name", () -> {
+			var _:IPlugin = qualifiedSpoof.construct("interfaces.QualifiedSpoofedInterfacePlugin");
 		});
 
 		expectFailure("invalid class path", "Invalid guest class name", () -> {
