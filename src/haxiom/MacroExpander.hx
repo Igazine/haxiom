@@ -9,12 +9,13 @@ import haxiom.HaxiomTypes.HaxiomEnumInstance;
 import haxiom.HaxiomTypes.HaxiomAbstract;
 import haxiom.HaxiomTypes.HaxiomAbstractInstance;
 
+@:allow(haxiom)
 class MacroExpander {
     /**
      * Scans the AST for class declarations and registers them in the interpreter's scope.
      * This makes macro functions available to be executed during macro expansion.
      */
-    public static function registerMacros(expr:Expr, interp:Interp):Void {
+    private static function registerMacros(expr:Expr, interp:Interp):Void {
         if (expr == null) return;
         
         switch (expr.def) {
@@ -50,7 +51,7 @@ class MacroExpander {
     /**
      * Crawls the AST and expands macro calls.
      */
-    public static function expand(expr:Expr, interp:Interp):Expr {
+    private static function expand(expr:Expr, interp:Interp):Expr {
         if (expr == null) return null;
 
         var expandedDef = switch (expr.def) {

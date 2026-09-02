@@ -22,6 +22,15 @@ class TestReleaseBarAudit {
 		requireActiveCall(lines, path, "haxiom.interpret(script68);", 3, violations);
 		requireActiveCall(lines, path, "InternalTests.run(haxiom);", 1, violations);
 
+		rejectPublicMembers("src/haxiom/Interp.hx", [
+			"public var state(",
+			"public function assertHostInterfaceIdentityAvailable("
+		], violations);
+		rejectPublicMembers("src/haxiom/MacroExpander.hx", [
+			"public static function registerMacros(",
+			"public static function expand("
+		], violations);
+
 		if (violations.length > 0) {
 			throw "Release-bar audit failed:\n" + violations.join("\n");
 		}
@@ -42,6 +51,18 @@ class TestReleaseBarAudit {
 		}
 		if (count < minCount) {
 			violations.push(path + ": expected at least " + minCount + " active `" + call + "` call(s), found " + count);
+		}
+	}
+
+	static function rejectPublicMembers(path:String, signatures:Array<String>, violations:Array<String>):Void {
+		var lines = sys.io.File.getContent(path).split("\n");
+		for (i in 0...lines.length) {
+			var trimmed = StringTools.trim(lines[i]);
+			for (signature in signatures) {
+				if (StringTools.startsWith(trimmed, signature)) {
+					violations.push(path + ":" + (i + 1) + ": internal member is public: " + signature);
+				}
+			}
 		}
 	}
 	#end

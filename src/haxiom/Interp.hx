@@ -776,7 +776,7 @@ class Interp {
 		ffi.abstractImpls = createGeneratedRegistry("haxiom.macro.AbstractRegistry", "createImpls");
 	}
 
-	public var state(default, null):VMState = UNINITIALIZED;
+	private var state(default, null):VMState = UNINITIALIZED;
 
 	private var useVM:Bool = true;
 	private var debugMode:Bool = true;
@@ -1146,7 +1146,7 @@ class Interp {
 	}
 
 	@:noCompletion
-	public function assertHostInterfaceIdentityAvailable(interfaceName:String, hostIdentity:Dynamic):Void {
+	private function assertHostInterfaceIdentityAvailable(interfaceName:String, hostIdentity:Dynamic):Void {
 		var existing = resolveTypePath(interfaceName.split("."), globals);
 		if (existing == null)
 			return;
