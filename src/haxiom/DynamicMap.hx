@@ -6,9 +6,9 @@ import haxe.ds.IntMap;
 import haxe.ds.ObjectMap;
 
 class DynamicMap implements IMap<Dynamic, Dynamic> {
-    public var stringMap:StringMap<Dynamic>;
-    public var intMap:IntMap<Dynamic>;
-    public var objectMap:ObjectMap<Dynamic, Dynamic>;
+    private var stringMap:StringMap<Dynamic>;
+    private var intMap:IntMap<Dynamic>;
+    private var objectMap:ObjectMap<Dynamic, Dynamic>;
 
     public function new() {}
 

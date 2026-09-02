@@ -6,12 +6,13 @@ import haxe.io.Bytes;
  * Pure Haxe LZ4 Block Compressor and Decompressor.
  * 100% target-agnostic (works on C++, HashLink, JS, Java, C#, Eval, Python, etc.)
  */
+@:allow(haxiom)
 class LZ4 {
 	/**
 	 * Decompresses an LZ4 compressed payload.
 	 * The input bytes start with a 4-byte little-endian uncompressed length header.
 	 */
-	public static function decompress(src:Bytes, ?expectedLength:Int = -1, ?maxOutputLength:Int = 0):Bytes {
+	private static function decompress(src:Bytes, ?expectedLength:Int = -1, ?maxOutputLength:Int = 0):Bytes {
 		if (src == null || src.length < 4) {
 			throw "LZ4 Decompress Error: Invalid payload (too short)";
 		}
@@ -121,7 +122,7 @@ class LZ4 {
 	 * Compresses a Bytes instance using LZ4 block format.
 	 * Prepends 4-byte little-endian uncompressed length.
 	 */
-	public static function compress(src:Bytes):Bytes {
+	private static function compress(src:Bytes):Bytes {
 		if (src == null || src.length == 0) {
 			var empty = Bytes.alloc(4);
 			empty.set(0, 0);

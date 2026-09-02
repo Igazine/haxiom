@@ -16,13 +16,14 @@ typedef ClassMethodInfo = {
 };
 
 @:keep
+@:allow(haxiom)
 class HaxiomClass {
-	public var name:String;
-	public var params:Array<TypeParamDef> = [];
-	public var parentType:TypeDecl;
-	public var parent:HaxiomClass;
-	public var isAbstract:Bool = false;
-	public var fields:Map<String, {
+	private var name:String;
+	private var params:Array<TypeParamDef> = [];
+	private var parentType:TypeDecl;
+	private var parent:HaxiomClass;
+	private var isAbstract:Bool = false;
+	private var fields:Map<String, {
 		name:String,
 		type:Null<TypeDecl>,
 		expr:Expr,
@@ -33,28 +34,29 @@ class HaxiomClass {
 		?bytecodeChunk:haxiom.VM.BytecodeChunk,
 		?meta:Array<{name:String, params:Array<Dynamic>}>
 	}> = new Map();
-	public var methods:Map<String, ClassMethodInfo> = new Map();
-	public var staticFields:Map<String, Dynamic> = new Map();
-	public var interfaces:Array<TypeDecl> = [];
-	public var meta:Array<{name:String, params:Array<Dynamic>}> = [];
+	private var methods:Map<String, ClassMethodInfo> = new Map();
+	private var staticFields:Map<String, Dynamic> = new Map();
+	private var interfaces:Array<TypeDecl> = [];
+	private var meta:Array<{name:String, params:Array<Dynamic>}> = [];
 
-	public function new(name:String, ?parent:HaxiomClass) {
+	private function new(name:String, ?parent:HaxiomClass) {
 		this.name = name;
 		this.parent = parent;
 	}
 }
 
 @:keep
+@:allow(haxiom)
 class HaxiomInterface {
-	public var name:String;
-	public var params:Array<TypeParamDef> = [];
-	public var fields:Map<String, {
+	private var name:String;
+	private var params:Array<TypeParamDef> = [];
+	private var fields:Map<String, {
 		name:String,
 		type:Null<TypeDecl>,
 		?property:{get:String, set:String},
 		?meta:Array<{name:String, params:Array<Dynamic>}>
 	}> = new Map();
-	public var methods:Map<String, {
+	private var methods:Map<String, {
 		name:String,
 		args:Array<FunctionArg>,
 		retType:Null<TypeDecl>,
@@ -62,44 +64,47 @@ class HaxiomInterface {
 		?params:Array<TypeParamDef>,
 		?meta:Array<{name:String, params:Array<Dynamic>}>
 	}> = new Map();
-	public var parents:Array<TypeDecl> = [];
-	public var meta:Array<{name:String, params:Array<Dynamic>}> = [];
+	private var parents:Array<TypeDecl> = [];
+	private var meta:Array<{name:String, params:Array<Dynamic>}> = [];
 
-	public function new(name:String, ?parents:Array<TypeDecl>) {
+	private function new(name:String, ?parents:Array<TypeDecl>) {
 		this.name = name;
 		this.parents = parents != null ? parents : [];
 	}
 }
 
 @:keep
+@:allow(haxiom)
 class HaxiomInstance {
-	public var cls:HaxiomClass;
-	public var fields:Map<String, Dynamic> = new Map();
-	public var genericBindings:Map<String, TypeDecl> = new Map();
+	private var cls:HaxiomClass;
+	private var fields:Map<String, Dynamic> = new Map();
+	private var genericBindings:Map<String, TypeDecl> = new Map();
 
-	public function new(cls:HaxiomClass) {
+	private function new(cls:HaxiomClass) {
 		this.cls = cls;
 	}
 }
 
 @:keep
+@:allow(haxiom)
 class HaxiomEnum {
-	public var name:String;
-	public var constructors:Map<String, Array<{name:String, type:Null<TypeDecl>}>> = new Map();
-	public var params:Array<TypeParamDef> = [];
+	private var name:String;
+	private var constructors:Map<String, Array<{name:String, type:Null<TypeDecl>}>> = new Map();
+	private var params:Array<TypeParamDef> = [];
 
-	public function new(name:String) {
+	private function new(name:String) {
 		this.name = name;
 	}
 }
 
 @:keep
+@:allow(haxiom)
 class HaxiomEnumInstance {
-	public var enumType:HaxiomEnum;
-	public var constructorName:String;
-	public var args:Array<Dynamic>;
+	private var enumType:HaxiomEnum;
+	private var constructorName:String;
+	private var args:Array<Dynamic>;
 
-	public function new(enumType:HaxiomEnum, constructorName:String, args:Array<Dynamic>) {
+	private function new(enumType:HaxiomEnum, constructorName:String, args:Array<Dynamic>) {
 		this.enumType = enumType;
 		this.constructorName = constructorName;
 		this.args = args;
@@ -113,11 +118,12 @@ class HaxiomEnumInstance {
 }
 
 @:keep
+@:allow(haxiom)
 class HaxiomAbstract {
-	public var name:String;
-	public var params:Array<TypeParamDef> = [];
-	public var underlyingType:TypeDecl;
-	public var fields:Map<String, {
+	private var name:String;
+	private var params:Array<TypeParamDef> = [];
+	private var underlyingType:TypeDecl;
+	private var fields:Map<String, {
 		name:String,
 		type:Null<TypeDecl>,
 		expr:Expr,
@@ -128,24 +134,25 @@ class HaxiomAbstract {
 		?bytecodeChunk:haxiom.VM.BytecodeChunk,
 		?meta:Array<{name:String, params:Array<Dynamic>}>
 	}> = new Map();
-	public var methods:Map<String, ClassMethodInfo> = new Map();
-	public var staticFields:Map<String, Dynamic> = new Map();
-	public var meta:Array<{name:String, params:Array<Dynamic>}> = [];
-	public var fromTypes:Array<String> = [];
-	public var toTypes:Array<String> = [];
+	private var methods:Map<String, ClassMethodInfo> = new Map();
+	private var staticFields:Map<String, Dynamic> = new Map();
+	private var meta:Array<{name:String, params:Array<Dynamic>}> = [];
+	private var fromTypes:Array<String> = [];
+	private var toTypes:Array<String> = [];
 
-	public function new(name:String, underlyingType:TypeDecl) {
+	private function new(name:String, underlyingType:TypeDecl) {
 		this.name = name;
 		this.underlyingType = underlyingType;
 	}
 }
 
 @:keep
+@:allow(haxiom)
 class HaxiomAbstractInstance {
-	public var abstractType:HaxiomAbstract;
-	public var underlyingValue:Dynamic;
+	private var abstractType:HaxiomAbstract;
+	private var underlyingValue:Dynamic;
 
-	public function new(abstractType:HaxiomAbstract, underlyingValue:Dynamic) {
+	private function new(abstractType:HaxiomAbstract, underlyingValue:Dynamic) {
 		this.abstractType = abstractType;
 		this.underlyingValue = underlyingValue;
 	}

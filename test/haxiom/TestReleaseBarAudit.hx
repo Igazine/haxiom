@@ -22,6 +22,54 @@ class TestReleaseBarAudit {
 		requireActiveCall(lines, path, "haxiom.interpret(script68);", 3, violations);
 		requireActiveCall(lines, path, "InternalTests.run(haxiom);", 1, violations);
 
+		rejectPublicMembers("src/haxiom/Interp.hx", [
+			"public var state(",
+			"public function assertHostInterfaceIdentityAvailable("
+		], violations);
+		rejectPublicMembers("src/haxiom/MacroExpander.hx", [
+			"public static function registerMacros(",
+			"public static function expand("
+		], violations);
+		rejectPublicMembers("src/haxiom/LZ4.hx", [
+			"public static function compress(",
+			"public static function decompress("
+		], violations);
+		rejectPublicMembers("src/haxiom/ProxyBoundary.hx", [
+			"public static function convert("
+		], violations);
+		rejectPublicMembers("src/haxiom/macro/ProxyGenerator.hx", [
+			"public static function generateProxy("
+		], violations);
+		rejectPublicMembers("src/haxiom/ProxyBoundaryType.hx", [
+			"public final kind:",
+			"public final nullable:",
+			"public final element:",
+			"public final fields:",
+			"public final name:",
+			"public final type:",
+			"public final optional:",
+			"public function new("
+		], violations);
+		rejectPublicMembers("src/haxiom/Haxiom.hx", [
+			"public function invokeProxyMethod(",
+			"public function readProxyField(",
+			"public function writeProxyField(",
+			"public static function registerInterface(",
+			"public static function constructHelper("
+		], violations);
+		rejectPublicMembers("src/haxiom/HaxiomTypes.hx", [
+			"public var ",
+			"public function new("
+		], violations);
+		rejectPublicMembers("src/haxiom/DynamicMap.hx", [
+			"public var stringMap:",
+			"public var intMap:",
+			"public var objectMap:"
+		], violations);
+		rejectPublicMembers("src/haxiom/ScriptException.hx", [
+			"public static function makeCodeFrame("
+		], violations);
+
 		if (violations.length > 0) {
 			throw "Release-bar audit failed:\n" + violations.join("\n");
 		}
@@ -42,6 +90,18 @@ class TestReleaseBarAudit {
 		}
 		if (count < minCount) {
 			violations.push(path + ": expected at least " + minCount + " active `" + call + "` call(s), found " + count);
+		}
+	}
+
+	static function rejectPublicMembers(path:String, signatures:Array<String>, violations:Array<String>):Void {
+		var lines = sys.io.File.getContent(path).split("\n");
+		for (i in 0...lines.length) {
+			var trimmed = StringTools.trim(lines[i]);
+			for (signature in signatures) {
+				if (StringTools.startsWith(trimmed, signature)) {
+					violations.push(path + ":" + (i + 1) + ": internal member is public: " + signature);
+				}
+			}
 		}
 	}
 	#end
