@@ -2,6 +2,7 @@ package haxiom;
 
 import haxiom.AST.Pos;
 
+@:allow(haxiom)
 class ScriptException extends haxe.Exception {
     public var rawValue(default, null):Dynamic;
     public var virtualStack(default, null):Array<{method:String, pos:Pos}>;
@@ -34,7 +35,7 @@ class ScriptException extends haxe.Exception {
         this.runtimeNamespace = null;
     }
 
-    public static function makeCodeFrame(source:Null<String>, line:Int, col:Int, file:String):String {
+    private static function makeCodeFrame(source:Null<String>, line:Int, col:Int, file:String):String {
         if (source == null || source == "") return "";
         var lines = source.split("\n");
         if (line < 1 || line > lines.length) return "";

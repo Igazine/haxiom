@@ -61,6 +61,14 @@ class TestReleaseBarAudit {
 			"public var ",
 			"public function new("
 		], violations);
+		rejectPublicMembers("src/haxiom/DynamicMap.hx", [
+			"public var stringMap:",
+			"public var intMap:",
+			"public var objectMap:"
+		], violations);
+		rejectPublicMembers("src/haxiom/ScriptException.hx", [
+			"public static function makeCodeFrame("
+		], violations);
 
 		if (violations.length > 0) {
 			throw "Release-bar audit failed:\n" + violations.join("\n");
