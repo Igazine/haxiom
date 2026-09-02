@@ -1,3 +1,4 @@
+--cmd haxe test/release_consumer/build.hxml
 --cmd haxe test/haxiom/compile_example.hxml
 --cmd haxe test/haxiom/bundle/run_bundle.hxml
 --cmd haxe test/haxiom/interfacing/build.hxml
