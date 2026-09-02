@@ -57,6 +57,10 @@ class TestReleaseBarAudit {
 			"public static function registerInterface(",
 			"public static function constructHelper("
 		], violations);
+		rejectPublicMembers("src/haxiom/HaxiomTypes.hx", [
+			"public var ",
+			"public function new("
+		], violations);
 
 		if (violations.length > 0) {
 			throw "Release-bar audit failed:\n" + violations.join("\n");
