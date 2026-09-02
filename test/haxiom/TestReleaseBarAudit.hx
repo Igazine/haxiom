@@ -50,6 +50,13 @@ class TestReleaseBarAudit {
 			"public final optional:",
 			"public function new("
 		], violations);
+		rejectPublicMembers("src/haxiom/Haxiom.hx", [
+			"public function invokeProxyMethod(",
+			"public function readProxyField(",
+			"public function writeProxyField(",
+			"public static function registerInterface(",
+			"public static function constructHelper("
+		], violations);
 
 		if (violations.length > 0) {
 			throw "Release-bar audit failed:\n" + violations.join("\n");
