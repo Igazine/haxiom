@@ -1,12 +1,12 @@
 # Haxiom Test Matrix
 
-This matrix describes the intended test coverage shape for the developer preview. It is a planning document for splitting the current large suites into smaller, faster failure-isolation groups over time.
+This matrix describes the intended test coverage shape for the 1.0 alpha. It is a planning document for splitting the current large suites into smaller, faster failure-isolation groups over time.
 
 ## Current Gates
 
 | Gate | Purpose |
 | --- | --- |
-| `haxe test_release.hxml` | Sequential aggregate for the developer-preview release bar. |
+| `haxe test_release.hxml` | Sequential aggregate for the 1.0 alpha release bar. |
 | `haxe build.hxml` | Fast local sanity gate using the failure-isolation suite on the interpreter target. |
 | `haxe test_full.hxml` | Full interpreter gate plus bytecode CLI smoke tests. |
 | `haxe test_platforms.hxml` | Active CPP, JavaScript, and Neko platform gate. |

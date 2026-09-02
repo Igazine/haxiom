@@ -1,0 +1,6 @@
+-L haxiom
+--class-path test/release_consumer
+--macro releaseconsumer.ApiBoundaryMacro.verify()
+--main releaseconsumer.ReleaseApiSmoke
+--debug
+--interp

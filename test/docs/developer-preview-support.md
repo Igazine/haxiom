@@ -1,16 +1,16 @@
-# Haxiom Developer Preview Support Contract
+# Haxiom 1.0 Alpha Support Contract
 
-This document defines what the current developer preview is expected to support and what remains intentionally unstable.
+This document defines what the current 1.0 alpha is expected to support and what remains intentionally unstable.
 
 ## Supported Targets
 
-The primary supported Haxe targets for this preview are:
+The primary supported Haxe targets for this alpha are:
 
 - CPP
 - JavaScript
 - Neko
 
-Lua and JVM are not part of the active gate for this preview. They may compile or run in some states, but they are not release blockers until they are restored to the platform matrix.
+Lua and JVM are not part of the active gate for this alpha. They may compile or run in some states, but they are not release blockers until they are restored to the platform matrix.
 
 ## Supported Workflows
 
@@ -31,7 +31,7 @@ The following workflows are expected to work on the active targets:
 
 ## Stability Boundaries
 
-The following are not stable API promises in this developer preview:
+The following are not stable API promises in this alpha:
 
 - Exact AST object shape and internal enum layout.
 - HXBC binary format compatibility across future preview versions.
@@ -58,7 +58,7 @@ Haxiom runtime state must remain instance-based. Runtime mutable state must not 
 
 ## Release Bar
 
-A developer-preview build should pass:
+An alpha build should pass:
 
 - `haxe test_release.hxml`
 
