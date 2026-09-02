@@ -40,6 +40,16 @@ class TestReleaseBarAudit {
 		rejectPublicMembers("src/haxiom/macro/ProxyGenerator.hx", [
 			"public static function generateProxy("
 		], violations);
+		rejectPublicMembers("src/haxiom/ProxyBoundaryType.hx", [
+			"public final kind:",
+			"public final nullable:",
+			"public final element:",
+			"public final fields:",
+			"public final name:",
+			"public final type:",
+			"public final optional:",
+			"public function new("
+		], violations);
 
 		if (violations.length > 0) {
 			throw "Release-bar audit failed:\n" + violations.join("\n");

@@ -1,13 +1,14 @@
 package haxiom;
 
-@:noCompletion
+@:allow(haxiom)
+@:allow(haxiom.proxies)
 final class ProxyBoundaryType {
-	public final kind:String;
-	public final nullable:Bool;
-	public final element:ProxyBoundaryType;
-	public final fields:Array<ProxyBoundaryField>;
+	private final kind:String;
+	private final nullable:Bool;
+	private final element:ProxyBoundaryType;
+	private final fields:Array<ProxyBoundaryField>;
 
-	public function new(kind:String, ?nullable:Bool = false, ?element:ProxyBoundaryType, ?fields:Array<ProxyBoundaryField>) {
+	private function new(kind:String, ?nullable:Bool = false, ?element:ProxyBoundaryType, ?fields:Array<ProxyBoundaryField>) {
 		this.kind = kind;
 		this.nullable = nullable;
 		this.element = element;
@@ -15,13 +16,14 @@ final class ProxyBoundaryType {
 	}
 }
 
-@:noCompletion
+@:allow(haxiom)
+@:allow(haxiom.proxies)
 final class ProxyBoundaryField {
-	public final name:String;
-	public final type:ProxyBoundaryType;
-	public final optional:Bool;
+	private final name:String;
+	private final type:ProxyBoundaryType;
+	private final optional:Bool;
 
-	public function new(name:String, type:ProxyBoundaryType, ?optional:Bool = false) {
+	private function new(name:String, type:ProxyBoundaryType, ?optional:Bool = false) {
 		this.name = name;
 		this.type = type;
 		this.optional = optional;
