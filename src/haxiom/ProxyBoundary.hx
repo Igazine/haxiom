@@ -11,9 +11,9 @@ import haxiom.HaxiomTypes.HaxiomInstance;
 import haxiom.HaxiomTypes.HaxiomInterface;
 import haxiom.ProxyBoundaryType.ProxyBoundaryField;
 
-@:noCompletion
+@:allow(haxiom)
 final class ProxyBoundary {
-	public static function convert(value:Dynamic, type:ProxyBoundaryType, path:String):Dynamic {
+	private static function convert(value:Dynamic, type:ProxyBoundaryType, path:String):Dynamic {
 		return convertValue(value, type, path, new ObjectMap<Dynamic, Dynamic>());
 	}
 

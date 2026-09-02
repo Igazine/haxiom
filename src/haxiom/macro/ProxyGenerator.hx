@@ -5,6 +5,7 @@ import haxe.macro.Context;
 import haxe.macro.Expr;
 import haxe.macro.Type;
 
+@:allow(haxiom.Haxiom)
 class ProxyGenerator {
     static var definedProxies:Map<String, Bool> = new Map();
 
@@ -71,7 +72,7 @@ class ProxyGenerator {
         }
     }
 
-    public static function generateProxy(interfaceType:Type):String {
+    private static function generateProxy(interfaceType:Type):String {
         switch (Context.follow(interfaceType)) {
             case TInst(tRef, _):
                 var t = tRef.get();

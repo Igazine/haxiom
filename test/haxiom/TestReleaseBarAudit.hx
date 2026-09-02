@@ -30,6 +30,16 @@ class TestReleaseBarAudit {
 			"public static function registerMacros(",
 			"public static function expand("
 		], violations);
+		rejectPublicMembers("src/haxiom/LZ4.hx", [
+			"public static function compress(",
+			"public static function decompress("
+		], violations);
+		rejectPublicMembers("src/haxiom/ProxyBoundary.hx", [
+			"public static function convert("
+		], violations);
+		rejectPublicMembers("src/haxiom/macro/ProxyGenerator.hx", [
+			"public static function generateProxy("
+		], violations);
 
 		if (violations.length > 0) {
 			throw "Release-bar audit failed:\n" + violations.join("\n");
