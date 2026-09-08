@@ -20,6 +20,8 @@ class ApiBoundaryMacro {
 		assertPrivateConstructor("haxiom.ProxyBoundaryType");
 		assertPrivate("haxiom.Haxiom", "invokeProxyMethod");
 		assertPrivate("haxiom.Haxiom", "constructHelper", true);
+		assertPrivate("haxiom.Haxiom", "compileInternal");
+		assertPrivate("haxiom.Parser", "parseStatements");
 		assertPrivate("haxiom.HaxiomTypes.HaxiomInstance", "fields");
 		assertPrivateConstructor("haxiom.HaxiomTypes.HaxiomInstance");
 		assertPrivate("haxiom.DynamicMap", "stringMap");

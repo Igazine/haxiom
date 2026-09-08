@@ -4,7 +4,7 @@ import sys.io.File;
 
 class TestParseTypes {
     static function main() {
-        var engine = new Haxiom();
+        var engine = new haxiom.StatementTestEngine();
         try {
             var content = File.getContent("test/haxiom/openfl/scripts/Types.hx");
             var ast = engine.compile(content, new ScriptContext("Types", "test/haxiom/openfl/scripts/Types.hx"));

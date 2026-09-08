@@ -27,7 +27,7 @@ class TestMultiThread {
 		if (repetitions == null || repetitions < 1) {
 			throw "Repetition count must be a positive integer";
 		}
-		var precompiled = (mode == "execute" || mode == "execute-no-pool") ? new Haxiom().compileToBytecodeBytes(vmScript(1000)) : null;
+		var precompiled = (mode == "execute" || mode == "execute-no-pool") ? new Haxiom().compileToBytecodeBytes(vmScript(1000), new ScriptContext("ThreadVM")) : null;
 		var results = new sys.thread.Deque<ThreadResult>();
 		var startBarrier = new sys.thread.Lock();
 
@@ -101,15 +101,15 @@ class TestMultiThread {
 
 		if (mode == "ast" || mode == "all") {
 			engine.useVM = false;
-			var script = '#if thread_' + threadId + '\n' + randVal + ';\n#else\n-1;\n#end';
-			var result:Dynamic = engine.interpret(script);
+			var script = 'class ThreadAST { static public function main():Int {\n#if thread_' + threadId + '\nreturn ' + randVal + ';\n#else\nreturn -1;\n#end\n} }';
+			var result:Dynamic = engine.interpret(script, new ScriptContext("ThreadAST"));
 			if (result != randVal) {
 				return 'AST result mismatch: expected $randVal, got $result';
 			}
 		}
 
 		if (mode == "compile") {
-			var bytes = engine.compileToBytecodeBytes(vmScript(randVal));
+			var bytes = engine.compileToBytecodeBytes(vmScript(randVal), new ScriptContext("ThreadVM"));
 			if (bytes == null || bytes.length == 0) {
 				return "VM compiler returned no bytecode";
 			}
@@ -127,7 +127,7 @@ class TestMultiThread {
 
 		if (mode == "vm" || mode == "all") {
 			engine.useVM = true;
-			var result:Dynamic = engine.interpret(vmScript(randVal));
+			var result:Dynamic = engine.interpret(vmScript(randVal), new ScriptContext("ThreadVM"));
 			var expected = randVal + 250;
 			if (result != expected) {
 				return 'VM result mismatch: expected $expected, got $result';
@@ -144,7 +144,7 @@ class TestMultiThread {
 	}
 
 	static function vmScript(value:Int):String {
-		return 'var val = ' + value + '; var acc = 0; for (k in 0...50) { acc += 5; } val + acc;';
+		return 'class ThreadVM { static public function main():Int { var val = ' + value + '; var acc = 0; for (k in 0...50) { acc += 5; } return val + acc; } }';
 	}
 	#end
 }

@@ -7,7 +7,7 @@ class TestInlineCache {
     public static function main() {
         trace("Starting Haxiom VM Inline Caching Verification...");
         
-        var engine = new Haxiom();
+        var engine = new haxiom.StatementTestEngine();
         engine.useVM = true;
         
         // 1. Guest Class Method Caching Test

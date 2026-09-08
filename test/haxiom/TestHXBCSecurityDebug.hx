@@ -40,14 +40,14 @@ class TestHXBCSecurityDebug {
 				}
 			}
 		';
-		var result:Int = new Haxiom().interpret(source, new ScriptContext("VMAccessMetadata"));
+		var result:Int = new haxiom.StatementTestEngine().interpret(source, new ScriptContext("VMAccessMetadata"));
 		if (result != 42)
 			throw 'VM method-specific @:access returned $result';
 		trace("SUCCESS: VM method-specific @:access verified.");
 	}
 
     static function testBytecodeEncryption() {
-        var engine = new Haxiom();
+        var engine = new haxiom.StatementTestEngine();
         engine.useVM = true;
 
         var script = "
@@ -63,7 +63,7 @@ class TestHXBCSecurityDebug {
         if (bytes == null) throw "Failed to compile bytecode with key";
 
         // 1. Run with correct key
-        var engine2 = new Haxiom();
+        var engine2 = new haxiom.StatementTestEngine();
         engine2.useVM = true;
         var res:Int = engine2.executeBytecodeBytes(bytes, script, key);
         if (res != 30) throw "Encryption execution failed: expected 30, got " + res;
@@ -115,7 +115,7 @@ class TestHXBCSecurityDebug {
     }
 
     static function testBytecodeObfuscationCheck() {
-        var engine = new Haxiom();
+        var engine = new haxiom.StatementTestEngine();
         engine.useVM = true;
 
         var script = "
@@ -147,7 +147,7 @@ class TestHXBCSecurityDebug {
     }
 
     static function testDebugSymbolsAndLocalsDump() {
-        var engine = new Haxiom();
+        var engine = new haxiom.StatementTestEngine();
         engine.useVM = true;
 
         var script = "
@@ -195,7 +195,7 @@ class TestHXBCSecurityDebug {
     }
 
     static function testEngineExposureBlockage() {
-        var engine = new Haxiom();
+        var engine = new haxiom.StatementTestEngine();
         engine.importWhitelist = null; // Open up the whitelist to test override
 
         var script = "
@@ -230,7 +230,7 @@ class TestHXBCSecurityDebug {
     }
 
     static function testAutoExecuteMain() {
-        var engine = new Haxiom();
+        var engine = new haxiom.StatementTestEngine();
         engine.useVM = true;
 
         var script = "
@@ -251,7 +251,7 @@ class TestHXBCSecurityDebug {
         }
 
         // Test AST mode as well
-        var engineAST = new Haxiom();
+        var engineAST = new haxiom.StatementTestEngine();
         engineAST.useVM = false;
         engineAST.interpret(script, new ScriptContext("AutoMainDemo"));
 
@@ -278,7 +278,7 @@ class TestHXBCSecurityDebug {
         ";
 
         for (useVM in [false, true]) {
-            var invalidEngine = new Haxiom();
+            var invalidEngine = new haxiom.StatementTestEngine();
             invalidEngine.enableDCE = false;
             invalidEngine.useVM = useVM;
             invalidEngine.interpret(invalidMainScript);
@@ -297,7 +297,7 @@ class TestHXBCSecurityDebug {
     }
 
     static function testNativeClassCasting() {
-        var engine = new Haxiom();
+        var engine = new haxiom.StatementTestEngine();
         engine.useVM = true;
         
         engine.registerClass("haxe.crypto.Sha1", haxe.crypto.Sha1);
@@ -315,7 +315,7 @@ class TestHXBCSecurityDebug {
         engine.interpret(script);
         
         // Test AST mode as well
-        var engineAST = new Haxiom();
+        var engineAST = new haxiom.StatementTestEngine();
         engineAST.useVM = false;
         engineAST.registerClass("haxe.crypto.Sha1", haxe.crypto.Sha1);
         engineAST.interpret(script);
@@ -324,7 +324,7 @@ class TestHXBCSecurityDebug {
     }
 
     static function testClassRedefinitionBlockage() {
-        var engine = new Haxiom();
+        var engine = new haxiom.StatementTestEngine();
         var script = "
             class RedefDemo {
                 static public function main() {}
@@ -369,7 +369,7 @@ class TestHXBCSecurityDebug {
         ";
 
         // Test 1: Prioritize Basic based on filename matching "Basic.hx"
-        var engine1 = new Haxiom();
+        var engine1 = new haxiom.StatementTestEngine();
         engine1.useVM = true;
         engine1.interpret(script, new ScriptContext("Basic", "Basic.hx"));
         
@@ -383,7 +383,7 @@ class TestHXBCSecurityDebug {
         }
 
         // Test 2: Prioritize AnotherClass based on override flag
-        var engine2 = new Haxiom();
+        var engine2 = new haxiom.StatementTestEngine();
         engine2.useVM = true;
         engine2.interpret(script, new ScriptContext("AnotherClass", "Basic.hx"));
 
@@ -398,7 +398,7 @@ class TestHXBCSecurityDebug {
 
         // Test 3: A source string without a script name has no implicit entry point
         for (useVM in [false, true]) {
-            var unnamedEngine = new Haxiom();
+            var unnamedEngine = new haxiom.StatementTestEngine();
             unnamedEngine.enableDCE = false;
             unnamedEngine.useVM = useVM;
             unnamedEngine.interpret(script);
@@ -406,19 +406,19 @@ class TestHXBCSecurityDebug {
         }
 
         // Test 4: Entry-point selection survives both serialized representations
-        var astCompiler = new Haxiom();
+        var astCompiler = new haxiom.StatementTestEngine();
         astCompiler.useVM = false;
         var astBytes = astCompiler.compileToASTBytes(script, new ScriptContext("Basic", "Basic.hx"));
-        var astRuntime = new Haxiom();
+        var astRuntime = new haxiom.StatementTestEngine();
         astRuntime.useVM = false;
         astRuntime.executeASTBytes(astBytes);
         assertMainRouting(astRuntime, true, false, "AST bytes");
 
         for (compress in [false, true]) {
-            var bytecodeCompiler = new Haxiom();
+            var bytecodeCompiler = new haxiom.StatementTestEngine();
             bytecodeCompiler.useVM = true;
             var bytecodeBytes = bytecodeCompiler.compileToBytecodeBytes(script, new ScriptContext("Basic", "Basic.hx"), null, false, compress);
-            var bytecodeRuntime = new Haxiom();
+            var bytecodeRuntime = new haxiom.StatementTestEngine();
             bytecodeRuntime.useVM = true;
             bytecodeRuntime.executeBytecodeBytes(bytecodeBytes);
             assertMainRouting(bytecodeRuntime, true, false, compress ? "compressed HXBC" : "raw HXBC");
@@ -449,21 +449,21 @@ class TestHXBCSecurityDebug {
         var context = new ScriptContext("ContextNameOnly");
 
         for (useVM in [false, true]) {
-            var engine = new Haxiom();
+            var engine = new haxiom.StatementTestEngine();
             engine.useVM = useVM;
             assertContextLabel(() -> engine.interpret(script, context), useVM ? "VM interpret" : "AST interpret");
         }
 
-        var astCompiler = new Haxiom();
+        var astCompiler = new haxiom.StatementTestEngine();
         astCompiler.useVM = false;
         var astBytes = astCompiler.compileToASTBytes(script, context);
-        var astRuntime = new Haxiom();
+        var astRuntime = new haxiom.StatementTestEngine();
         astRuntime.useVM = false;
         assertContextLabel(() -> astRuntime.executeASTBytes(astBytes, script), "AST bytes");
 
         for (compress in [false, true]) {
-            var bytecode = new Haxiom().compileToBytecodeBytes(script, context, null, false, compress);
-            assertContextLabel(() -> new Haxiom().executeBytecodeBytes(bytecode, script),
+            var bytecode = new haxiom.StatementTestEngine().compileToBytecodeBytes(script, context, null, false, compress);
+            assertContextLabel(() -> new haxiom.StatementTestEngine().executeBytecodeBytes(bytecode, script),
                 compress ? "compressed HXBC" : "raw HXBC");
         }
 

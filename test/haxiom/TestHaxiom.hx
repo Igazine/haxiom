@@ -9,7 +9,7 @@ class TestHaxiom {
 		trace("Haxiom Foundation Verification Suite");
 		trace("------------------------------------");
 
-		var haxiom = new haxiom.Haxiom();
+		var haxiom = new haxiom.StatementTestEngine();
 		runPart1(haxiom);
 		runPart2(haxiom);
 		runPart3(haxiom);
@@ -34,7 +34,7 @@ class TestHaxiom {
 
 	static function runVMStateTests():Void {
 		trace("Testing Low-Level VMState Transitions...");
-		var engine = new Haxiom();
+		var engine = new haxiom.StatementTestEngine();
 		if (engine.state != UNINITIALIZED) {
 			throw "Expected state UNINITIALIZED on new engine, got " + engine.state;
 		}
@@ -527,7 +527,7 @@ class TestHaxiom {
 		haxiom.interpret(script23);
 
 		// 23b. Block Comment parsing support (/**/, /* ... */, /** ... */, and nested)
-		var hComments = new Haxiom();
+		var hComments = new haxiom.StatementTestEngine();
 		var script23b = '
             var x = 10;
             /**/
@@ -544,7 +544,7 @@ class TestHaxiom {
 		trace("SUCCESS: Block comments parsing verified.");
 
 		// 23c. Wildcard Package Import support (import package.*;)
-		var hWildcard = new Haxiom();
+		var hWildcard = new haxiom.StatementTestEngine();
 		var script23c = '
             import haxe.ds.*;
 
@@ -563,7 +563,7 @@ class TestHaxiom {
 		trace("SUCCESS: Wildcard package imports (import package.*;) verified.");
 
 		// 23d. Enum Abstract support (enum abstract Name(Type))
-		var hEnumAbs = new Haxiom();
+		var hEnumAbs = new haxiom.StatementTestEngine();
 		var script23d = '
             enum abstract Direction(Int) {
                 var UP = 10;
@@ -602,7 +602,7 @@ class TestHaxiom {
 		trace("SUCCESS: Enum abstract syntax and value synthesis (enum abstract Name(Type)) verified.");
 
 		// 23e. Anonymous Structure Extension (> ParentTypedef)
-		var hStructExt = new Haxiom();
+		var hStructExt = new haxiom.StatementTestEngine();
 		var script23e = '
             typedef Point2D = {
                 var x:Int;
@@ -623,7 +623,7 @@ class TestHaxiom {
 		trace("SUCCESS: Anonymous structure extension (> ParentTypedef) verified.");
 
 		// 23f. Generic Type Parameter Constraints (T:Constraint)
-		var hGenericConst = new Haxiom();
+		var hGenericConst = new haxiom.StatementTestEngine();
 		var script23f = '
             class Measurable {
                 public var size:Int;
@@ -652,7 +652,7 @@ class TestHaxiom {
 		trace("SUCCESS: Generic type parameter constraints (T:Constraint) verified.");
 
 		// 23g. LZ4 Bytecode Compression & Execution
-		var hLz4 = new Haxiom();
+		var hLz4 = new haxiom.StatementTestEngine();
 		var script23g = '
             class BigData {
                 public var name:String;
@@ -686,7 +686,7 @@ class TestHaxiom {
 		trace('SUCCESS: LZ4 Bytecode Compression & Execution verified (${rawBytes.length} bytes -> ${compressedBytes.length} bytes).');
 
 		// 23h. Engine Inspection API (Haxiom.inspectBytecode & haxiom.inspect)
-		var hInspect = new Haxiom();
+		var hInspect = new haxiom.StatementTestEngine();
 		var script23h = '
             package my.game;
             interface IRenderable {
@@ -746,7 +746,7 @@ class TestHaxiom {
 		sys.io.File.saveBytes(tmpResBinPath, testBinBytes);
 
 		try {
-			var hRes = new Haxiom();
+			var hRes = new haxiom.StatementTestEngine();
 			hRes.setResourceProvider(path -> sys.FileSystem.exists(path) && !sys.FileSystem.isDirectory(path) ? sys.io.File.getBytes(path) : null);
 			var script23i = '
                 import haxe.io.Bytes;
@@ -2106,7 +2106,7 @@ class TestHaxiom {
 		var forceSysFS = sys.FileSystem;
 		#end
 
-		var testHaxiom = new haxiom.Haxiom();
+		var testHaxiom = new haxiom.StatementTestEngine();
 
 		// A. Verify Sys is not importable by default
 		var sysImportThrown = false;
@@ -2232,7 +2232,7 @@ class TestHaxiom {
 
 		// F. Verify setFieldAccessFilter blocks unauthorized property walks (.stage / .parent.parent)
 		var caughtFilterError = false;
-		var hFilter = new Haxiom();
+		var hFilter = new haxiom.StatementTestEngine();
 		hFilter.setGlobal("mockNode", {
 			parent: {
 				stage: "SecretHostStage"
@@ -2257,7 +2257,7 @@ class TestHaxiom {
 		trace("SUCCESS: Sandbox and API exposure security checks passed.");
 
 		// G. Verify manual script throw behavior (AST and VM modes)
-		var hThrow = new Haxiom();
+		var hThrow = new haxiom.StatementTestEngine();
 		hThrow.useVM = true;
 		var caughtManualThrow = false;
 		try {
@@ -2378,7 +2378,7 @@ class TestHaxiom {
 
 	static function runPart4(haxiom:haxiom.Haxiom) {
 		// 61. AST Caching Verification
-		var testCacheHaxiom = new haxiom.Haxiom();
+		var testCacheHaxiom = new haxiom.StatementTestEngine();
 		testCacheHaxiom.enableAstCache = true;
 		var src = "var cacheTest = 100;";
 		var ast1 = testCacheHaxiom.compile(src);
@@ -2397,7 +2397,7 @@ class TestHaxiom {
 		trace("SUCCESS: AST Caching disabled check passed");
 
 		// Test capacity eviction (1000 items)
-		var testCacheHaxiom2 = new haxiom.Haxiom();
+		var testCacheHaxiom2 = new haxiom.StatementTestEngine();
 		testCacheHaxiom2.enableAstCache = true;
 		var preEvictAst = testCacheHaxiom2.compile("var x = 1000;");
 		for (i in 0...999) {
@@ -2411,7 +2411,7 @@ class TestHaxiom {
 		trace("SUCCESS: AST Cache capacity eviction verified successfully");
 
 		// 62. Expanded Stdlib Mapping
-		var testStdHaxiom = new haxiom.Haxiom();
+		var testStdHaxiom = new haxiom.StatementTestEngine();
 
 		var accessJsonWithoutImportThrown = false;
 		try {
@@ -2694,7 +2694,7 @@ class TestHaxiom {
 		haxiom.interpret(script67_wildcard);
 
 		try {
-			var freshHaxiom = new haxiom.Haxiom();
+			var freshHaxiom = new haxiom.StatementTestEngine();
 			freshHaxiom.interpret("
                 var md5 = haxe.crypto.Md5.encode('test');
             ");
@@ -2813,7 +2813,7 @@ class TestHaxiom {
 		if (bytes == null || bytes.length == 0)
 			throw "Failed to compile to bytes";
 
-		var freshHaxiom = new haxiom.Haxiom();
+		var freshHaxiom = new haxiom.StatementTestEngine();
 		var result:Int = freshHaxiom.executeBytes(bytes);
 		if (result != 300)
 			throw "Serialization execution result mismatch: " + result;
@@ -2826,7 +2826,7 @@ class TestHaxiom {
             throw 'Explicit Error!';
         ";
 		var errorBytes = haxiom.compileToBytes(script70_error);
-		var errorHaxiom = new haxiom.Haxiom();
+		var errorHaxiom = new haxiom.StatementTestEngine();
 		var errorOccurred = false;
 		try {
 			errorHaxiom.executeBytes(errorBytes, script70_error);
@@ -2843,7 +2843,7 @@ class TestHaxiom {
 		trace("SUCCESS: AST Serialization & Deserialization verified.");
 
 		// 71. VM Execution Mode Verification
-		var vmEngine = new haxiom.Haxiom();
+		var vmEngine = new haxiom.StatementTestEngine();
 		vmEngine.useVM = true;
 
 		var script71 = "
@@ -2948,7 +2948,7 @@ class TestHaxiom {
             var c = a / b;
             throw 'VM Explicit Error!';
         ";
-		var errEngine = new haxiom.Haxiom();
+		var errEngine = new haxiom.StatementTestEngine();
 		errEngine.useVM = true;
 		var errorOccurred = false;
 		try {
@@ -2966,7 +2966,7 @@ class TestHaxiom {
 		trace("SUCCESS: VM Execution Mode verified.");
 
 		// 72. Bytecode & AST Persistence Verification
-		var persistEngine = new haxiom.Haxiom();
+		var persistEngine = new haxiom.StatementTestEngine();
 
 		var script72 = "
             var factor = 5;
@@ -2990,7 +2990,7 @@ class TestHaxiom {
 		if (astBytes == null)
 			throw "Failed to compile AST to bytes";
 
-		var astLoaderEngine = new haxiom.Haxiom();
+		var astLoaderEngine = new haxiom.StatementTestEngine();
 		var astResult:Dynamic = astLoaderEngine.executeASTBytes(astBytes);
 		if (astResult.sum != 30)
 			throw "AST persistence execution failed: sum=" + astResult.sum;
@@ -3002,7 +3002,7 @@ class TestHaxiom {
 		if (bytecodeBytes == null)
 			throw "Failed to compile Bytecode to bytes";
 
-		var bcLoaderEngine = new haxiom.Haxiom();
+		var bcLoaderEngine = new haxiom.StatementTestEngine();
 		bcLoaderEngine.useVM = true;
 
 		// Verify HXBC magic header
@@ -3048,10 +3048,10 @@ class TestHaxiom {
             var a = 200;
             throw 'Bytecode Explicit Error!';
         ";
-		var errCompileEngine = new haxiom.Haxiom();
+		var errCompileEngine = new haxiom.StatementTestEngine();
 		var errBytes = errCompileEngine.compileToBytecodeBytes(script72_error, new ScriptContext(null, "error_bytecode.hx"), null, true);
 
-		var errRunEngine = new haxiom.Haxiom();
+		var errRunEngine = new haxiom.StatementTestEngine();
 		errRunEngine.useVM = true;
 		var persistErrorOccurred = false;
 		try {
@@ -3071,7 +3071,7 @@ class TestHaxiom {
 		trace("SUCCESS: Bytecode & AST Persistence verified.");
 
 		// 73. VM Class, Constructor, Method, and Property Parity Verification
-		var vmClassEngine = new haxiom.Haxiom();
+		var vmClassEngine = new haxiom.StatementTestEngine();
 		vmClassEngine.useVM = true;
 
 		var script73 = "
@@ -3143,7 +3143,7 @@ class TestHaxiom {
             var p = new ErrorProducer();
             p.fail();
         ";
-		var errEngine73 = new haxiom.Haxiom();
+		var errEngine73 = new haxiom.StatementTestEngine();
 		errEngine73.useVM = true;
 		var errOccurred73 = false;
 		try {
@@ -3164,7 +3164,7 @@ class TestHaxiom {
 		trace("SUCCESS: VM Class, Constructor, Method, and Property Parity verified.");
 
 		// Test 74: VM compile-time slot resolution, slot reuse, shadowing, closures, and variable type validation.
-		var vmEngine74 = new haxiom.Haxiom();
+		var vmEngine74 = new haxiom.StatementTestEngine();
 		vmEngine74.useVM = true;
 
 		// 1. Slot Reuse Verification
@@ -3239,7 +3239,7 @@ class TestHaxiom {
             }
             new TypeTester().run();
         ";
-		var errEngine74 = new haxiom.Haxiom();
+		var errEngine74 = new haxiom.StatementTestEngine();
 		errEngine74.useVM = true;
 		var typeErrorOccurred = false;
 		try {
@@ -3439,7 +3439,7 @@ class TestHaxiom {
 			fut.resolve('test');
 			fut;
 		";
-		var engine = new Haxiom();
+		var engine = new haxiom.StatementTestEngine();
 		var futRes:Dynamic = engine.interpret(futureVerifyScript);
 		if (futRes == null || !Std.isOfType(futRes, Future)) {
 			throw "FAIL: haxiom.guest.Future type import or instantiation failed in guest script";
@@ -3462,7 +3462,7 @@ class TestHaxiom {
 		";
 
 		// AST mode private method block check
-		var visAstEngine = new Haxiom();
+		var visAstEngine = new haxiom.StatementTestEngine();
 		visAstEngine.useVM = false;
 		var visAstInst = visAstEngine.interpret(visibilityCheckScript);
 		visAstEngine.setGlobal("myInst", visAstInst);
@@ -3478,7 +3478,7 @@ class TestHaxiom {
 		", "Cannot access private member of class", "AST private method access block");
 
 		// VM mode private method block check
-		var visVMEngine = new Haxiom();
+		var visVMEngine = new haxiom.StatementTestEngine();
 		visVMEngine.useVM = true;
 		var visVMInst = visVMEngine.interpret(visibilityCheckScript);
 		visVMEngine.setGlobal("myInst", visVMInst);
@@ -3575,7 +3575,7 @@ class TestHaxiom {
 			"Unimplemented abstract method runtime validation");
 
 		// Valid override and abstract class implementation
-		var validAstEngine = new haxiom.Haxiom();
+		var validAstEngine = new haxiom.StatementTestEngine();
 		validAstEngine.interpret("
 			abstract class Animal {
 				public function new() {}
@@ -3606,7 +3606,7 @@ class TestHaxiom {
 
 		// Test bind() in both AST and VM modes
 		for (vmMode in [false, true]) {
-			var bindEngine = new haxiom.Haxiom();
+			var bindEngine = new haxiom.StatementTestEngine();
 			bindEngine.useVM = vmMode;
 			var results = [];
 			bindEngine.setGlobal("collect", (v:Dynamic) -> results.push(v));
@@ -3624,20 +3624,20 @@ class TestHaxiom {
 		trace("SUCCESS: Closure bind() redirection verified for both AST and VM modes.");
 
 		// Verify macro keyword rejection tests
-		var macroEngine = new haxiom.Haxiom();
+		var macroEngine = new haxiom.StatementTestEngine();
 		expectError(macroEngine, "macro var x = 1;", "macros are not supported", "macro var statement");
 		expectError(macroEngine, "1 + macro 2;", "macros are not supported", "macro primary expression");
 		expectError(macroEngine, "class Test { macro function foo() {} }", "macros are not supported", "macro class method");
 
 		// Verify final global re-assignment rejection tests in AST and VM modes (final by default)
 		for (vmMode in [false, true]) {
-			var finalEngine = new haxiom.Haxiom();
+			var finalEngine = new haxiom.StatementTestEngine();
 			finalEngine.useVM = vmMode;
 			finalEngine.setGlobal("myFinal", 100); // final by default
 			expectError(finalEngine, "myFinal = 200;", "Cannot reassign final variable", "final global reassignment in VM=" + vmMode);
 
 			// Verify that a global explicitly marked as mutable (isMutable = true) CAN be reassigned
-			var mutableEngine = new haxiom.Haxiom();
+			var mutableEngine = new haxiom.StatementTestEngine();
 			mutableEngine.useVM = vmMode;
 			mutableEngine.setGlobal("myMutable", 100, true);
 			mutableEngine.interpret("myMutable = 200;");
@@ -3654,7 +3654,7 @@ class TestHaxiom {
 				sub: myobj,
 				age: 33
 			};
-			var mutEngine = new haxiom.Haxiom();
+			var mutEngine = new haxiom.StatementTestEngine();
 			mutEngine.useVM = vmMode;
 			mutEngine.setGlobal("myobj", myobj); // Immutable binding by default
 			mutEngine.setGlobal("nestedobj", nestedobj); // Immutable binding by default
@@ -3677,7 +3677,7 @@ class TestHaxiom {
 
 		// 71. Reflection API Sandbox Verification (Json, Serializer, Type, Dynamic Casting)
 		for (vmMode in [false, true]) {
-			var reflectionEngine = new haxiom.Haxiom();
+			var reflectionEngine = new haxiom.StatementTestEngine();
 			reflectionEngine.useVM = vmMode;
 			var nonWhitelistedObj = new FFIClassHelper(42);
 			reflectionEngine.setGlobal("helper", nonWhitelistedObj);
@@ -3740,7 +3740,7 @@ class TestHaxiom {
 		}
 
 		// 75. haxiom.HostRef Opaque Handle Verification
-		var hostRefEngine = new Haxiom();
+		var hostRefEngine = new haxiom.StatementTestEngine();
 		var secretData = {secret: "SuperSecretHostData", value: 42};
 		var handle = HostRef.wrap(secretData);
 

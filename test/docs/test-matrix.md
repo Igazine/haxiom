@@ -6,6 +6,7 @@ This matrix describes the intended test coverage shape for the 1.0 alpha. It is 
 
 | Gate | Purpose |
 | --- | --- |
+| `haxe test/strictscripts/build.hxml` | Declaration-only source modules, compiler diagnostics, callbacks, and valid entry points on interpreter, CPP, JavaScript, and Neko. |
 | `haxe test_release.hxml` | Sequential aggregate for the 1.0 alpha release bar. |
 | `haxe build.hxml` | Fast local sanity gate using the failure-isolation suite on the interpreter target. |
 | `haxe test_full.hxml` | Full interpreter gate plus bytecode CLI smoke tests. |
@@ -61,6 +62,8 @@ Each sample declares one expected outcome: a value, a compiler failure, or a run
 
 ## Application Scenario Policy
 
-Application scenarios combine features into deterministic, Haxe-valid modules resembling real guest programs. They must put executable code in a module-matching class entry point; new scenarios must not rely on Haxiom's temporary support for top-level executable code.
+Application scenarios combine features into deterministic, Haxe-valid modules resembling real guest programs. Executable code belongs in class methods; source module roots accept declarations only.
+
+`test/strictscripts/build.hxml` tests the public module restriction across interpreter, CPP, JavaScript, and Neko, including compiler callbacks and persisted compilation paths. Legacy instruction-level fixtures use `StatementTestEngine` from the test tree to compile statement lists through a private entry point. This harness preserves scope, error-position, and bytecode assertions; it is not a supported script API or a substitute for application scenario coverage.
 
 Application-equivalence scenarios run twice with fresh engine instances through AST interpretation, VM interpretation, AST persistence, raw HXBC, compressed HXBC, and keyed compressed HXBC. Explicit VM stress scenarios run through VM interpretation and all HXBC variants while excluding the recursive AST evaluator. The suite covers host interop, stateful workflows, inheritance and properties, JSON and collections, text and binary resources, recursive functions, constructors and accessors, closures, exceptions, and larger iterative workloads.

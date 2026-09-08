@@ -65,8 +65,8 @@ class TestDCE {
         // ---------------------------------------------------------------
         // Test 0: DCE is enabled by default
         // ---------------------------------------------------------------
-        var h0 = new Haxiom();
-        var h0off = new Haxiom(); h0off.enableDCE = false;
+        var h0 = new haxiom.StatementTestEngine();
+        var h0off = new haxiom.StatementTestEngine(); h0off.enableDCE = false;
         var len0default = blockLen(h0, 'var dead = 42;\ntrace("hi");');
         var len0off = blockLen(h0off, 'var dead = 42;\ntrace("hi");');
         if (h0.enableDCE && len0default < len0off)
@@ -77,7 +77,7 @@ class TestDCE {
         // ---------------------------------------------------------------
         // Test 1: Dead statements after return removed
         // ---------------------------------------------------------------
-        var h = new Haxiom(); h.enableDCE = true;
+        var h = new haxiom.StatementTestEngine(); h.enableDCE = true;
         var src = '
             function f():Int {
                 return 1;
@@ -110,7 +110,7 @@ class TestDCE {
         // ---------------------------------------------------------------
         // Test 2: Dead statements after throw removed
         // ---------------------------------------------------------------
-        var h2 = new Haxiom(); h2.enableDCE = true;
+        var h2 = new haxiom.StatementTestEngine(); h2.enableDCE = true;
         var src2 = '
             function g() {
                 throw "error";
@@ -136,7 +136,7 @@ class TestDCE {
         // ---------------------------------------------------------------
         // Test 3: Runtime result unchanged — correct output still produced
         // ---------------------------------------------------------------
-        var h3 = new Haxiom(); h3.enableDCE = true;
+        var h3 = new haxiom.StatementTestEngine(); h3.enableDCE = true;
         var result = [];
         h3.setGlobal("collect", function(v:Dynamic) result.push(v));
         h3.interpret('
@@ -152,10 +152,10 @@ class TestDCE {
         // ---------------------------------------------------------------
         // Test 4: Unused untyped pure local is eliminated
         // ---------------------------------------------------------------
-        var h4 = new Haxiom(); h4.enableDCE = true;
+        var h4 = new haxiom.StatementTestEngine(); h4.enableDCE = true;
         // `dead` is never read; init is pure; no type annotation → should be eliminated
         var lenWith = blockLen(h4, 'var dead = 42;\ntrace("hi");');
-        var h4b = new Haxiom(); h4b.enableDCE = false;
+        var h4b = new haxiom.StatementTestEngine(); h4b.enableDCE = false;
         var lenWithout = blockLen(h4b, 'var dead = 42;\ntrace("hi");');
         if (lenWith < lenWithout)
             ok('4. Unused untyped pure local eliminated (${lenWithout} → ${lenWith} stmts)');
@@ -165,7 +165,7 @@ class TestDCE {
         // ---------------------------------------------------------------
         // Test 5: Used variable is NOT eliminated
         // ---------------------------------------------------------------
-        var h5 = new Haxiom(); h5.enableDCE = true;
+        var h5 = new haxiom.StatementTestEngine(); h5.enableDCE = true;
         var result5 = [];
         h5.setGlobal("collect", function(v:Dynamic) result5.push(v));
         h5.interpret('var x = 7; collect(x);', null);
@@ -177,7 +177,7 @@ class TestDCE {
         // ---------------------------------------------------------------
         // Test 6: Typed variable is NOT eliminated (runtime type-check)
         // ---------------------------------------------------------------
-        var h6 = new Haxiom(); h6.enableDCE = true;
+        var h6 = new haxiom.StatementTestEngine(); h6.enableDCE = true;
         // Typed var with wrong type in init — must still throw at runtime
         var threw6 = false;
         try {
@@ -185,7 +185,7 @@ class TestDCE {
         } catch (e:Dynamic) { threw6 = true; }
         // Valid typed var stays alive for type check
         var result6 = [];
-        var h6b = new Haxiom(); h6b.enableDCE = true;
+        var h6b = new haxiom.StatementTestEngine(); h6b.enableDCE = true;
         h6b.setGlobal("collect", function(v:Dynamic) result6.push(v));
         h6b.interpret('var x:Int = 10; collect(x);', null);
         if (result6.length == 1 && result6[0] == 10)
@@ -196,7 +196,7 @@ class TestDCE {
         // ---------------------------------------------------------------
         // Test 7: Unused variable with side-effecting init is NOT eliminated
         // ---------------------------------------------------------------
-        var h7 = new Haxiom(); h7.enableDCE = true;
+        var h7 = new haxiom.StatementTestEngine(); h7.enableDCE = true;
         var sideEffectRan = [];
         h7.setGlobal("sideEffect", function() { sideEffectRan.push(1); return 42; });
         h7.interpret('var unused = sideEffect();', null);
@@ -208,10 +208,10 @@ class TestDCE {
         // ---------------------------------------------------------------
         // Test 8: Pure expression-statement (not last) is removed
         // ---------------------------------------------------------------
-        var h8 = new Haxiom(); h8.enableDCE = true;
+        var h8 = new haxiom.StatementTestEngine(); h8.enableDCE = true;
         // A lone `1 + 2;` before a real statement — pure, not last → eliminated
         var len8dce = blockLen(h8, '1 + 2;\ntrace("hi");');
-        var h8b = new Haxiom(); h8b.enableDCE = false;
+        var h8b = new haxiom.StatementTestEngine(); h8b.enableDCE = false;
         var len8raw = blockLen(h8b, '1 + 2;\ntrace("hi");');
         if (len8dce < len8raw)
             ok('8. Pure expression-statement removed ($len8raw → $len8dce stmts)');
@@ -221,7 +221,7 @@ class TestDCE {
         // ---------------------------------------------------------------
         // Test 9: Unused private class method eliminated
         // ---------------------------------------------------------------
-        var h9 = new Haxiom(); h9.enableDCE = true;
+        var h9 = new haxiom.StatementTestEngine(); h9.enableDCE = true;
         var src9 = '
             class MyClass {
                 static private function deadHelper() { return 99; }
@@ -244,7 +244,7 @@ class TestDCE {
         // ---------------------------------------------------------------
         // Test 10: Public method NOT eliminated
         // ---------------------------------------------------------------
-        var h10 = new Haxiom(); h10.enableDCE = true;
+        var h10 = new haxiom.StatementTestEngine(); h10.enableDCE = true;
         var src10 = '
             class Box {
                 public function doA() { return 1; }
@@ -269,7 +269,7 @@ class TestDCE {
         // ---------------------------------------------------------------
         // Test 11: Private method used by another method is NOT eliminated
         // ---------------------------------------------------------------
-        var h11 = new Haxiom(); h11.enableDCE = true;
+        var h11 = new haxiom.StatementTestEngine(); h11.enableDCE = true;
         var src11 = '
             class Util {
                 static private function helper() { return 7; }
@@ -294,7 +294,7 @@ class TestDCE {
         // ---------------------------------------------------------------
         // Test 12: Constructor is always kept
         // ---------------------------------------------------------------
-        var h12 = new Haxiom(); h12.enableDCE = true;
+        var h12 = new haxiom.StatementTestEngine(); h12.enableDCE = true;
         var src12 = '
             class Widget {
                 var val:Int;
@@ -320,9 +320,9 @@ class TestDCE {
         // ---------------------------------------------------------------
         // Test 13: DCE disabled via enableDCE = false
         // ---------------------------------------------------------------
-        var h13 = new Haxiom(); h13.enableDCE = false;
+        var h13 = new haxiom.StatementTestEngine(); h13.enableDCE = false;
         var len13off = blockLen(h13, 'var dead = 42;\ntrace("hi");');
-        var h13b = new Haxiom(); h13b.enableDCE = true;
+        var h13b = new haxiom.StatementTestEngine(); h13b.enableDCE = true;
         var len13on = blockLen(h13b, 'var dead = 42;\ntrace("hi");');
         if (len13off > len13on)
             ok('13. DCE disabled: block kept longer ($len13off vs $len13on stmts)');
@@ -340,8 +340,8 @@ class TestDCE {
             var dead5 = 5;
             trace("done");
         ';
-        var h14on = new Haxiom(); h14on.enableDCE = true;
-        var h14off = new Haxiom(); h14off.enableDCE = false;
+        var h14on = new haxiom.StatementTestEngine(); h14on.enableDCE = true;
+        var h14off = new haxiom.StatementTestEngine(); h14off.enableDCE = false;
         var sizeOn = byteSize(h14on, src14);
         var sizeOff = byteSize(h14off, src14);
         if (sizeOn < sizeOff)
@@ -352,7 +352,7 @@ class TestDCE {
         // ---------------------------------------------------------------
         // Test 15: Dead top-level class eliminated entirely
         // ---------------------------------------------------------------
-        var h15 = new Haxiom(); h15.enableDCE = true;
+        var h15 = new haxiom.StatementTestEngine(); h15.enableDCE = true;
         // DCE class is never instantiated or referenced — entire class should be eliminated
         var src15 = '
             class Main {
@@ -379,7 +379,7 @@ class TestDCE {
         // ---------------------------------------------------------------
         // Test 16: Instantiated class is NOT eliminated (ENew protection)
         // ---------------------------------------------------------------
-        var h16 = new Haxiom(); h16.enableDCE = true;
+        var h16 = new haxiom.StatementTestEngine(); h16.enableDCE = true;
         var src16 = '
             class Main {
                 static public function main() { var w = new Widget(); return w; }
@@ -405,7 +405,7 @@ class TestDCE {
         // ---------------------------------------------------------------
         // Test 17: Unused private field eliminated from class
         // ---------------------------------------------------------------
-        var h17 = new Haxiom(); h17.enableDCE = true;
+        var h17 = new haxiom.StatementTestEngine(); h17.enableDCE = true;
         var src17 = '
             class Counter {
                 var count:Int = 0;
@@ -432,7 +432,7 @@ class TestDCE {
         // ---------------------------------------------------------------
         // Test 18: Private method and field @:keep preservation
         // ---------------------------------------------------------------
-        var h18 = new Haxiom(); h18.enableDCE = true;
+        var h18 = new haxiom.StatementTestEngine(); h18.enableDCE = true;
         var src18 = '
             class Keeper {
                 @:keep var keptField:Int = 10;
@@ -465,7 +465,7 @@ class TestDCE {
         // ---------------------------------------------------------------
         // Test 19: Class @:keepSub transitive subclass preservation
         // ---------------------------------------------------------------
-        var h19 = new Haxiom(); h19.enableDCE = true;
+        var h19 = new haxiom.StatementTestEngine(); h19.enableDCE = true;
         var src19 = '
             @:keepSub
             class Base {
@@ -501,7 +501,7 @@ class TestDCE {
         // ---------------------------------------------------------------
         // Test 20: Enum used through unqualified constructors is preserved
         // ---------------------------------------------------------------
-        var h20 = new Haxiom(); h20.enableDCE = true;
+        var h20 = new haxiom.StatementTestEngine(); h20.enableDCE = true;
         var src20 = '
             enum Message {
                 Empty;

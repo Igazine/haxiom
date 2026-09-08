@@ -82,7 +82,7 @@ class TestFailureIsolation {
 			var dogRaw:Dynamic = cast d;
 		";
 
-		var astEngine = new Haxiom();
+		var astEngine = new haxiom.StatementTestEngine();
 		astEngine.useVM = false;
 		astEngine.interpret(setup);
 		var storedD:Dynamic = astEngine.getGlobal("d");
@@ -101,17 +101,17 @@ class TestFailureIsolation {
 		");
 		astEngine.interpret("var dogRaw:Dynamic = cast d;");
 
-		astEngine = new Haxiom();
+		astEngine = new haxiom.StatementTestEngine();
 		astEngine.useVM = false;
 		astEngine.interpret(script);
 
-		var vmEngine = new Haxiom();
+		var vmEngine = new haxiom.StatementTestEngine();
 		vmEngine.useVM = true;
 		vmEngine.interpret(script);
 	}
 
 	static function testPersistence():Void {
-		var persistEngine = new Haxiom();
+		var persistEngine = new haxiom.StatementTestEngine();
 		var script = "
 			var factor = 5;
 			var closure = (x) -> x * factor;
@@ -133,7 +133,7 @@ class TestFailureIsolation {
 		if (astBytes == null)
 			throw "Failed to compile AST to bytes";
 
-		var astLoaderEngine = new Haxiom();
+		var astLoaderEngine = new haxiom.StatementTestEngine();
 		var astResult:Dynamic = astLoaderEngine.executeASTBytes(astBytes);
 		if (astResult.sum != 30)
 			throw "AST persistence execution failed: sum=" + astResult.sum;
@@ -159,13 +159,13 @@ class TestFailureIsolation {
 		var virtualAstPayload = persistEngine.compileToASTBytes(virtualResourceScript, new ScriptContext(null, "virtual_ast_resource_test.hx"));
 		if (virtualAstPayload == null)
 			throw "Failed to compile virtual AST resource script to bytes";
-		var virtualAstResult:String = new Haxiom().executeASTBytes(virtualAstPayload);
+		var virtualAstResult:String = new haxiom.StatementTestEngine().executeASTBytes(virtualAstPayload);
 		if (virtualAstResult != "6|0|127|128|254|255")
 			throw "AST virtual binary resource persistence failed: " + virtualAstResult;
 
 		var virtualTextBytes = haxe.io.Bytes.ofString("same content");
 		var badResourceInitializerScript = '@:haxiom.resource("virtual_text_payload.txt") var textAsset:String = "same content";';
-		var badAstResourceEngine = new Haxiom();
+		var badAstResourceEngine = new haxiom.StatementTestEngine();
 		badAstResourceEngine.addResource("virtual_text_payload.txt", virtualTextBytes);
 		assertResourceInitializerRejected(() -> badAstResourceEngine.compileToASTBytes(badResourceInitializerScript,
 			new ScriptContext(null, "bad_ast_resource_initializer.hx")), "AST resource initializer");
@@ -196,11 +196,11 @@ class TestFailureIsolation {
 		}
 		if (!foundVirtualBytecodeResource)
 			throw "Bytecode inspection failed to preserve virtual binary resource metadata";
-		var virtualBytecodeResult:String = new Haxiom().executeBytecodeBytes(virtualBytecodePayload, null, virtualBytecodeKey);
+		var virtualBytecodeResult:String = new haxiom.StatementTestEngine().executeBytecodeBytes(virtualBytecodePayload, null, virtualBytecodeKey);
 		if (virtualBytecodeResult != "6|0|127|128|254|255")
 			throw "Bytecode virtual binary resource persistence failed: " + virtualBytecodeResult;
 
-		var badBytecodeResourceEngine = new Haxiom();
+		var badBytecodeResourceEngine = new haxiom.StatementTestEngine();
 		badBytecodeResourceEngine.addResource("virtual_text_payload.txt", virtualTextBytes);
 		assertResourceInitializerRejected(() -> badBytecodeResourceEngine.compileToBytecodeBytes(badResourceInitializerScript,
 			new ScriptContext(null, "bad_bytecode_resource_initializer.hx")), "bytecode resource initializer");
@@ -226,7 +226,7 @@ class TestFailureIsolation {
 		var astResourcePayload = persistEngine.compileToASTBytes(resourceScript, new ScriptContext(null, "ast_resource_test.hx"));
 		if (astResourcePayload == null)
 			throw "Failed to compile AST resource script to bytes";
-		var astResourceResult:String = new Haxiom().executeASTBytes(astResourcePayload);
+		var astResourceResult:String = new haxiom.StatementTestEngine().executeASTBytes(astResourcePayload);
 		if (astResourceResult != "5|51")
 			throw "AST binary resource persistence failed: " + astResourceResult;
 		if (sys.FileSystem.exists(astResourcePath))
@@ -249,7 +249,7 @@ class TestFailureIsolation {
 
 		var checksumErrorOccurred = false;
 		try {
-			var bcLoaderEngine = new Haxiom();
+			var bcLoaderEngine = new haxiom.StatementTestEngine();
 			bcLoaderEngine.useVM = true;
 			bcLoaderEngine.executeBytecodeBytes(corruptedBytes);
 		} catch (e:Dynamic) {
@@ -259,7 +259,7 @@ class TestFailureIsolation {
 		if (!checksumErrorOccurred)
 			throw "Expected bytecode checksum verification error on corrupted bytes, but none occurred";
 
-		var bcLoaderEngine = new Haxiom();
+		var bcLoaderEngine = new haxiom.StatementTestEngine();
 		bcLoaderEngine.useVM = true;
 		var bcResult:Dynamic = bcLoaderEngine.executeBytecodeBytes(bytecodeBytes);
 		if (bcResult.sum != 30)
@@ -271,9 +271,9 @@ class TestFailureIsolation {
 			var a = 200;
 			throw 'Bytecode Explicit Error!';
 		";
-		var errCompileEngine = new Haxiom();
+		var errCompileEngine = new haxiom.StatementTestEngine();
 		var errBytes = errCompileEngine.compileToBytecodeBytes(scriptError, new ScriptContext(null, "error_bytecode.hx"), null, true);
-		var errRunEngine = new Haxiom();
+		var errRunEngine = new haxiom.StatementTestEngine();
 		errRunEngine.useVM = true;
 		var persistErrorOccurred = false;
 		try {
@@ -303,7 +303,7 @@ class TestFailureIsolation {
 	}
 
 	static function testDebugBytecodeCompileStateRestoration():Void {
-		var engine = new Haxiom();
+		var engine = new haxiom.StatementTestEngine();
 		engine.enableDCE = true;
 		engine.enableAstCache = true;
 
@@ -328,7 +328,7 @@ class TestFailureIsolation {
 		virtualPayload.set(2, 33);
 		virtualPayload.set(3, 44);
 
-		var resourceEngine = new Haxiom();
+		var resourceEngine = new haxiom.StatementTestEngine();
 		resourceEngine.useVM = true;
 		resourceEngine.addResource("vm_virtual_payload.bin", virtualPayload);
 		var resourceScript = '
@@ -346,7 +346,7 @@ class TestFailureIsolation {
 		if (resourceResult != "4|11|44")
 			throw "VM virtual resource context propagation failed: " + resourceResult;
 
-		var errorEngine = new Haxiom();
+		var errorEngine = new haxiom.StatementTestEngine();
 		errorEngine.useVM = true;
 		var errorScript = '
 			class VmFilenameError {
@@ -384,13 +384,13 @@ class TestFailureIsolation {
 			if (rawVal != 100) throw 'Auto-registered TestAbstract casting failed';
 		";
 
-		var astEngine = new Haxiom();
+		var astEngine = new haxiom.StatementTestEngine();
 		astEngine.importWhitelist = ["haxiom.autofiffi.*"];
 		astEngine.registerExposedClasses();
 		astEngine.useVM = false;
 		astEngine.interpret(script);
 
-		var vmEngine = new Haxiom();
+		var vmEngine = new haxiom.StatementTestEngine();
 		vmEngine.importWhitelist = ["haxiom.autofiffi.*"];
 		vmEngine.registerExposedClasses();
 		vmEngine.useVM = true;
@@ -398,11 +398,11 @@ class TestFailureIsolation {
 	}
 
 	static function testInternalTests():Void {
-		InternalTests.run(new Haxiom());
+		InternalTests.run(new haxiom.StatementTestEngine());
 	}
 
 	static function testVMStateTransitions():Void {
-		var engine = new Haxiom();
+		var engine = new haxiom.StatementTestEngine();
 		if (engine.state != VMState.UNINITIALIZED)
 			throw "Expected state UNINITIALIZED on new engine, got " + engine.state;
 
@@ -467,7 +467,7 @@ class TestFailureIsolation {
 			fut.resolve('test');
 			fut;
 		";
-		var engine = new Haxiom();
+		var engine = new haxiom.StatementTestEngine();
 		engine.useVM = false;
 		var fut:Dynamic = engine.interpret(futureVerifyScript);
 		if (fut == null)

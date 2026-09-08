@@ -369,6 +369,11 @@ class Haxiom {
 	 * @return The optimized AST node root representation, or null if compilation failed.
 	 */
 	public function compile(source:String, ?context:ScriptContext):haxiom.AST.Expr {
+		return compileInternal(source, context);
+	}
+
+	// The statement path supports internal instruction fixtures; public source APIs always compile modules.
+	private function compileInternal(source:String, ?context:ScriptContext, ?module:Bool = true):haxiom.AST.Expr {
 		var packageName = context != null ? context.packageName : null;
 		var staticTypes = context != null && context.staticTypes == true;
 		if (packageName != null) {
@@ -379,7 +384,7 @@ class Haxiom {
 		} else {
 			interp.currentPackage = [];
 		}
-		var cacheKey = makeAstCacheKey(source, context);
+		var cacheKey = (module ? "module:" : "statements:") + makeAstCacheKey(source, context);
 		if (enableAstCache && astCache.exists(cacheKey)) {
 			var folded = astCache.get(cacheKey);
 			if (staticTypes || enableStaticTypes) {
@@ -394,7 +399,7 @@ class Haxiom {
 			var lexer = new Lexer(source, fileInfo, interp.preprocessorFlags);
 			var tokens = lexer.tokenize();
 			var parser = new Parser(tokens, fileInfo);
-			var ast = parser.parse();
+			var ast = module ? parser.parse() : parser.parseStatements();
 			ast = appendMainCallIfPresent(ast, scriptName);
 			haxiom.StaticInitializerValidator.validate(ast);
 

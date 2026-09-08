@@ -7,7 +7,7 @@ class TestNSConflict {
         trace("Running Haxiom Scope-Aware Type Redefinition Verification...");
 
         // 1. Redefined type annotation check
-        var engine1 = new Haxiom();
+        var engine1 = new haxiom.StatementTestEngine();
         engine1.useVM = true;
         var script1 = "
             class String {
@@ -26,7 +26,7 @@ class TestNSConflict {
         }
 
         // 2. Fallback check when NOT redefined on a fresh instance
-        var engine2 = new Haxiom();
+        var engine2 = new haxiom.StatementTestEngine();
         engine2.useVM = true;
         var script2 = "
             var regularStr:String = 'Hello Native';
@@ -40,7 +40,7 @@ class TestNSConflict {
         }
 
         // 3. Shadowed Custom class package paths
-        var engine3 = new Haxiom();
+        var engine3 = new haxiom.StatementTestEngine();
         engine3.useVM = true;
         var script3 = "
             package custom.pkg;
@@ -79,7 +79,7 @@ class TestNSConflict {
 
         // 5. Host-Driven Shared Module Context (Single Haxiom instance)
         trace("Verification 5: Single Instance shared module context");
-        var engine = new Haxiom();
+        var engine = new haxiom.StatementTestEngine();
         engine.useVM = true;
         
         var scriptA = "
@@ -133,7 +133,7 @@ class TestNSConflict {
         var lastCompileError:haxiom.ScriptException = null;
         var lastRuntimeError:haxiom.ScriptException = null;
         
-        var errorEngine = new haxiom.Haxiom();
+        var errorEngine = new haxiom.StatementTestEngine();
         
         errorEngine.onCompilerError = function(e) {
             compileErrorCaught = true;

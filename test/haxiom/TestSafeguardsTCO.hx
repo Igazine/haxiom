@@ -15,7 +15,7 @@ class TestSafeguardsTCO {
 
     static function testTailCallOptimization() {
         trace("  Testing Tail-Call Optimization (TCO)...");
-        var engine = new Haxiom();
+        var engine = new haxiom.StatementTestEngine();
         engine.useVM = true;
 
         // 1. Direct function recursive call
@@ -71,7 +71,7 @@ class TestSafeguardsTCO {
         trace("  Testing Heap Safeguards (Memory Watchdog)...");
         
         // 1. Array growth watchdog check
-        var engine1 = new Haxiom();
+        var engine1 = new haxiom.StatementTestEngine();
         engine1.useVM = true;
         engine1.maxMemory = 100;
         
@@ -101,7 +101,7 @@ class TestSafeguardsTCO {
         }
 
         // 2. Map set watchdog check
-        var engine2 = new Haxiom();
+        var engine2 = new haxiom.StatementTestEngine();
         engine2.useVM = true;
         engine2.maxMemory = 50;
 
@@ -131,7 +131,7 @@ class TestSafeguardsTCO {
         }
 
         // 3. Object field assignment watchdog check
-        var engine3 = new Haxiom();
+        var engine3 = new haxiom.StatementTestEngine();
         engine3.useVM = true;
         engine3.maxMemory = 30;
         engine3.importWhitelist.push("Reflect");
@@ -166,7 +166,7 @@ class TestSafeguardsTCO {
 
     static function testPolymorphicInlineCache() {
         trace("  Testing Polymorphic Inline Caching (IC)...");
-        var engine = new Haxiom();
+        var engine = new haxiom.StatementTestEngine();
         engine.useVM = true;
 
         var script = "

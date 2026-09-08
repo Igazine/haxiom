@@ -239,7 +239,7 @@ class InternalTests {
 		for (i in 0...threadCount) {
 			sys.thread.Thread.create(function() {
 				try {
-					var engine = new Haxiom();
+					var engine = new haxiom.StatementTestEngine();
 					engine.registerStaticField("TestTarget", "val", i * 10);
 					var handle = HostRef.wrap("thread_secret_" + i);
 					engine.setGlobal("handle", handle);

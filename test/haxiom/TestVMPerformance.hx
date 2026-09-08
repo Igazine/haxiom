@@ -69,7 +69,7 @@ class TestVMPerformance {
     static function runBenchmark(name:String, script:String, iterations:Int) {
         trace('Running benchmark: $name ($iterations iterations)');
 
-        var engine = new haxiom.Haxiom();
+        var engine = new haxiom.StatementTestEngine();
         var ast = engine.compile(script);
 
         // Warm up

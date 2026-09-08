@@ -26,15 +26,37 @@ class Parser {
 	}
 
 	function parse():Expr {
+		return parseRoot(true);
+	}
+
+	// Statement parsing is retained for package-internal expression/VM tests.
+	function parseStatements():Expr {
+		return parseRoot(false);
+	}
+
+	function parseRoot(module:Bool):Expr {
 		var exprs = [];
 		while (! is(TEof)) {
 			skipNewlines();
 			if (is(TEof))
 				break;
-			exprs.push(parseStatement());
+			var expr = parseStatement();
+			if (module)
+				validateDeclaration(expr);
+			exprs.push(expr);
 			skipNewlines();
 		}
 		return {def: EBlock(exprs), pos: {line: 1, col: 1, file: file}};
+	}
+
+	function validateDeclaration(expr:Expr):Void {
+		switch (expr.def) {
+			case EPackage(_) | EImport(_, _) | EUsing(_) | EClass(_, _, _, _, _, _, _)
+				| EInterface(_, _, _, _, _, _) | EEnum(_, _, _) | EAbstract(_, _, _, _, _, _) | ETypedef(_, _, _):
+			case EMeta(_, inner): validateDeclaration(inner);
+			default:
+				throw new CompileException("Top-level executable code is not allowed; place executable code inside a class method", expr.pos.line, expr.pos.col, file);
+		}
 	}
 
 	function parseExprOnly():Expr {

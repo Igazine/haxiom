@@ -28,7 +28,7 @@ class TestCompilationFeatures {
     }
 
     static function testPreprocessor() {
-        var engine = new Haxiom();
+        var engine = new haxiom.StatementTestEngine();
         engine.useVM = true;
         engine.setDefine("my_host_cond", true);
         engine.setDefine("custom.feature", true);
@@ -130,7 +130,7 @@ class TestCompilationFeatures {
         if (res5 != 500) throw "testPreprocessor expression && ! failed: expected 500, got " + res5;
 
         // Test AST cache isolation across changing host defines
-        var cacheEngine = new Haxiom();
+        var cacheEngine = new haxiom.StatementTestEngine();
         cacheEngine.enableAstCache = true;
         var cacheScript = '
             var x = 0;
@@ -227,7 +227,7 @@ class TestCompilationFeatures {
     }
 
     static function testOptionalFields() {
-        var engine = new Haxiom();
+        var engine = new haxiom.StatementTestEngine();
         engine.useVM = true;
 
         var script = '
@@ -279,7 +279,7 @@ class TestCompilationFeatures {
     }
 
     static function testMacros() {
-        var engine = new Haxiom();
+        var engine = new haxiom.StatementTestEngine();
         engine.useVM = true;
         engine.registerModule("haxiom.AST", ["haxiom.ExprDef", "haxiom.TypeDecl"]);
         engine.exposeEnum("haxiom.ExprDef", haxiom.AST.ExprDef);
@@ -325,7 +325,7 @@ class TestCompilationFeatures {
     }
 
     static function testInline() {
-        var engine = new Haxiom();
+        var engine = new haxiom.StatementTestEngine();
         engine.useVM = true;
 
         var script = '
@@ -351,7 +351,7 @@ class TestCompilationFeatures {
         if (res != 140) throw "testInline failed: expected 140, got " + res;
 
         // Test AST mode too
-        var engineAST = new Haxiom();
+        var engineAST = new haxiom.StatementTestEngine();
         engineAST.useVM = false;
         var resAST:Int = engineAST.interpret(script);
         if (resAST != 140) throw "testInline (AST) failed: expected 140, got " + resAST;
@@ -379,7 +379,7 @@ class TestCompilationFeatures {
         ';
 
         // 1. Test VM Mode
-        var engineVM = new Haxiom();
+        var engineVM = new haxiom.StatementTestEngine();
         engineVM.useVM = true;
         engineVM.maxInstructions = 1000;
         
@@ -396,7 +396,7 @@ class TestCompilationFeatures {
         if (!caughtVM) throw "testInstructionLimit (VM) failed: did not catch instruction limit exception";
 
         // 2. Test AST Mode
-        var engineAST = new Haxiom();
+        var engineAST = new haxiom.StatementTestEngine();
         engineAST.useVM = false;
         engineAST.maxInstructions = 1000;
         
@@ -416,7 +416,7 @@ class TestCompilationFeatures {
     }
 
     static function testComprehensionsAndInterpolation() {
-        var engine = new Haxiom();
+        var engine = new haxiom.StatementTestEngine();
         
         for (useVM in [true, false]) {
             engine.useVM = useVM;
@@ -464,7 +464,7 @@ class TestCompilationFeatures {
     }
 
     static function testRestArguments() {
-        var engine = new Haxiom();
+        var engine = new haxiom.StatementTestEngine();
 
         for (useVM in [true, false]) {
             engine.useVM = useVM;
@@ -547,7 +547,7 @@ class TestCompilationFeatures {
 
             // 1. Local final variable reassignment
             {
-                var engine = new Haxiom();
+                var engine = new haxiom.StatementTestEngine();
                 engine.useVM = useVM;
                 var scriptLocal = "
                     final x = 42;
@@ -570,7 +570,7 @@ class TestCompilationFeatures {
 
             // 2. Local final variable unary mutating operators
             {
-                var engine = new Haxiom();
+                var engine = new haxiom.StatementTestEngine();
                 engine.useVM = useVM;
                 var scriptUnop = "
                     final count = 10;
@@ -593,7 +593,7 @@ class TestCompilationFeatures {
 
             // 3. Captured final variable reassignment
             {
-                var engine = new Haxiom();
+                var engine = new haxiom.StatementTestEngine();
                 engine.useVM = useVM;
                 var scriptCaptured = "
                     final name = 'Tamas';
@@ -619,7 +619,7 @@ class TestCompilationFeatures {
 
             // 4. Class member final field outside of constructor
             {
-                var engine = new Haxiom();
+                var engine = new haxiom.StatementTestEngine();
                 engine.useVM = useVM;
                 var scriptMember = "
                     class Person {
@@ -651,7 +651,7 @@ class TestCompilationFeatures {
 
             // 5. Class member final field direct assignment
             {
-                var engine = new Haxiom();
+                var engine = new haxiom.StatementTestEngine();
                 engine.useVM = useVM;
                 var scriptDirect = "
                     class Person {
@@ -680,7 +680,7 @@ class TestCompilationFeatures {
 
             // 6. Class static final field outside class constructor / definition
             {
-                var engine = new Haxiom();
+                var engine = new haxiom.StatementTestEngine();
                 engine.useVM = useVM;
                 var scriptStatic = "
                     class Conf {
@@ -707,7 +707,7 @@ class TestCompilationFeatures {
             }
 
             {
-                var engine = new Haxiom();
+                var engine = new haxiom.StatementTestEngine();
                 engine.useVM = useVM;
                 var scriptStaticOutside = "
                     class Conf {
@@ -735,7 +735,7 @@ class TestCompilationFeatures {
     }
 
     static function testStrictSemicolons() {
-        var engine = new Haxiom();
+        var engine = new haxiom.StatementTestEngine();
         engine.useVM = true;
         engine.importWhitelist = null;
 
@@ -888,7 +888,7 @@ class TestCompilationFeatures {
         var bytes = sys.io.File.getBytes(bcPath);
         
         // Execute the bytecode using a clean Haxiom instance (without filesystem access or moduleResolver)
-        var engine = new Haxiom();
+        var engine = new haxiom.StatementTestEngine();
         engine.useVM = true;
         engine.importWhitelist = null; // allow all imports (native standard lib or packages)
         
@@ -962,7 +962,7 @@ class TestCompilationFeatures {
         var overrideBcPath = tempDir + "/MainOverride.hxbc";
         var overrideBytes = sys.io.File.getBytes(overrideBcPath);
         
-        var engineOverride = new Haxiom();
+        var engineOverride = new haxiom.StatementTestEngine();
         engineOverride.useVM = true;
         engineOverride.importWhitelist = null;
         engineOverride.executeBytes(overrideBytes);
@@ -1038,7 +1038,7 @@ class TestCompilationFeatures {
         }
 
         var bytesFQ = sys.io.File.getBytes(bcPathFQ);
-        var engineFQ = new Haxiom();
+        var engineFQ = new haxiom.StatementTestEngine();
         engineFQ.useVM = true;
         engineFQ.importWhitelist = null;
 

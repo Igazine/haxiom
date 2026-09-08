@@ -14,6 +14,10 @@ Lua and JVM are not part of the active gate for this alpha. They may compile or 
 
 ## Supported Workflows
 
+Source scripts must contain only package, import, using, class, interface, enum, abstract, and typedef declarations at the root. Put executable code inside class methods. A public static zero-argument `main()` runs automatically only when its class matches `ScriptContext.name`; unnamed modules only load definitions. Top-level statements produce compiler errors and use `onCompilerError` when configured. The same syntax restriction applies to source dependencies and CLI compilation.
+
+Existing persisted AST/HXBC programs and host-supplied ASTs remain executable. They contain compiled entry-point operations and are not reparsed as source modules; this syntax restriction does not change the persistence format.
+
 The following workflows are expected to work on the active targets:
 
 - AST interpretation through `Haxiom.interpret()` with `useVM = false`.

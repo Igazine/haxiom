@@ -6938,7 +6938,7 @@ class Interp {
 					var moduleScope = new Scope(globals);
 					var lexer = new Lexer(src, fqName, preprocessorFlags);
 					var tokens = lexer.tokenize();
-					var parser = new Parser(tokens);
+					var parser = new Parser(tokens, fqName);
 					var ast = parser.parse();
 					StaticInitializerValidator.validate(ast);
 

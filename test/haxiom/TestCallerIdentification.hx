@@ -5,7 +5,7 @@ class TestCallerIdentification {
 		trace("Starting Host Script Caller Identification (engine.currentCaller) Suite...");
 
 		// Test 1: Native Host Call returns null
-		var engine = new Haxiom();
+		var engine = new haxiom.StatementTestEngine();
 		if (engine.currentCaller != null) {
 			throw "Test 1 Failed: Expected engine.currentCaller to be null for native host call";
 		}
@@ -41,7 +41,7 @@ class TestCallerIdentification {
 		}
 
 		// Test 3: Bytecode VM Mode Script Call Context Identification
-		var engineVM = new Haxiom();
+		var engineVM = new haxiom.StatementTestEngine();
 		engineVM.useVM = true;
 
 		var capturedCallerVM:ScriptStackFrame = null;
@@ -73,7 +73,7 @@ class TestCallerIdentification {
 		}
 
 		// Test 4: Serialized bytecode preserves its source label without execution-time side channels.
-		var compileEngine = new Haxiom();
+		var compileEngine = new haxiom.StatementTestEngine();
 		var bytecodeScript = '
             class BytecodeCaller {
                 static public function main() {
@@ -84,7 +84,7 @@ class TestCallerIdentification {
 		var bytecodeBytes = compileEngine.compileToBytecodeBytes(bytecodeScript,
 			new ScriptContext("BytecodeCaller", "BytecodeCaller.hx"), null, true);
 
-		var bytecodeEngine = new Haxiom();
+		var bytecodeEngine = new haxiom.StatementTestEngine();
 		bytecodeEngine.useVM = true;
 		var capturedBytecodeCaller:ScriptStackFrame = null;
 		bytecodeEngine.exposeValue("hostLogBytecode", function(msg:String) {
@@ -115,7 +115,7 @@ class TestCallerIdentification {
 			new ScriptContext("ReleaseBytecodeError", "ReleaseBytecodeError.hx"), null, false);
 		var caughtReleaseError = false;
 		try {
-			new Haxiom().executeBytecodeBytes(releaseErrorBytes);
+			new haxiom.StatementTestEngine().executeBytecodeBytes(releaseErrorBytes);
 		} catch (e:ScriptException) {
 			caughtReleaseError = true;
 			if (e.file != "ReleaseBytecodeError.hx") {

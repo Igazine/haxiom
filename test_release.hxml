@@ -1,3 +1,4 @@
+--cmd haxe test/strictscripts/build.hxml
 --cmd haxe build.hxml
 --cmd haxe test_full.hxml
 --cmd haxe test_platforms.hxml

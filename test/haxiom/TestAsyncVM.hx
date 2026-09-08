@@ -55,7 +55,7 @@ class TestAsyncVM {
     }
 
     static function testBasicAwait(cb:Void->Void) {
-        var engine = new Haxiom();
+        var engine = new haxiom.StatementTestEngine();
         engine.useVM = true;
         engine.setGlobal("delay", (ms:Int, val:Dynamic) -> delay(ms, val));
 
@@ -84,7 +84,7 @@ class TestAsyncVM {
     }
 
     static function testNestedAwait(cb:Void->Void) {
-        var engine = new Haxiom();
+        var engine = new haxiom.StatementTestEngine();
         engine.useVM = true;
         engine.setGlobal("delay", (ms:Int, val:Dynamic) -> delay(ms, val));
 
@@ -122,7 +122,7 @@ class TestAsyncVM {
     }
 
     static function testConcurrentAwait(cb:Void->Void) {
-        var engine = new Haxiom();
+        var engine = new haxiom.StatementTestEngine();
         engine.useVM = true;
         engine.setGlobal("delay", (ms:Int, val:Dynamic) -> delay(ms, val));
 
@@ -170,7 +170,7 @@ class TestAsyncVM {
     }
 
     static function testTryCatchAwait(cb:Void->Void) {
-        var engine = new Haxiom();
+        var engine = new haxiom.StatementTestEngine();
         engine.useVM = true;
         engine.setGlobal("delayReject", (ms:Int, err:Dynamic) -> delayReject(ms, err));
 
@@ -203,7 +203,7 @@ class TestAsyncVM {
     }
 
     static function testUncaughtExceptionAwait(cb:Void->Void) {
-        var engine = new Haxiom();
+        var engine = new haxiom.StatementTestEngine();
         engine.useVM = true;
         engine.setGlobal("delayReject", (ms:Int, err:Dynamic) -> delayReject(ms, err));
 
@@ -233,7 +233,7 @@ class TestAsyncVM {
     }
 
     static function testAwaitNonPromise(cb:Void->Void) {
-        var engine = new Haxiom();
+        var engine = new haxiom.StatementTestEngine();
         engine.useVM = true;
 
         var script = '
@@ -265,7 +265,7 @@ class TestAsyncVM {
     }
 
     static function testASTModeRejection(cb:Void->Void) {
-        var engine = new Haxiom();
+        var engine = new haxiom.StatementTestEngine();
         engine.useVM = false;
         engine.setGlobal("delay", (ms:Int, val:Dynamic) -> delay(ms, val));
 
@@ -311,7 +311,7 @@ class TestAsyncVM {
     }
 
     static function testAutoAsyncDetection(cb:Void->Void) {
-        var engine = new Haxiom();
+        var engine = new haxiom.StatementTestEngine();
         engine.useVM = true;
         engine.setGlobal("delay", (ms:Int, val:Dynamic) -> delay(ms, val));
 
@@ -344,7 +344,7 @@ class TestAsyncVM {
     }
 
     static function testDisposal(cb:Void->Void) {
-        var engine = new Haxiom();
+        var engine = new haxiom.StatementTestEngine();
         engine.useVM = true;
         engine.setGlobal("delay", (ms:Int, val:Dynamic) -> delay(ms, val));
 

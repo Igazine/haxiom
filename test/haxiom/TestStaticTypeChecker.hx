@@ -21,7 +21,7 @@ class TestStaticTypeChecker {
         trace("Static Type Checker Verification Suite");
         trace("---------------------------------------");
 
-        var haxiom = new haxiom.Haxiom();
+        var haxiom = new haxiom.StatementTestEngine();
         var passed = 0;
         var failed = 0;
 
