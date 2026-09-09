@@ -204,6 +204,8 @@ class Lexer {
 				while (pos < input.length && (isAlphanumeric(peek()) || peek() == "_"))
 					advance();
 				var id = slice(input, start, pos);
+				if (id == "untyped")
+					throw new CompileException("The 'untyped' keyword is not supported in Haxiom scripts", startLine, startCol, file);
 				var def = switch (id) {
 					case "break": TBreak;
 					case "case": TCase;
@@ -636,6 +638,8 @@ class Lexer {
 						j++;
 					}
 					var id = slice(s, startIdx, j);
+					if (id == "untyped")
+						throw new CompileException("The 'untyped' keyword is not supported in Haxiom scripts", startLine, startCol + startIdx, file);
 					i = j;
 
 					if (hasTokens)

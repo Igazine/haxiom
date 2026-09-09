@@ -6,6 +6,7 @@ import haxiom.ScriptException;
 
 class StrictModules {
 	static public function main():Void {
+		UntypedSyntax.run();
 		var invalid = [
 			"var value = 1;", "final value = 1;", "mark();", "new Array();", "return 1;",
 			"if (true) mark();", "while (false) mark();", "for (i in 0...1) mark();",

@@ -18,6 +18,8 @@ Source scripts must contain only package, import, using, class, interface, enum,
 
 Existing persisted AST/HXBC programs and host-supplied ASTs remain executable. They contain compiled entry-point operations and are not reparsed as source modules; this syntax restriction does not change the persistence format.
 
+The `untyped` keyword is rejected during source compilation, including in initializers, unused methods, and interpolation expressions. Comments, literal text, and inactive preprocessor branches are unaffected. Haxiom does not implement Haxe target-code injection; hosts remain responsible for the capabilities they expose to guest code.
+
 The following workflows are expected to work on the active targets:
 
 - AST interpretation through `Haxiom.interpret()` with `useVM = false`.

@@ -70,6 +70,12 @@ class TestBytecodeCLI {
 			File.saveContent(tempDir + "/BadDependency.hx", "class BadDependency { static public var value:Int = 1; }\ntrace('must not compile');");
 			assertRejectedModule(invalidPath);
 
+			File.saveContent(invalidPath, "class InvalidRoot { static var value = untyped 1; }");
+			assertRejectedModule(invalidPath, "'untyped' keyword is not supported");
+			File.saveContent(invalidPath, "import BadDependency; class InvalidRoot { static public function main():Int return BadDependency.value; }");
+			File.saveContent(tempDir + "/BadDependency.hx", "class BadDependency { static public var value = untyped 1; }");
+			assertRejectedModule(invalidPath, "'untyped' keyword is not supported");
+
 			deleteDirRecursive(tempDir);
 		} catch (e:Dynamic) {
 			deleteDirRecursive(tempDir);
@@ -206,13 +212,13 @@ class TestBytecodeCLI {
 		return stdout;
 	}
 
-	static function assertRejectedModule(path:String):Void {
+	static function assertRejectedModule(path:String, expectedError:String = "Top-level executable code is not allowed"):Void {
 		var process = new Process("haxelib", ["run", "haxiom", "bc", path, "-c"]);
 		var stdout = process.stdout.readAll().toString();
 		var stderr = process.stderr.readAll().toString();
 		var code = process.exitCode();
 		process.close();
-		if (code == 0 || (stdout + stderr).indexOf("Top-level executable code is not allowed") == -1)
+		if (code == 0 || (stdout + stderr).indexOf(expectedError) == -1)
 			throw 'CLI accepted invalid module or returned wrong error: $stdout $stderr';
 		if (FileSystem.exists(haxe.io.Path.withoutExtension(path) + ".hxbc"))
 			throw "CLI wrote bytecode for an invalid module";
