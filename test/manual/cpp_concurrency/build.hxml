@@ -1,0 +1,6 @@
+-L haxiom
+--class-path test/manual/cpp_concurrency
+--main Host
+--resource test/manual/cpp_concurrency/Guest.hx@concurrency_guest
+--debug
+--cpp test/haxiom/tmp_manual_concurrency/cpp

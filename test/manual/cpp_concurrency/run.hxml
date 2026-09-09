@@ -1,0 +1,2 @@
+test/manual/cpp_concurrency/build.hxml
+--cmd ./test/haxiom/tmp_manual_concurrency/cpp/Host-debug
