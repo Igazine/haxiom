@@ -110,7 +110,8 @@ class Main {
 `ScriptContext.name` is the logical module name and is required for automatic
 `main()` execution. `sourceLabel` is optional diagnostic metadata; when omitted,
 errors and stack traces use `name`. Source without a context remains an unnamed
-snippet and does not receive an implicit entry-point call.
+module and does not receive an implicit entry-point call. Source modules accept
+declarations only at the root; executable statements belong inside class methods.
 
 ---
 
