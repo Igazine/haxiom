@@ -16,6 +16,7 @@ class LibRun {
 		var args = Sys.args();
 		var enableStatic = false;
 		var compress = false;
+		var debugMode = false;
 		var jsonMode = false;
 		var cleanArgs = [];
 		for (arg in args) {
@@ -23,6 +24,8 @@ class LibRun {
 				enableStatic = true;
 			} else if (arg == "--compress" || arg == "-c") {
 				compress = true;
+			} else if (arg == "--debug") {
+				debugMode = true;
 			} else if (arg == "--json") {
 				jsonMode = true;
 			} else {
@@ -32,7 +35,7 @@ class LibRun {
 		args = cleanArgs;
 
 		if (args.length < 1) {
-			Sys.println('Usage: haxelib run haxiom <command> <input> [--static] [-c/--compress]');
+			Sys.println('Usage: haxelib run haxiom <command> <input> [--static] [-c/--compress] [--debug]');
 			Sys.println('Commands: bc (bytecode compile), inspect (bytecode inspector)');
 			Sys.exit(1);
 		}
@@ -44,13 +47,13 @@ class LibRun {
 		}
 		var command = args.shift();
 		if (command == null) {
-			Sys.println('Usage: haxelib run haxiom <command> <input> [--static] [-c/--compress]');
+			Sys.println('Usage: haxelib run haxiom <command> <input> [--static] [-c/--compress] [--debug]');
 			Sys.exit(1);
 		}
 		switch command.toLowerCase() {
 			case 'bc':
 				try {
-					bytecodeCompile(workingDir, args.shift(), args.shift(), enableStatic, compress);
+					bytecodeCompile(workingDir, args.shift(), args.shift(), enableStatic, compress, debugMode);
 				} catch (e:Dynamic) {
 					Sys.println('Compilation error: ${e}');
 					Sys.exit(1);
@@ -63,7 +66,7 @@ class LibRun {
 					Sys.exit(1);
 				}
 			default:
-				Sys.println('Unknown command: ${command}\nUsage: haxelib run haxiom <command> <input> [--static] [-c/--compress]');
+				Sys.println('Unknown command: ${command}\nUsage: haxelib run haxiom <command> <input> [--static] [-c/--compress] [--debug]');
 				Sys.exit(1);
 		}
 	}
@@ -413,9 +416,9 @@ class LibRun {
 		}
 	}
 
-	public static function bytecodeCompile(workingDir:String, input:String, ?key:String, ?staticTypes:Bool = false, ?compress:Bool = false) {
+	public static function bytecodeCompile(workingDir:String, input:String, ?key:String, ?staticTypes:Bool = false, ?compress:Bool = false, ?debugMode:Bool = false) {
 		if (input == null) {
-			throw 'Usage: haxelib run haxiom bc <input> [key] [--static] [-c/--compress]';
+			throw 'Usage: haxelib run haxiom bc <input> [key] [--static] [-c/--compress] [--debug]';
 		}
 
 		// Normalize workingDir to ensure trailing slash
@@ -449,17 +452,17 @@ class LibRun {
 					relFilePath = file.substring(workingDir.length);
 				}
 				try {
-					compileSingleFile(workingDir, relFilePath, key, staticTypes, compress);
+					compileSingleFile(workingDir, relFilePath, key, staticTypes, compress, debugMode);
 				} catch (e:Dynamic) {
 					Sys.println('Failed to compile ${relFilePath}: ${e}');
 				}
 			}
 		} else {
-			compileSingleFile(workingDir, input, key, staticTypes, compress);
+			compileSingleFile(workingDir, input, key, staticTypes, compress, debugMode);
 		}
 	}
 
-	static function compileSingleFile(workingDir:String, input:String, ?key:String, ?staticTypes:Bool = false, ?compress:Bool = false) {
+	static function compileSingleFile(workingDir:String, input:String, ?key:String, ?staticTypes:Bool = false, ?compress:Bool = false, ?debugMode:Bool = false) {
 		var fullInputPath = workingDir + input;
 		final haxiom = new Haxiom();
 		haxiom.enableStaticTypes = staticTypes;
@@ -625,9 +628,9 @@ class LibRun {
 		// Append main() execution trigger if present in the main module
 		combinedAst = Haxiom.appendMainCallIfPresent(combinedAst, mainModuleName);
 
-		// Apply the full optimization pipeline (constant folding + DCE) before serializing
+		// Keep unused locals in debug builds so their names and values remain available.
 		var optimizedAst = Optimizer.foldConstants(combinedAst);
-		if (haxiom.enableDCE) {
+		if (haxiom.enableDCE && !debugMode) {
 			optimizedAst = Optimizer.eliminateDeadCode(optimizedAst);
 		}
 
@@ -636,7 +639,7 @@ class LibRun {
 		}
 
 		final bytes = haxiom.compileASTToBytecodeBytes(optimizedAst, new ScriptContext(mainModuleName, input),
-			key != null ? new HXBCKey(key) : null, false, compress);
+			key != null ? new HXBCKey(key) : null, debugMode, compress);
 
 		final output = haxe.io.Path.withoutExtension(input) + '.hxbc';
 		File.saveBytes(workingDir + output, bytes);

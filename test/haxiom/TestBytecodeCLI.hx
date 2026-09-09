@@ -61,6 +61,8 @@ class TestBytecodeCLI {
 			assertEmbeddedResource(bytecodePath, bytecodeKey, "payload.bin", resourceBytes.length);
 			assertExecutableBytecode(bytecodePath, bytecodeKey, "10|6|0|128|254|255");
 
+			assertDebugCompilation(tempDir, bytecodeKey);
+
 			var invalidPath = tempDir + "/InvalidRoot.hx";
 			File.saveContent(invalidPath, "class InvalidRoot {}\ntrace('must not compile');");
 			assertRejectedModule(invalidPath);
@@ -74,6 +76,45 @@ class TestBytecodeCLI {
 			throw e;
 		}
 		trace("ALL BYTECODE CLI TESTS PASSED!");
+	}
+
+	static function assertDebugCompilation(tempDir:String, key:String):Void {
+		var dir = tempDir + "/debug";
+		FileSystem.createDirectory(dir);
+		var sourcePath = dir + "/DebugFailure.hx";
+		var bytecodePath = dir + "/DebugFailure.hxbc";
+		File.saveContent(sourcePath, "class DebugFailure {\n"
+			+ "static public function main():Void {\n"
+			+ "var diagnosticValue = 123;\n"
+			+ "throw 'expected debug failure';\n}\n}");
+		for (mode in 0...3) {
+			var args = ["run", "haxiom", "bc", mode == 2 ? dir : sourcePath];
+			if (mode > 0) args.push("--debug");
+			if (mode == 2) {
+				args.push(key);
+				args.push("-c");
+			}
+			runProcess(args, "debug compilation mode " + mode);
+			assertValidInspection(bytecodePath, mode == 2, mode == 2 ? key : null, mode == 2);
+			var engine = new Haxiom();
+			var caught = false;
+			try {
+				engine.executeBytecodeBytes(File.getBytes(bytecodePath), null, mode == 2 ? new HXBCKey(key) : null);
+			} catch (e:ScriptException) {
+				caught = true;
+				if (e.rawValue != "expected debug failure") throw e;
+				if (mode > 0) {
+					if (e.locals == null || e.locals.get("diagnosticValue") != 123)
+						throw "Debug CLI compilation lost the unused local variable";
+					if (e.line != 4 || e.file == null || e.file.indexOf("DebugFailure.hx") == -1)
+						throw 'Debug CLI compilation lost source location: ${e.file}:${e.line}';
+				} else if (e.locals != null && e.locals.exists("diagnosticValue")) {
+					throw "Release CLI compilation unexpectedly retained local debug symbols";
+				}
+			}
+			if (!caught) throw "Debug fixture did not throw";
+			FileSystem.deleteFile(bytecodePath);
+		}
 	}
 
 	static function assertValidInspection(bytecodePath:String, expectedCompressed:Bool, ?key:String, expectedEncrypted:Bool = false):Void {
